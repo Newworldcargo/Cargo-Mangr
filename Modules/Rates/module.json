@@ -1,0 +1,13 @@
+{
+    "name": "Rates",
+    "alias": "rates",
+    "description": "Automated exchange-rate syncing from free public feeds (FloatRates, open.er-api) into the shared currency_exchange_rates table.",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\Rates\\Providers\\RatesServiceProvider"
+    ],
+    "aliases": {},
+    "files": [],
+    "requires": []
+}

@@ -10,5 +10,6 @@
     "Payments": true,
     "Currency": true,
     "DriverAppAddon": true,
-    "CustomerAppAddon": true
+    "CustomerAppAddon": true,
+    "Rates": true
 }

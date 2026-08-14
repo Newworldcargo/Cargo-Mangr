@@ -1,0 +1,21 @@
+{
+    "name": "nwidart/rates",
+    "description": "Rates module — automated exchange-rate syncing.",
+    "authors": [
+        {
+            "name": "Newworld Cargo",
+            "email": "georgemunganga@gmail.com"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [],
+            "aliases": {}
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\Rates\\": ""
+        }
+    }
+}

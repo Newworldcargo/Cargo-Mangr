@@ -40,6 +40,7 @@
                                             <div class="rate-info mt-1">
                                                 <small class="text-muted d-block" id="lastUpdated">Last updated: -</small>
                                                 <small class="text-muted d-block" id="timeZone"></small>
+                                            <small class="text-success d-block" id="autoSyncStatus">Auto-sync: checking…</small>
                                             </div>
                                         </div>
                                     </div>
@@ -48,6 +49,9 @@
                                     <button type="button" class="btn btn-sm btn-outline-primary" id="refreshRateBtn" onclick="fetchRealTimeRate()">
                                         <i class="fas fa-sync-alt mr-1"></i>Refresh Rate
                                         <span class="badge badge-light ml-1" id="refreshCount">3</span>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-success ml-2" id="serverSyncBtn">
+                                        <i class="fas fa-cloud-download-alt mr-1"></i>Sync Now
                                     </button>
                                 </div>
                             </div>
@@ -248,6 +252,60 @@
             console.error('Error:', error);
         });
     });
+
+    // --- Rates module: server-side sync (POST /admin/rates/refresh) ---
+    (function () {
+        var statusEl = document.getElementById('autoSyncStatus');
+        var syncBtn = document.getElementById('serverSyncBtn');
+
+        // Load last auto-sync info from the Rates module.
+        fetch('{{ route("rates.status") }}', { headers: { 'Accept': 'application/json' } })
+            .then(function (res) { return res.json(); })
+            .then(function (data) {
+                if (data.last_sync_at) {
+                    var when = new Date(data.last_sync_at + 'Z');
+                    statusEl.textContent = 'Auto-synced via ' + (data.last_sync_source || 'feed') + ' on ' + when.toLocaleString();
+                } else {
+                    statusEl.textContent = 'Auto-sync: no sync yet';
+                }
+            })
+            .catch(function () {
+                statusEl.textContent = '';
+            });
+
+        if (syncBtn) {
+            syncBtn.addEventListener('click', function () {
+                syncBtn.disabled = true;
+                syncBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Syncing…';
+                fetch('{{ route("rates.refresh") }}', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': window._csrf_token,
+                        'Accept': 'application/json'
+                    }
+                })
+                .then(function (res) { return res.json(); })
+                .then(function (data) {
+                    if (data.success) {
+                        document.getElementById('exchangeRate').value = parseFloat('{{ current_x_rate() }}').toFixed(4);
+                        statusEl.textContent = 'Synced from ' + data.source + ' — ' + data.updated + ' rate(s) updated.';
+                        fetchRealTimeRate(); // also refresh the live preview
+                    } else {
+                        statusEl.textContent = 'Sync failed: ' + (data.message || 'unknown error');
+                        statusEl.className = 'text-danger d-block';
+                    }
+                })
+                .catch(function () {
+                    statusEl.textContent = 'Network error during sync.';
+                    statusEl.className = 'text-danger d-block';
+                })
+                .finally(function () {
+                    syncBtn.disabled = false;
+                    syncBtn.innerHTML = '<i class="fas fa-cloud-download-alt mr-1"></i>Sync Now';
+                });
+            });
+        }
+    })();
 </script>
 
 <style>
