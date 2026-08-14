@@ -21,6 +21,45 @@ if (!function_exists('convert_currency')) {
 
         return $amount; // fallback if no rate found
     }
+    // Convert a stored amount (always in ZMW) to the target currency using the
+    // currency_exchange_rates table. Keeps the system settings-driven: no
+    // hard-coded country or currency logic. ZMW->X uses the stored rate;
+    // X->ZMW uses 1/rate. Same-currency returns the amount unchanged.
+    function convert_amount_to_branch_currency($amount, $target) {
+        if (!$target || strtoupper($target) === 'ZMW') {
+            return (float) $amount;
+        }
+        $rate = \App\Models\CurrencyExchangeRate::where('from_currency', 'ZMW')
+            ->where('to_currency', strtoupper($target))
+            ->first();
+        if (!$rate) {
+            // try the inverse row
+            $rate = \App\Models\CurrencyExchangeRate::where('from_currency', strtoupper($target))
+                ->where('to_currency', 'ZMW')
+                ->first();
+            if ($rate && $rate->exchange_rate > 0) {
+                return (float) $amount / $rate->exchange_rate;
+            }
+            return (float) $amount;
+        }
+        if ($rate->exchange_rate <= 0) {
+            return (float) $amount;
+        }
+        return (float) ($amount / $rate->exchange_rate);
+    }
+
+    // Currency symbol for display, driven by the currencies table.
+    function currency_symbol_for($code) {
+        $cur = \Modules\Currency\Entities\Currency::where('code', strtoupper($code))->first();
+        if ($cur && !empty($cur->symbol)) {
+            return $cur->symbol;
+        }
+        if (strtoupper($code) === 'ZMW') {
+            return 'K';
+        }
+        return '$';
+    }
+
 
 function customer_numbers($consignment_id)
 {
