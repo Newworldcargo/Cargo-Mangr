@@ -8,59 +8,72 @@ use Carbon\Carbon;
 
 class TransxnController extends Controller
 {
-    
     public function __construct()
     {
         // check on permissions
         $this->middleware('can:access-finance-transactions')->only('index');
     }
 
-    public function index()
+    /**
+     * Compute completed/refunded totals for a date range using SQL aggregates
+     * instead of loading every transaction into memory.
+     *
+     * Mirrors the original PHP semantics:
+     *  - completed  = status in (completed, refund_requested, partially_refunded)
+     *  - refunded   = refunded_at is set; amount = refunded_amount when > 0,
+     *                 otherwise the full transaction total
+     */
+    private function periodTotals(Carbon $start, Carbon $end): array
     {
-        $transactions = Transxn::with('shipment.client')
-            ->orderBy('created_at', 'desc')
-            ->get();
-            
-        $completedTransactions = $transactions->filter(fn($txn) => $txn->isCompleted());
+        $totals = Transxn::whereIn('status', ['completed', 'refund_requested', 'partially_refunded'])
+            ->whereBetween('created_at', [$start, $end])
+            ->selectRaw('COUNT(*) AS cnt, COALESCE(SUM(total),0) AS total')
+            ->first();
 
-        $sumCompletedBetween = fn (Carbon $start, Carbon $end) =>
-            $completedTransactions->whereBetween('created_at', [$start, $end])->sum('total');
+        $refunds = Transxn::whereNotNull('refunded_at')
+            ->whereBetween('refunded_at', [$start, $end])
+            ->selectRaw("COUNT(*) AS cnt, COALESCE(SUM(
+                CASE WHEN COALESCE(refunded_amount,0) <= 0 THEN total
+                     ELSE refunded_amount END
+            ),0) AS total")
+            ->first();
 
-        $totals = [
-            'todate' => $completedTransactions->sum('total'),
-            'today' => $sumCompletedBetween(Carbon::today(), Carbon::now()),
-            'yesterday' => $sumCompletedBetween(Carbon::yesterday(), Carbon::today()),
-            'this_week' => $sumCompletedBetween(Carbon::now()->startOfWeek(), Carbon::now()),
-            'this_month' => $sumCompletedBetween(Carbon::now()->startOfMonth(), Carbon::now()),
+        return [
+            'completed'       => (float) ($totals->total ?? 0),
+            'completed_count' => (int) ($totals->cnt ?? 0),
+            'refunded'        => (float) ($refunds->total ?? 0),
+            'refunded_count'  => (int) ($refunds->cnt ?? 0),
         ];
-        
-        $refundedTransactions = $transactions->filter(function ($transaction) {
-            return $transaction->isRefunded() || $transaction->isPartiallyRefunded();
-        });
-
-        $resolveRefundAmount = function ($transaction) {
-            $amount = (float) ($transaction->refunded_amount ?? 0);
-            if ($transaction->isRefunded() && $amount <= 0) {
-                $amount = (float) $transaction->total;
-            }
-            return $amount;
-        };
-
-        $refundDateInRange = function ($transaction, Carbon $start, Carbon $end) {
-            $date = $transaction->refunded_at ?? $transaction->created_at;
-            return $date && $date->between($start, $end);
-        };
-
-        $refundedTotals = [
-            'todate' => $refundedTransactions->sum($resolveRefundAmount),
-            'today' => $refundedTransactions->filter(fn($txn) => $refundDateInRange($txn, Carbon::today(), Carbon::now()))->sum($resolveRefundAmount),
-            'yesterday' => $refundedTransactions->filter(fn($txn) => $refundDateInRange($txn, Carbon::yesterday(), Carbon::today()))->sum($resolveRefundAmount),
-            'this_week' => $refundedTransactions->filter(fn($txn) => $refundDateInRange($txn, Carbon::now()->startOfWeek(), Carbon::now()))->sum($resolveRefundAmount),
-            'this_month' => $refundedTransactions->filter(fn($txn) => $refundDateInRange($txn, Carbon::now()->startOfMonth(), Carbon::now()))->sum($resolveRefundAmount),
-        ];
-        
-        $adminTheme = env('ADMIN_THEME', 'adminLte');
-        return view('cargo::' . $adminTheme . '.pages.transxns.index', compact('transactions','totals', 'refundedTotals'));
     }
 
+    public function index()
+    {
+        $now = Carbon::now();
+
+        $periods = [
+            'todate'     => [Carbon::parse('1970-01-01'), $now],
+            'today'      => [$now->copy()->startOfDay(), $now],
+            'yesterday'  => [$now->copy()->subDay()->startOfDay(), $now->copy()->startOfDay()],
+            'this_week'  => [$now->copy()->startOfWeek(), $now],
+            'this_month' => [$now->copy()->startOfMonth(), $now],
+        ];
+
+        $totals = [];
+        $refundedTotals = [];
+        foreach ($periods as $key => [$start, $end]) {
+            $p = $this->periodTotals($start, $end);
+            $totals[$key] = $p['completed'];
+            $refundedTotals[$key] = $p['refunded'];
+        }
+
+        // Listing table: recent transactions only (paginated to limit memory).
+        $transactions = Transxn::with('shipment.client')
+            ->orderBy('created_at', 'desc')
+            ->limit(500)
+            ->get();
+
+        $adminTheme = env('ADMIN_THEME', 'adminLte');
+
+        return view('cargo::' . $adminTheme . '.pages.transxns.index', compact('transactions', 'totals', 'refundedTotals'));
+    }
 }
