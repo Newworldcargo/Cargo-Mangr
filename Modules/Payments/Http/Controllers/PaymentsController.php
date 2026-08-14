@@ -10,11 +10,6 @@ use Modules\Payments\Http\Requests\PaymentSettingRequest;
 
 class PaymentsController extends Controller
 {
-    public function __construct()
-    {
-        $this->middleware('user_role:1|0');
-    }
-
     
     /**
      * Display a listing of the resource.
