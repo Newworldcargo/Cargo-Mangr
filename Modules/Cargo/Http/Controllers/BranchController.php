@@ -133,6 +133,14 @@ class BranchController extends Controller
      */
     public function show($id)
     {
+        // Branch users may only access their own branch
+        if (auth()->check() && auth()->user()->role == 3) {
+            $myBranch = \Modules\Cargo\Entities\Branch::where('user_id', auth()->user()->id)->pluck('id')->first();
+            if ($myBranch == null || $myBranch != $id) {
+                abort(404);
+            }
+        }
+
         breadcrumb([
             [
                 'name' => __('cargo::view.dashboard'),
@@ -179,6 +187,14 @@ class BranchController extends Controller
     */
 
     public function profile($id){
+        // Branch users may only access their own branch
+        if (auth()->check() && auth()->user()->role == 3) {
+            $myBranch = \Modules\Cargo\Entities\Branch::where('user_id', auth()->user()->id)->pluck('id')->first();
+            if ($myBranch == null || $myBranch != $id) {
+                abort(404);
+            }
+        }
+
         breadcrumb([
             [
                 'name' => __('cargo::view.dashboard'),
@@ -203,6 +219,14 @@ class BranchController extends Controller
      */
     public function update(BranchRequest $request, $id)
     {
+        // Branch users may only access their own branch
+        if (auth()->check() && auth()->user()->role == 3) {
+            $myBranch = \Modules\Cargo\Entities\Branch::where('user_id', auth()->user()->id)->pluck('id')->first();
+            if ($myBranch == null || $myBranch != $id) {
+                abort(404);
+            }
+        }
+
         if (env('DEMO_MODE') == 'On') {
             return redirect()->back()->with(['error_message_alert' => __('view.demo_mode')]);
         }

@@ -24,6 +24,7 @@ class UsersController extends Controller
 
     public function __construct(AclRepository $aclRepository)
     {
+        $this->middleware('user_role:1|0');
         $this->aclRepo = $aclRepository;
         // check on permissions
         // $this->middleware('can:view-users')->only('index');
