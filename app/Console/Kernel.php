@@ -26,6 +26,8 @@ class Kernel extends ConsoleKernel
     {
         // $schedule->command('inspire')->hourly();
         $schedule->command('media-library:delete-old-temporary-uploads')->daily();
+        // Refresh exchange rates daily (floatrates, fallback open.er-api) so rates never need manual updating
+        $schedule->command('rates:sync')->dailyAt('02:00');
     }
 
     /**

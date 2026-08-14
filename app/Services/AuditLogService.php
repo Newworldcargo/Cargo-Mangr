@@ -79,6 +79,59 @@ class AuditLogService
      */
     public function getAllLogs(int $perPage = 20)
     {
-        return AuditLog::with('user')->latest()->paginate($perPage);
+        $query = AuditLog::with('user')->latest();
+
+        // Branch users (role 3) only see logs that belong to their own branch:
+        //  - shipment audit entries via shipments.branch_id
+        //  - receipt audit entries via shipments.branch_id
+        //  - logs performed by users of the same branch
+        $user = auth()->user();
+        if ($user && (int) $user->role === 3) {
+            $branch = \Modules\Cargo\Entities\Branch::where('user_id', $user->id)->first();
+            if ($branch) {
+                $branchId = $branch->id;
+                $query->where(function ($q) use ($branchId) {
+                    // Shipment audit entries (Modules\Cargo\Entities\Shipment)
+                    $q->orWhere(function ($sub) use ($branchId) {
+                        $sub->where('auditable_type', 'Modules\\Cargo\\Entities\\Shipment')
+                            ->whereIn('auditable_id', function ($inner) use ($branchId) {
+                                $inner->select('id')->from('shipments')->where('branch_id', $branchId);
+                            });
+                    });
+                    // Receipt audit entries linked to shipments
+                    $q->orWhere(function ($sub) use ($branchId) {
+                        $sub->whereIn('auditable_type', [
+                                'App\\Models\\NwcReceipt',
+                                'App\\Models\\ShipmentPaymentReceipt',
+                            ])
+                            ->whereIn('auditable_id', function ($inner) use ($branchId) {
+                                $inner->select('id')->from('nwc_receipts')
+                                    ->whereIn('shipment_id', function ($s) use ($branchId) {
+                                        $s->select('id')->from('shipments')->where('branch_id', $branchId);
+                                    });
+                            });
+                    });
+                    // Receipts stored in shipment_payment_receipts table if separate
+                    $q->orWhere(function ($sub) use ($branchId) {
+                        $sub->where('auditable_type', 'App\\Models\\ShipmentPaymentReceipt')
+                            ->whereIn('auditable_id', function ($inner) use ($branchId) {
+                                $inner->select('id')->from('shipment_payment_receipts')
+                                    ->whereIn('shipment_id', function ($s) use ($branchId) {
+                                        $s->select('id')->from('shipments')->where('branch_id', $branchId);
+                                    });
+                            });
+                    });
+                    // Logs performed by users belonging to this branch
+                    $q->orWhere(function ($sub) use ($branchId) {
+                        $sub->whereNotNull('user_id')
+                            ->whereIn('user_id', function ($inner) use ($branchId) {
+                                $inner->select('user_id')->from('branches')->where('id', $branchId);
+                            });
+                    });
+                });
+            }
+        }
+
+        return $query->paginate($perPage);
     }
 }
