@@ -504,6 +504,22 @@
             </div>
 
             <!-- Add Refund Modal -->
+            @php
+                $paidTotalForRefund = null;
+                $chargeLinesForRefund = [];
+                $chargesTotalForRefund = 0.0;
+                $alreadyRefundedForRefund = 0.0;
+                if ($shipment->paid && $shipment->receipt) {
+                    $paidTotalForRefund = (float) $shipment->receipt->total;
+                    $alreadyRefundedForRefund = (float) ($shipment->receipt->refunded_amount ?? 0);
+                    $chargeLinesForRefund = \App\Models\ShipmentChargeLine::where('shipment_id', $shipment->id)
+                        ->orderBy('sort_order')
+                        ->get()
+                        ->map(fn($c) => ['description' => $c->description, 'amount' => (float) $c->amount])
+                        ->toArray();
+                    $chargesTotalForRefund = array_sum(array_column($chargeLinesForRefund, 'amount'));
+                }
+            @endphp
             <div class="modal fade" id="refundModal" tabindex="-1" role="dialog" aria-labelledby="refundLabel"
                 aria-hidden="true">
                 <div class="modal-dialog modal-dialog-centered" role="document">
@@ -593,7 +609,7 @@
                                                 </label>
                                                 <input type="number" class="form-control form-control-lg border-0"
                                                     id="refundAmount" min="0" step="0.01"
-                                                    value="{{ $remainingRefundAmount ?? $totalAmount }}"
+                                                    value="{{ $remainingRefundAmount ?? ($paidTotalForRefund ?? $totalAmount) }}"
                                                     style="background-color: #f8fafc; border-radius: 8px; height: 48px; font-size: 0.95rem;">
                                             </div>
                                         </div>
@@ -604,13 +620,33 @@
                                 <div class="card border-0 shadow-sm rounded-3 p-4 mt-4" style="background-color: white;">
                                     <div class="d-flex justify-content-between mb-3">
                                         <span class="text-muted">Original Payment Amount:</span>
-                                        <span class="fw-medium">{{ number_format($totalAmount, 2) }}</span>
+                                        <span class="fw-medium">{{ number_format($paidTotalForRefund ?? $totalAmount, 2) }}</span>
                                     </div>
+                                    @if (count($chargeLinesForRefund) > 0)
+                                        <div class="mb-2">
+                                            <div class="d-flex justify-content-between text-muted small mb-1">
+                                                <span>Extra Charges:</span>
+                                                <span>{{ number_format($chargesTotalForRefund, 2) }}</span>
+                                            </div>
+                                            @foreach ($chargeLinesForRefund as $cline)
+                                                <div class="d-flex justify-content-between small text-muted">
+                                                    <span>&#8212; {{ e($cline['description']) }}</span>
+                                                    <span>{{ number_format($cline['amount'], 2) }}</span>
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                    @endif
+                                    @if ($alreadyRefundedForRefund > 0)
+                                        <div class="d-flex justify-content-between mb-2 text-muted small">
+                                            <span>Already Refunded:</span>
+                                            <span>-{{ number_format($alreadyRefundedForRefund, 2) }}</span>
+                                        </div>
+                                    @endif
                                     <hr style="opacity: 0.1;">
                                     <div class="d-flex justify-content-between mt-2">
                                         <span class="fw-bold" style="color: #dc2626;">Refund Amount:</span>
                                         <span class="fw-bold fs-5" id="refundSummaryAmount"
-                                            style="color: #dc2626;">{{ number_format($remainingRefundAmount ?? $totalAmount, 2) }}</span>
+                                            style="color: #dc2626;">{{ number_format($remainingRefundAmount ?? $paidTotalForRefund ?? $totalAmount, 2) }}</span>
                                     </div>
                                 </div>
                             </form>
