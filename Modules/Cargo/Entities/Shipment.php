@@ -521,6 +521,14 @@ class Shipment extends Model implements HasMedia
         return $this->hasMany(ShipmentPaymentReceipt::class);
     }
 
+    /**
+     * Repeatable named charge lines recorded at payment time (Confirm Payment modal).
+     */
+    public function chargeLines()
+    {
+        return $this->hasMany(\App\Models\ShipmentChargeLine::class, 'shipment_id')->orderBy('sort_order');
+    }
+
     public function refundRequests()
     {
         return $this->hasMany(RefundRequest::class);

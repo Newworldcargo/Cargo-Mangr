@@ -1945,9 +1945,22 @@ class ShipmentController extends Controller
             'payment_amount'    => 'required|array',
             'payment_amount.*'  => 'numeric|min:0',
             'current_user'      => 'nullable|string|max:255',
+            'charge_description' => 'nullable|array',
+            'charge_description.*' => 'nullable|string|max:255',
+            'charge_amount'      => 'nullable|array',
+            'charge_amount.*'    => 'nullable|numeric|min:0',
         ]);
 
-        // Validate that the arrays have the same length
+        // Validate that the charge arrays have the same length
+        $chargeDescriptions = $request->charge_description ?? [];
+        $chargeAmounts = $request->charge_amount ?? [];
+        if (count($chargeDescriptions) !== count($chargeAmounts)) {
+            return response()->json([
+                'error'   => 'Charge arrays mismatch.',
+                'message' => 'The number of charge descriptions must match the number of charge amounts.'
+            ], 400);
+        }
+        // Validate that the payment arrays have the same length
         if (count($request->method_of_payment) !== count($request->payment_amount)) {
             return response()->json([
                 'error'   => 'Payment arrays mismatch.',
@@ -1976,30 +1989,63 @@ class ShipmentController extends Controller
             if ($discountType === 'percentage') {
                 $discountType = 'percent';
             }
-            $discountValue = $request->discount_value !== null ? (float) $request->discount_value : 0.0;
+            // Server-side charge line total (named extra fees added in the payment modal)
+            $chargeTotal = 0.0;
+            $chargeLines = [];
+            $chargeAmountsLocal = $chargeAmounts;
+            foreach ($chargeDescriptions as $index => $description) {
+                $desc = trim((string) ($description ?? ''));
+                if (!isset($chargeAmountsLocal[$index])) {
+                    continue;
+                }
+                $amount = (float) $chargeAmountsLocal[$index];
+                if ($desc === '' || $amount <= 0) {
+                    continue;
+                }
+                $chargeTotal += $amount;
+                $chargeLines[] = [
+                    'description' => mb_substr($desc, 0, 255),
+                    'amount' => $amount,
+                    'sort_order' => $index,
+                ];
+            }
 
-            $baseAmount = (float) $request->final_total;
+            // Authoritative base amount: shipment collection total (ZMW) + charge lines.
+            // The shipment display converts amount_to_be_collected (USD) to ZMW; charges are ZMW.
+            $shipmentBase = (float) convert_currency($shipment->amount_to_be_collected, 'usd', 'zmw');
+            if (!is_numeric($shipmentBase)) {
+                $sanitized = preg_replace('/[^0-9.\\-]/', '', (string) $shipmentBase);
+                $shipmentBase = $sanitized === '' ? (float) ($shipment->amount_to_be_collected ?? 0) : (float) $sanitized;
+            }
+            $baseAmount = $shipmentBase + $chargeTotal;
+
+            $discountValue = $request->discount_value !== null ? (float) $request->discount_value : 0.0;
             $discountAmount = 0.0;
             $calculatedFinalTotal = $baseAmount;
-
             if ($discountType && $discountValue > 0) {
                 if ($discountType === 'percent') {
                     $discountAmount = ($baseAmount * $discountValue) / 100;
                 } elseif ($discountType === 'fixed') {
                     $discountAmount = $discountValue;
                 }
-
                 $calculatedFinalTotal = max(0, $baseAmount - $discountAmount);
             } else {
                 $discountType = null;
                 $discountValue = 0.0;
             }
-
             if (abs($calculatedFinalTotal - (float) $request->final_total) > 0.01) {
-                throw new \RuntimeException('Final total mismatch with discount calculation.');
-            }
-
-            $shipment->paid = 1;
+                // If the client submitted a final_total, verify it matches the server
+                // recalculation (shipment ZMW + charges) instead of trusting either value.
+                $serverTotal = $calculatedFinalTotal;
+                $clientTotal = (float) $request->final_total;
+                if (abs($serverTotal - $clientTotal) > 0.01) {
+                    throw new \RuntimeException(sprintf(
+                        'Final total mismatch: server recalculated %s, client submitted %s.',
+                        number_format($serverTotal, 2),
+                        number_format($clientTotal, 2)
+                    ));
+                }
+            }            $shipment->paid = 1;
             $shipment->save();
 
             $lastTransaction = Transxn::orderByDesc('id')->first();
@@ -2111,6 +2157,21 @@ class ShipmentController extends Controller
                 'Shipment marked as paid by ' . $cashierName
             );
 
+            // Persist charge lines
+            $chargeLineModels = [];
+            foreach ($chargeLines as $charge) {
+                $chargeLineModels[] = \App\Models\ShipmentChargeLine::create(array_merge(['shipment_id' => $shipment->id], $charge));
+            }
+            foreach ($chargeLineModels as $chargeLine) {
+                $auditLogService->createLog(
+                    'created',
+                    $chargeLine,
+                    null,
+                    [],
+                    $chargeLine->only(['description', 'amount']),
+                    'Charge line recorded for shipment ' . $shipment->code . ' - ' . $chargeLine->description . ': ' . $chargeLine->amount
+                );
+            }
             // Create audit logs for each payment method
             foreach ($paymentReceipts as $paymentReceipt) {
                 $auditLogService->createLog(
@@ -2129,7 +2190,8 @@ class ShipmentController extends Controller
                 'message'         => 'Payment recorded successfully.',
                 'transaction'     => $transaction,
                 'receipt'         => $receipt->only($receiptAttributeKeys),
-                'payment_receipts' => $paymentReceipts
+                'payment_receipts' => $paymentReceipts,
+                'charge_lines'   => $chargeLineModels
             ], 200);
         } catch (\Throwable $th) {
             DB::rollBack();

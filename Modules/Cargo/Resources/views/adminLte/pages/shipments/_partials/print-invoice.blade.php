@@ -34,6 +34,8 @@
         $generatedAt = $storedReceipt?->updated_at ?? $storedReceipt?->created_at;
         $generatedOn = $generatedAt ? $generatedAt->format('F j, Y, g:i a') : now()->format('F j, Y, g:i a');
         $processedBy = $storedReceipt?->user?->name ?? optional(auth()->user())->name ?? 'System';
+        $chargeLines = $shipment->chargeLines ?? \App\Models\ShipmentChargeLine::where('shipment_id', $shipment->id)->orderBy('sort_order')->get();
+        $chargeLinesTotal = $chargeLines->sum('amount');
     @endphp
 
     <!-- Modal for null consignment -->
@@ -262,6 +264,19 @@
                 <div>Processed By:</div>
                 <div>{{ $processedBy }}</div>
             </div>
+            @if ($chargeLinesTotal > 0)
+                <div class="text-sm font-semibold text-primary uppercase tracking-wider px-4 py-2 border-b border-gray-200">Extra Charges</div>
+                @foreach ($chargeLines as $cl)
+                    <div class="flex justify-between px-4 py-1 border-b border-gray-100 text-sm">
+                        <div>{{ $cl->description }}</div>
+                        <div>K{{ number_format($cl->amount, 2) }}</div>
+                    </div>
+                @endforeach
+                <div class="flex justify-between px-4 py-2 border-b border-gray-200">
+                    <div>Extra Charges Total:</div>
+                    <div>K{{ number_format($chargeLinesTotal, 2) }}</div>
+                </div>
+            @endif
             <div class="flex justify-between px-4 py-2 bg-primary text-dark font-bold">
                 <div>Bill (ZMW):</div>
                 <div>K{{ number_format($billKwacha, 2) }}</div>

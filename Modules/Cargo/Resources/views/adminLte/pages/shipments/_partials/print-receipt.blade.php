@@ -6,6 +6,8 @@
 @php
     $nwcReceipt = $shipment->nwcReceipt;
     $latestPaymentReceipt = ($shipment->paymentReceipts ?? collect())->sortByDesc('created_at')->first();
+    $chargeLines = $shipment->chargeLines ?? \App\Models\ShipmentChargeLine::where('shipment_id', $shipment->id)->orderBy('sort_order')->get();
+    $chargeLinesTotal = $chargeLines->sum('amount');
     $receiptUser = $latestPaymentReceipt?->cashier_name
         ?? $nwcReceipt?->cashier_name
         ?? optional($latestPaymentReceipt?->user)->name
@@ -56,7 +58,16 @@
         </p>
         <hr />
         <br />
-        <p>Total: <strong>{{ number_format($shipment?->receipt?->total ?? 0, 2) }}</strong></p>
+        @if ($chargeLinesTotal > 0)
+            <p><strong>Extra Charges:</strong></p>
+            @foreach ($chargeLines as $cl)
+                <p style="display:flex; justify-content:space-between;">
+                    <span>{{ $cl->description }}</span>
+                    <span>{{ number_format($cl->amount, 2) }}</span>
+                </p>
+            @endforeach
+        @endif
+        <p>Total: <strong>{{ number_format(($shipment?->receipt?->total ?? 0) + $chargeLinesTotal, 2) }}</strong></p>
 
         <p style="text-align:center;">Thank you!</p>
     </div>

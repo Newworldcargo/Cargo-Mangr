@@ -327,6 +327,37 @@
                                 </div>
 
                                 <div class="card border-0 shadow-sm rounded-3 p-4 mb-4 bg-white">
+                                    <h6 class="mb-3 text-uppercase" style="color: #0a2463; font-size: 0.85rem; letter-spacing: 0.5px;">
+                                        Extra Charges
+                                    </h6>
+                                    <small class="text-muted d-block mb-3">Optional named fees (e.g. Delivery, Handling) added to the final total.</small>
+
+                                    <div id="charge-rows" class="flex flex-col gap-3">
+                                        <!-- charge rows are added dynamically -->
+                                    </div>
+
+                                    <!-- template for cloned charge rows -->
+                                    <template id="charge-row-tpl">
+                                        <div class="charge-row flex items-center gap-2">
+                                            <input type="text" name="charge_description[]"
+                                                class="form-control border border-slate-200 bg-slate-50 rounded-md h-12 text-[0.95rem] flex-grow-1"
+                                                placeholder="Charge name (e.g. Delivery)" maxlength="255" />
+                                            <input type="number" name="charge_amount[]"
+                                                class="form-control border border-slate-200 bg-slate-50 rounded-md h-12 text-[0.95rem] w-32"
+                                                placeholder="0.00" min="0" step="0.01" />
+                                            <button type="button"
+                                                class="btn btn-sm btn-outline-danger remove-charge rounded-md border border-red-500 text-red-600 font-bold hover:bg-red-50 p-2">&times;</button>
+                                        </div>
+                                    </template>
+
+                                    <button type="button"
+                                        class="btn btn-sm btn-outline-primary mt-3 rounded-md px-3 py-2"
+                                        id="addChargeBtn">
+                                        + Add Charge
+                                    </button>
+                                </div>
+
+                                <div class="card border-0 shadow-sm rounded-3 p-4 mb-4 bg-white">
                                     <h6 class="mb-3 text-uppercase text-[#0a2463] text-[0.85rem] tracking-[0.5px]">Payment
                                         Method</h6>
 
@@ -436,6 +467,10 @@
                                         <span class="text-muted">Original Total:</span>
                                         <span id="originalTotal"
                                             class="fw-medium">{{ number_format($totalAmount, 2) }}</span>
+                                    </div>
+                                    <div id="chargesTotalRow" class="d-flex justify-content-between mb-2 d-none">
+                                        <span class="text-muted">Extra Charges:</span>
+                                        <span id="chargesTotal" class="fw-medium">0.00</span>
                                     </div>
                                     <hr style="opacity: 0.1;">
                                     <div class="d-flex justify-content-between mt-2">
@@ -844,6 +879,10 @@
 
                     const paymentsContainer = document.getElementById('payment-rows');
                     const paymentTpl = document.getElementById('payment-row-tpl') ? document.getElementById('payment-row-tpl').content : null;
+                    const chargesContainer = document.getElementById('charge-rows');
+                    const chargeTpl = document.getElementById('charge-row-tpl') ? document.getElementById('charge-row-tpl').content : null;
+                    const chargesTotalRow = document.getElementById('chargesTotalRow');
+                    const chargesTotalEl = document.getElementById('chargesTotal');
                     const confirmBtn = document.getElementById('confirmMarkPaidBtn');
                     const form = document.getElementById('markPaidForm');
 
@@ -918,15 +957,37 @@
                     }
 
                     // Update final total based on discount inputs
+                    function updateChargesTotal() {
+                        if (!chargesContainer) return 0;
+                        const descInputs = chargesContainer.querySelectorAll('input[name="charge_description[]"]');
+                        const amtInputs = chargesContainer.querySelectorAll('input[name="charge_amount[]"]');
+                        let total = 0;
+                        descInputs.forEach((d, i) => {
+                            if (d.value.trim() === '' || !amtInputs[i]) return;
+                            const v = parseFloat(amtInputs[i].value);
+                            if (!isNaN(v) && isFinite(v)) total += v;
+                        });
+                        if (chargesTotalRow && chargesTotalEl) {
+                            chargesTotalEl.textContent = fmt(total);
+                            if (total > 0) {
+                                chargesTotalRow.classList.remove('d-none');
+                            } else {
+                                chargesTotalRow.classList.add('d-none');
+                            }
+                        }
+                        return total;
+                    }
+
                     function updateFinalTotal() {
                         const discountType = discountTypeEl ? discountTypeEl.value : '';
                         const discountValue = discountValueEl ? (parseFloat(discountValueEl.value) || 0) : 0;
-                        let final = originalTotal;
+                        const chargesTotal = updateChargesTotal();
+                        let final = originalTotal + chargesTotal;
 
                         if (discountType === 'fixed') {
-                            final = Math.max(0, originalTotal - discountValue);
+                            final = Math.max(0, final - discountValue);
                         } else if (discountType === 'percent') {
-                            final = originalTotal * (1 - (discountValue / 100));
+                            final = final * (1 - (discountValue / 100));
                         }
 
                         // Update percent symbol visibility if present
@@ -937,6 +998,29 @@
 
                         finalTotalEl.textContent = fmt(final);
                         return final;
+                    }
+
+                    // Charge row handlers: add a new row via #addChargeBtn; remove via .remove-charge
+                    if (chargesContainer && chargeTpl && document.getElementById('addChargeBtn')) {
+                        document.getElementById('addChargeBtn').addEventListener('click', function () {
+                            const clone = document.importNode(chargeTpl, true);
+                            chargesContainer.appendChild(clone);
+                            const desc = chargesContainer.querySelector('.charge-row:last-of-type input[name="charge_description[]"]');
+                            if (desc) desc.focus();
+                            updateRemainingAndValidation();
+                        });
+
+                        chargesContainer.addEventListener('click', function (ev) {
+                            const removeBtn = ev.target.closest('.remove-charge');
+                            if (!removeBtn) return;
+                            const row = removeBtn.closest('.charge-row');
+                            if (row) row.remove();
+                            updateRemainingAndValidation();
+                        });
+
+                        chargesContainer.addEventListener('input', function () {
+                            updateRemainingAndValidation();
+                        });
                     }
 
                     // Update payments total from all amount inputs
@@ -1091,6 +1175,21 @@
                         const discountValue = discountValueEl ? parseFloat(discountValueEl.value) || 0 : 0;
                         const finalTotal = finalTotalEl ? parseFloat(finalTotalEl.textContent) : window.originalTotal;
                         
+                        // Collect named extra charge lines
+                        const chargeDescriptions = [];
+                        const chargeAmounts = [];
+                        const chargeDescInputs = chargesContainer ? chargesContainer.querySelectorAll('input[name="charge_description[]"]') : [];
+                        const chargeAmtInputs = chargesContainer ? chargesContainer.querySelectorAll('input[name="charge_amount[]"]') : [];
+                        chargeDescInputs.forEach((d, i) => {
+                            const desc = d.value.trim();
+                            if (!desc || !chargeAmtInputs[i]) return;
+                            const amount = parseFloat(chargeAmtInputs[i].value) || 0;
+                            if (amount > 0) {
+                                chargeDescriptions.push(desc);
+                                chargeAmounts.push(amount);
+                            }
+                        });
+                        
                         // Get multiple payment methods and amounts
                         const paymentMethods = [];
                         const paymentAmounts = [];
@@ -1161,6 +1260,8 @@
                                 final_total: finalTotal,
                                 method_of_payment: paymentMethods,
                                 payment_amount: paymentAmounts,
+                                charge_description: chargeDescriptions,
+                                charge_amount: chargeAmounts,
                                 current_user: '{{ auth()->user()->name ?? 'System' }}',
                             })
                         })

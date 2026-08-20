@@ -88,7 +88,13 @@ class RatesService
             $existing = CurrencyExchangeRate::where('from_currency', 'USD')
                 ->where('to_currency', $target)
                 ->first();
-
+            // The USD->ZMW row (id 1) carries the manually locked bank rate
+            // (Access Bank Zambia retail sell, ~19.07). Automated market feeds
+            // must never overwrite it; keep $skipped honest by counting it.
+            if ($existing && (int) $existing->id === 1) {
+                $skipped++;
+                continue;
+            }
             if ($existing && (float) $existing->exchange_rate === $rate) {
                 $skipped++;
                 continue;
