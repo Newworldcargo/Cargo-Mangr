@@ -1020,6 +1020,7 @@
 
                         chargesContainer.addEventListener('input', function () {
                             updateRemainingAndValidation();
+                            autofillPaymentAmount();
                         });
                     }
 
@@ -1033,6 +1034,39 @@
                         });
                         if (paymentsTotalEl) paymentsTotalEl.textContent = fmt(total);
                         return total;
+                    }
+
+                    // Auto-fill the (last) payment amount so it always covers the final total —
+                    // including any added charge lines. Works in two ways:
+                    //  1. When a charge line is added/edited, the last payment amount is adjusted
+                    //     by the same delta so payments keep matching the new total.
+                    //  2. When the last payment amount input is left empty/zero, it is filled with
+                    //     the full remaining final total (charges included).
+                    let lastFinalTotal = null;
+                    function autofillPaymentAmount() {
+                        const amountInputs = Array.from(paymentsContainer.querySelectorAll('input[name="payment_amount[]"]'));
+                        if (amountInputs.length === 0) return;
+                        const final = updateFinalTotal();
+                        const paymentsTotal = updatePaymentsTotal();
+                        const remaining = final - paymentsTotal;
+                        const lastInput = amountInputs[amountInputs.length - 1];
+                        const cur = parseFloat(lastInput.value);
+
+                        // Delta adjustment when the final total changed (charges/discount edited)
+                        if (lastFinalTotal !== null && lastFinalTotal !== final) {
+                            if (!isNaN(cur) && isFinite(cur)) {
+                                lastInput.value = fmt(Math.max(0, cur + (final - lastFinalTotal)));
+                                lastFinalTotal = final;
+                                updateRemainingAndValidation();
+                                return;
+                            }
+                        }
+                        lastFinalTotal = final;
+
+                        // Fill empty/zero last amount with the remaining final total
+                        if (isNaN(cur) || !isFinite(cur) || Math.abs(cur) < 0.005) {
+                            lastInput.value = fmt(Math.max(0, remaining));
+                        }
                     }
 
                     // Update remaining (final - payments), color it red when under- or over-paid, green when exact
@@ -1130,6 +1164,7 @@
                     paymentsContainer.addEventListener('input', function (ev) {
                         if (ev.target && ev.target.matches('input[name="payment_amount[]"]')) {
                             updateRemainingAndValidation();
+                            autofillPaymentAmount();
                         }
                     });
 
@@ -1143,6 +1178,9 @@
                     // Discount inputs change handlers
                     if (discountTypeEl) discountTypeEl.addEventListener('change', updateRemainingAndValidation);
                     if (discountValueEl) discountValueEl.addEventListener('input', updateRemainingAndValidation);
+
+                    // Auto-fill payment amount with final total (incl. charges) when modal opens
+                    autofillPaymentAmount();
 
                     // Prevent form submission unless payments exactly match final total
                     form.addEventListener('submit', function (ev) {
