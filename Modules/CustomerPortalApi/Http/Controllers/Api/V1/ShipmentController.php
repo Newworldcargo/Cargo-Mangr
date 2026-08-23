@@ -19,7 +19,7 @@ class ShipmentController extends PortalController
         $perPage = min(max((int) $request->query('per_page', 20), 1), config('customerportalapi.max_per_page', 50));
         $query = Shipment::query()
             ->where('client_id', $client->id)
-            ->with(['consignment.trackingHistory'])
+            ->with(['consignment.trackingHistory', 'from_address', 'packages'])
             ->orderByDesc('updated_at')
             ->orderByDesc('id');
 
@@ -58,7 +58,7 @@ class ShipmentController extends PortalController
         $model = Shipment::query()
             ->where('client_id', $client->id)
             ->where('id', $shipment)
-            ->with(['consignment.trackingHistory'])
+            ->with(['consignment.trackingHistory', 'from_address', 'packages'])
             ->first();
 
         if (!$model) {
@@ -72,7 +72,7 @@ class ShipmentController extends PortalController
     {
         $shipment = Shipment::query()
             ->where('code', $trackingNumber)
-            ->with(['consignment.trackingHistory'])
+            ->with(['consignment.trackingHistory', 'from_address', 'packages'])
             ->first();
 
         if (!$shipment) {

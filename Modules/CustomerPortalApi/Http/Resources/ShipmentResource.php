@@ -21,9 +21,9 @@ class ShipmentResource extends JsonResource
             'trackingNumber' => (string) $this->code,
             'carrier' => optional($consignment)->shipping_line,
             'transportMode' => $mode,
-            'packageName' => $this->description,
-            'origin' => optional($consignment)->source ?: $this->getRawOriginal('from_address'),
-            'destination' => optional($consignment)->destination ?: $this->getRawOriginal('to_address'),
+            'packageName' => $this->packageName(),
+            'origin' => optional($consignment)->source ?: $this->originAddress(),
+            'destination' => optional($consignment)->destination ?: $this->getRawOriginal('reciver_address'),
             'etaAt' => $this->isoDate(optional($consignment)->eta),
             'etaLabel' => $this->displayDate(optional($consignment)->eta),
             'status' => $status['status'],
@@ -39,6 +39,25 @@ class ShipmentResource extends JsonResource
             'allowedActions' => [],
             'revision' => (int) ($this->revision ?: 1),
         ];
+    }
+
+    private function packageName()
+    {
+        if ($this->relationLoaded('packages') && $this->packages->isNotEmpty()) {
+            $package = $this->packages->first();
+            return optional($package->pivot)->description ?: $package->name;
+        }
+
+        return null;
+    }
+
+    private function originAddress()
+    {
+        if ($this->relationLoaded('from_address') && $this->from_address) {
+            return $this->from_address->address;
+        }
+
+        return $this->getRawOriginal('client_address');
     }
 
     private function isoDate($value)
