@@ -4,14 +4,23 @@ use Illuminate\Support\Facades\Route;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\AddressController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\AuthController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\HealthController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\InvoiceController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\NotificationController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ReferenceDataController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ShipmentController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ProfileController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\PickupController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ReturnController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\SupportController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\RecipientController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\SessionController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\WalletController;
 use Modules\CustomerPortalApi\Http\Middleware\PortalAuthenticate;
 
 Route::get('healthz', [HealthController::class, 'health']);
 Route::get('readyz', [HealthController::class, 'ready']);
+Route::get('reference-data', [ReferenceDataController::class, 'show'])
+    ->middleware('throttle:customer-portal');
 
 Route::post('auth/login', [AuthController::class, 'login'])
     ->middleware('throttle:customer-portal');
@@ -41,6 +50,28 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
     Route::get('recipients/{recipient}', [RecipientController::class, 'show'])->whereNumber('recipient');
     Route::patch('recipients/{recipient}', [RecipientController::class, 'update'])->whereNumber('recipient');
     Route::delete('recipients/{recipient}', [RecipientController::class, 'destroy'])->whereNumber('recipient');
+
+    Route::get('invoices', [InvoiceController::class, 'index']);
+    Route::get('invoices/{invoice}', [InvoiceController::class, 'show'])->whereNumber('invoice');
+    Route::get('wallet', [WalletController::class, 'show']);
+    Route::get('wallet/transactions', [WalletController::class, 'transactions']);
+
+    Route::get('notifications', [NotificationController::class, 'index']);
+    Route::patch('notifications/{notification}/read', [NotificationController::class, 'read']);
+    Route::post('notifications/read-all', [NotificationController::class, 'readAll']);
+
+    Route::get('support/cases', [SupportController::class, 'index']);
+    Route::post('support/cases', [SupportController::class, 'store']);
+    Route::get('support/cases/{case}', [SupportController::class, 'show'])->whereNumber('case');
+
+    Route::get('returns', [ReturnController::class, 'index']);
+    Route::post('returns', [ReturnController::class, 'store']);
+    Route::get('returns/{return}', [ReturnController::class, 'show'])->whereNumber('return');
+    Route::post('returns/{return}/cancel', [ReturnController::class, 'cancel'])->whereNumber('return');
+
+    Route::get('pickups/current', [PickupController::class, 'current']);
+    Route::post('pickups', [PickupController::class, 'store']);
+    Route::post('pickups/{pickup}/cancel', [PickupController::class, 'cancel'])->whereNumber('pickup');
 
     Route::get('shipments', [ShipmentController::class, 'index']);
     Route::get('shipments/{shipment}', [ShipmentController::class, 'show'])->whereNumber('shipment');

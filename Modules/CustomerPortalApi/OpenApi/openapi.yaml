@@ -124,6 +124,134 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ApiSuccessAuthUser'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
+  /reference-data:
+    get:
+      tags: [Health]
+      operationId: referenceData
+      responses:
+        '200':
+          description: Cacheable offices, delivery, and transport options.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessReferenceData'}
+  /invoices:
+    get:
+      tags: [Finance]
+      security: [{cookieAuth: []}]
+      operationId: listInvoices
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [paid, unpaid]}}
+      responses:
+        '200':
+          description: Customer-owned invoices.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/InvoiceDto'}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /invoices/{invoice}:
+    get:
+      tags: [Finance]
+      security: [{cookieAuth: []}]
+      operationId: showInvoice
+      parameters:
+        - {name: invoice, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Customer-owned invoice.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/InvoiceDto'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /wallet:
+    get:
+      tags: [Finance]
+      security: [{cookieAuth: []}]
+      operationId: wallet
+      responses:
+        '200':
+          description: Customer wallet.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/WalletDto'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /wallet/transactions:
+    get:
+      tags: [Finance]
+      security: [{cookieAuth: []}]
+      operationId: walletTransactions
+      responses:
+        '200':
+          description: Customer wallet ledger entries.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/WalletLedgerEntry'}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /notifications:
+    get:
+      tags: [Notifications]
+      security: [{cookieAuth: []}]
+      operationId: notifications
+      responses:
+        '200':
+          description: Customer notifications.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/NotificationDto'}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /notifications/{notification}/read:
+    patch:
+      tags: [Notifications]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: readNotification
+      parameters:
+        - {name: notification, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Notification marked read.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/NotificationDto'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /notifications/read-all:
+    post:
+      tags: [Notifications]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: readAllNotifications
+      responses:
+        '204': {description: Notifications marked read.}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
   /profile:
     get:
       tags: [Auth]
@@ -349,6 +477,199 @@ paths:
         '404': {$ref: '#/components/responses/Problem'}
         '409': {$ref: '#/components/responses/Problem'}
         '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /support/cases:
+    get:
+      tags: [Support]
+      security: [{cookieAuth: []}]
+      operationId: supportCases
+      responses:
+        '200':
+          description: Customer support cases.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/SupportCaseDto'}}
+    post:
+      tags: [Support]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createSupportCase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SupportCaseInput'}
+      responses:
+        '201':
+          description: Support case created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/SupportCaseDto'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /support/cases/{case}:
+    get:
+      tags: [Support]
+      security: [{cookieAuth: []}]
+      operationId: showSupportCase
+      parameters:
+        - {name: case, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Customer support case.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/SupportCaseDto'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /returns:
+    get:
+      tags: [Returns]
+      security: [{cookieAuth: []}]
+      operationId: returns
+      responses:
+        '200':
+          description: Customer return requests.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/ReturnRequestDto'}}
+    post:
+      tags: [Returns]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createReturn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReturnRequestInput'}
+      responses:
+        '201':
+          description: Return request created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ReturnRequestDto'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /returns/{return}:
+    get:
+      tags: [Returns]
+      security: [{cookieAuth: []}]
+      operationId: showReturn
+      parameters:
+        - {name: return, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Customer return request.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ReturnRequestDto'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /returns/{return}/cancel:
+    post:
+      tags: [Returns]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: cancelReturn
+      parameters:
+        - {name: return, in: path, required: true, schema: {type: integer}}
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      responses:
+        '200':
+          description: Return request cancelled.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ReturnRequestDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /pickups/current:
+    get:
+      tags: [Pickups]
+      security: [{cookieAuth: []}]
+      operationId: currentPickup
+      responses:
+        '200':
+          description: Current customer pickup or null.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/PickupDto'}
+  /pickups:
+    post:
+      tags: [Pickups]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createPickup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PickupInput'}
+      responses:
+        '201':
+          description: Pickup created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/PickupDto'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /pickups/{pickup}/cancel:
+    post:
+      tags: [Pickups]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: cancelPickup
+      parameters:
+        - {name: pickup, in: path, required: true, schema: {type: integer}}
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      responses:
+        '200':
+          description: Pickup cancelled.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/PickupDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
   /shipments:
     get:
       tags: [Shipments]
@@ -455,6 +776,162 @@ components:
         - {$ref: '#/components/schemas/ApiSuccess'}
         - type: object
           properties: {data: {type: 'null'}}
+    SupportCaseInput:
+      type: object
+      required: [category, subject, detail]
+      properties:
+        category: {type: string}
+        subject: {type: string}
+        detail: {type: string}
+        shipmentNumber: {type: string, nullable: true}
+    SupportCaseDto:
+      allOf:
+        - {$ref: '#/components/schemas/SupportCaseInput'}
+        - type: object
+          required: [id, customerId, status, revision]
+          properties:
+            id: {type: string}
+            customerId: {type: string}
+            status: {type: string, enum: [open, in_review, resolved]}
+            createdAt: {type: string, format: date-time, nullable: true}
+            displayCreatedAt: {type: string, nullable: true}
+            attachmentFileId: {type: string, nullable: true}
+            revision: {type: integer, minimum: 1}
+    ReturnRequestInput:
+      type: object
+      required: [shipmentId, reason, handover]
+      properties:
+        shipmentId: {type: integer}
+        reason: {type: string}
+        handover: {type: string, enum: [pickup, drop_off]}
+    ReturnRequestDto:
+      allOf:
+        - {$ref: '#/components/schemas/ReturnRequestInput'}
+        - type: object
+          required: [id, customerId, trackingNumber, status, revision]
+          properties:
+            id: {type: string}
+            customerId: {type: string}
+            trackingNumber: {type: string, nullable: true}
+            status: {type: string}
+            displayStatus: {type: string}
+            createdAt: {type: string, format: date-time, nullable: true}
+            revision: {type: integer, minimum: 1}
+    PickupInput:
+      type: object
+      required: [collectionPoint]
+      properties:
+        shipmentId: {type: integer, nullable: true}
+        collectionPoint: {type: string}
+        scheduledDate: {type: string, format: date, nullable: true}
+        scheduledTime: {type: string, nullable: true}
+    PickupDto:
+      allOf:
+        - {$ref: '#/components/schemas/PickupInput'}
+        - type: object
+          required: [id, customerId, status, revision]
+          properties:
+            id: {type: string}
+            customerId: {type: string}
+            status: {type: string}
+            revision: {type: integer, minimum: 1}
+    ApiSuccessReferenceData:
+      allOf:
+        - {$ref: '#/components/schemas/ApiSuccess'}
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [offices, deliveryOptions, transportOptions]
+              properties:
+                offices: {type: array, items: {$ref: '#/components/schemas/OfficeDto'}}
+                deliveryOptions: {type: array, items: {$ref: '#/components/schemas/DeliveryOptionDto'}}
+                transportOptions: {type: array, items: {$ref: '#/components/schemas/TransportOptionDto'}}
+    OfficeDto:
+      type: object
+      required: [id, name, address, detail]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        address: {type: string, nullable: true}
+        detail: {type: string, nullable: true}
+    DeliveryOptionDto:
+      type: object
+      required: [id, name, detail, eta, price, recommended]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        detail: {type: string, nullable: true}
+        eta: {type: string, nullable: true}
+        price: {$ref: '#/components/schemas/Money'}
+        recommended: {type: boolean}
+    TransportOptionDto:
+      type: object
+      required: [id, name, detail, eta]
+      properties:
+        id: {type: string, enum: [air, sea]}
+        name: {type: string}
+        detail: {type: string, nullable: true}
+        eta: {type: string, nullable: true}
+    InvoiceDto:
+      type: object
+      required: [id, customerId, invoiceNumber, status, total, lineItems, revision]
+      properties:
+        id: {type: string}
+        customerId: {type: string}
+        invoiceNumber: {type: string}
+        shipmentId: {type: string, nullable: true}
+        shipmentLabel: {type: string, nullable: true}
+        route: {type: object, additionalProperties: true}
+        issuedAt: {type: string, format: date-time, nullable: true}
+        issuedAtLabel: {type: string, nullable: true}
+        dueAt: {type: string, format: date-time, nullable: true}
+        dueAtLabel: {type: string, nullable: true}
+        status: {type: string, enum: [paid, unpaid]}
+        total: {$ref: '#/components/schemas/Money'}
+        lineItems: {type: array, items: {type: object, additionalProperties: true}}
+        paymentMethod: {type: string, nullable: true}
+        paidAt: {type: string, format: date-time, nullable: true}
+        paidAtLabel: {type: string, nullable: true}
+        revision: {type: integer, minimum: 1}
+    WalletDto:
+      type: object
+      required: [id, customerId, currency, availableBalance, pendingBalance, status, revision]
+      properties:
+        id: {type: string}
+        customerId: {type: string}
+        currency: {type: string}
+        availableBalance: {$ref: '#/components/schemas/Money'}
+        pendingBalance: {$ref: '#/components/schemas/Money'}
+        status: {type: string, enum: [active, restricted, closed]}
+        updatedAt: {type: string, format: date-time, nullable: true}
+        revision: {type: integer, minimum: 1}
+    WalletLedgerEntry:
+      type: object
+      required: [id, type, status, bucket, amount]
+      properties:
+        id: {type: string}
+        type: {type: string}
+        status: {type: string}
+        bucket: {type: string}
+        amount: {$ref: '#/components/schemas/Money'}
+        referenceType: {type: string, nullable: true}
+        referenceId: {type: string, nullable: true}
+        createdAt: {type: string, format: date-time, nullable: true}
+    NotificationDto:
+      type: object
+      required: [id, customerId, type, title, body, unread, revision]
+      properties:
+        id: {type: string}
+        customerId: {type: string}
+        type: {type: string, enum: [progress, arrival, exception, payment]}
+        title: {type: string}
+        body: {type: string}
+        occurredAt: {type: string, format: date-time, nullable: true}
+        displayTime: {type: string}
+        shipmentId: {type: string, nullable: true}
+        unread: {type: boolean}
+        revision: {type: integer, minimum: 1}
     AddressInput:
       type: object
       required: [address, countryId, stateId]
