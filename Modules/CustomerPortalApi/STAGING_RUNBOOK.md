@@ -1,0 +1,80 @@
+# Customer Portal API Staging Runbook
+
+This runbook is for the branch `feature/customer-portal-api-v1` and the draft pull request [#25](https://github.com/Newworldcargo/Cargo-Mangr/pull/25). It is intentionally staging-only. Do not run the migration or switch the React island to HTTP mode against production until the acceptance gates pass.
+
+## 1. Prepare staging
+
+Use a sanitized database cloned from production structure with anonymized customer, shipment, address, recipient, and financial records. Do not copy passwords, OTP values, session records, Composer credentials, webhook secrets, private files, or payment-provider tokens.
+
+Install the project dependencies using the normal authorized Composer package credentials. The repository currently has no `composer.lock` in the public source and references a private Composer distribution package, so dependency installation must happen in the project’s controlled development environment.
+
+Set the following non-secret values in the staging environment:
+
+```dotenv
+APP_ENV=staging
+APP_DEBUG=false
+INSTALLATION=true
+CUSTOMER_PORTAL_API_ALLOWED_ORIGINS=https://portal-staging.example.com
+CUSTOMER_PORTAL_API_MAX_PER_PAGE=50
+CUSTOMER_PORTAL_API_RATE_LIMIT=60
+CUSTOMER_PORTAL_PUBLIC_TRACKING_RATE=30
+CUSTOMER_PORTAL_COOKIE_SECURE=true
+CUSTOMER_PORTAL_COOKIE_SAME_SITE=lax
+```
+
+Use the project’s existing `APP_KEY`, database, mail, storage, and provider configuration only through the secret manager. Never copy the public repository’s former `.env.example` values into staging.
+
+## 2. Deploy and migrate
+
+Deploy the feature branch to staging using the project’s normal release process. Verify the application reports the expected commit before migrating.
+
+```bash
+php artisan migrate:status
+php artisan migrate --force
+php artisan route:list --path=api/v1
+php artisan config:clear
+php artisan config:cache
+```
+
+The portal migrations add `revision` columns and indexes to `shipments`, `client_addresses`, and `receivers`. Confirm the migration SQL on staging first and take a verified backup before running it. The migrations are additive and use `Schema::hasColumn` guards, but the deployment still needs the project’s normal rollback procedure.
+
+## 3. Browser/session smoke test
+
+From the React staging origin, request the API base URL with credentials included. First obtain the Laravel session/CSRF cookies using the application’s CSRF bootstrap behavior. Then call login/register/verify as defined by the React adapter. For unsafe authenticated calls, echo the readable `nwc_csrf` value in `X-CSRF-Token`.
+
+Expected behavior:
+
+| Check | Expected result |
+|---|---|
+| `GET /api/v1/healthz` | `200`, `data.status=ok`, and `X-Request-ID`. |
+| `GET /api/v1/readyz` | `200` only when staging is ready. |
+| Missing session on `GET /api/v1/session` | JSON `401` with `error.code=UNAUTHENTICATED`. |
+| Customer login | JSON `200`, session cookie, no token field, and request ID. |
+| Unverified customer login | JSON `403` with `CONTACT_UNVERIFIED`. |
+| Customer shipment list | Only the authenticated customer’s shipments. |
+| Other customer shipment by ID | JSON `404`; do not reveal ownership. |
+| Missing CSRF on logout/address/recipient writes | JSON `419` with `CSRF_TOKEN_MISMATCH`. |
+| Public tracking | Reduced DTO without customer ID, price, or allowed actions. |
+| Wrong origin | No credentialed CORS access. |
+
+## 4. Required security tests
+
+Create two staging test customers and at least one shipment, address, and recipient for each. Test cross-customer reads, updates, deletes, file access, and future workflow actions. Verify that setting `customerId`, `client_id`, `user_id`, or `branch_id` in a request cannot move ownership to another customer.
+
+Test address and recipient updates with an old `revision`/`If-Match` value and expect `409 REVISION_CONFLICT`. Test default-address changes concurrently and verify that at most one active address per customer remains default.
+
+Test login, registration, and verification rate limits with repeated failures. Confirm no password, OTP, session token, payment credential, Composer credential, or raw SQL/provider error appears in application logs or JSON responses.
+
+## 5. React activation gate
+
+Keep the React island in mock mode until the following are attached to the pull request:
+
+- OpenAPI validation output.
+- Frontend DTO/Zod compatibility output.
+- Feature-test output from the controlled Composer environment.
+- Cross-customer authorization test output.
+- Browser cookie/CSRF/CORS smoke-test output.
+- Migration and rollback rehearsal output.
+- Staging error-rate and latency observations.
+
+Only after approval should staging set `VITE_NWC_DATA_MODE=http` and the staging API base URL. Production activation requires a separate approval, a backup, a migration window, health checks, monitoring, and a documented rollback.
