@@ -1,0 +1,1506 @@
+openapi: 3.1.0
+info:
+  title: New World Cargo Customer Portal API
+  version: 1.0.0
+  description: Versioned customer-owned API for the separate React customer island.
+servers:
+  - url: https://api.example.com/api/v1
+    description: Configure per environment.
+tags:
+  - name: Health
+  - name: Auth
+  - name: Shipments
+  - name: Public Tracking
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      operationId: health
+      responses:
+        '200':
+          description: API process is alive.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessHealth'}
+  /readyz:
+    get:
+      tags: [Health]
+      operationId: ready
+      responses:
+        '200':
+          description: API is ready for traffic.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessHealth'}
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier, password]
+              properties:
+                identifier: {type: string, maxLength: 255}
+                password: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: Customer session created.
+          headers:
+            Set-Cookie: {schema: {type: string}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessAuthUser'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /auth/register:
+    post:
+      tags: [Auth]
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [firstName, email, phone, password]
+              properties:
+                firstName: {type: string, minLength: 2, maxLength: 80}
+                lastName: {type: string, maxLength: 80}
+                email: {type: string, format: email}
+                phone: {type: string, maxLength: 30}
+                password: {type: string, minLength: 8}
+      responses:
+        '201':
+          description: Customer account created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessAuthUser'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /auth/verify:
+    post:
+      tags: [Auth]
+      operationId: verify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: {type: string, pattern: '^[0-9]{6}$'}
+      responses:
+        '200':
+          description: Contact verified.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessNull'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /auth/logout:
+    post:
+      tags: [Auth]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: logout
+      responses:
+        '204': {description: Session revoked.}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /session:
+    get:
+      tags: [Auth]
+      security: [{cookieAuth: []}]
+      operationId: session
+      responses:
+        '200':
+          description: Current authenticated customer.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessAuthUser'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /reference-data:
+    get:
+      tags: [Health]
+      operationId: referenceData
+      responses:
+        '200':
+          description: Cacheable offices, delivery, and transport options.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessReferenceData'}
+  /invoices:
+    get:
+      tags: [Finance]
+      security: [{cookieAuth: []}]
+      operationId: listInvoices
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [paid, unpaid]}}
+      responses:
+        '200':
+          description: Customer-owned invoices.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/InvoiceDto'}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /invoices/{invoice}:
+    get:
+      tags: [Finance]
+      security: [{cookieAuth: []}]
+      operationId: showInvoice
+      parameters:
+        - {name: invoice, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Customer-owned invoice.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/InvoiceDto'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /wallet:
+    get:
+      tags: [Finance]
+      security: [{cookieAuth: []}]
+      operationId: wallet
+      responses:
+        '200':
+          description: Customer wallet.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/WalletDto'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /wallet/transactions:
+    get:
+      tags: [Finance]
+      security: [{cookieAuth: []}]
+      operationId: walletTransactions
+      responses:
+        '200':
+          description: Customer wallet ledger entries.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/WalletLedgerEntry'}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /notifications:
+    get:
+      tags: [Notifications]
+      security: [{cookieAuth: []}]
+      operationId: notifications
+      responses:
+        '200':
+          description: Customer notifications.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/NotificationDto'}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /notifications/{notification}/read:
+    patch:
+      tags: [Notifications]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: readNotification
+      parameters:
+        - {name: notification, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Notification marked read.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/NotificationDto'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /notifications/read-all:
+    post:
+      tags: [Notifications]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: readAllNotifications
+      responses:
+        '204': {description: Notifications marked read.}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /profile:
+    get:
+      tags: [Auth]
+      security: [{cookieAuth: []}]
+      operationId: profile
+      responses:
+        '200':
+          description: Current authenticated customer profile.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessAuthUser'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    patch:
+      tags: [Auth]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: updateProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                firstName: {type: string, minLength: 2, maxLength: 80}
+                lastName: {type: string, maxLength: 80}
+                phone: {type: string, maxLength: 30}
+      responses:
+        '200':
+          description: Updated customer profile.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessAuthUser'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /addresses:
+    get:
+      tags: [Auth]
+      security: [{cookieAuth: []}]
+      operationId: listAddresses
+      responses:
+        '200':
+          description: Customer-owned addresses.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/AddressDto'}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    post:
+      tags: [Auth]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createAddress
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AddressInput'}
+      responses:
+        '201':
+          description: Address created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/AddressDto'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /addresses/{address}:
+    parameters:
+      - {name: address, in: path, required: true, schema: {type: integer}}
+    get:
+      tags: [Auth]
+      security: [{cookieAuth: []}]
+      operationId: showAddress
+      responses:
+        '200':
+          description: Customer-owned address.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/AddressDto'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/Problem'}
+    patch:
+      tags: [Auth]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: updateAddress
+      parameters:
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AddressInput'}
+      responses:
+        '200':
+          description: Address updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/AddressDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+    delete:
+      tags: [Auth]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: deleteAddress
+      parameters:
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      responses:
+        '204': {description: Address archived.}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /recipients:
+    get:
+      tags: [Auth]
+      security: [{cookieAuth: []}]
+      operationId: listRecipients
+      responses:
+        '200':
+          description: Customer-owned recipients.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/RecipientDto'}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    post:
+      tags: [Auth]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createRecipient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RecipientInput'}
+      responses:
+        '201':
+          description: Recipient created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/RecipientDto'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /recipients/{recipient}:
+    parameters:
+      - {name: recipient, in: path, required: true, schema: {type: integer}}
+    get:
+      tags: [Auth]
+      security: [{cookieAuth: []}]
+      operationId: showRecipient
+      responses:
+        '200':
+          description: Customer-owned recipient.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/RecipientDto'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/Problem'}
+    patch:
+      tags: [Auth]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: updateRecipient
+      parameters:
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RecipientInput'}
+      responses:
+        '200':
+          description: Recipient updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/RecipientDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+    delete:
+      tags: [Auth]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: deleteRecipient
+      parameters:
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      responses:
+        '204': {description: Recipient archived.}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /shipments/{shipment}/actions:
+    post:
+      tags: [Shipments]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: shipmentAction
+      parameters:
+        - {name: shipment, in: path, required: true, schema: {type: integer}}
+        - {name: If-Match, in: header, required: true, schema: {type: string}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: {type: string}
+      responses:
+        '200':
+          description: Shipment action result.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ShipmentDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /shipments/{shipment}/delivery:
+    parameters:
+      - {name: shipment, in: path, required: true, schema: {type: integer}}
+    get:
+      tags: [Shipments]
+      security: [{cookieAuth: []}]
+      operationId: shipmentDelivery
+      responses:
+        '200':
+          description: Customer delivery details.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/DeliveryDto'}
+        '404': {$ref: '#/components/responses/Problem'}
+    patch:
+      tags: [Shipments]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: updateShipmentDelivery
+      parameters:
+        - {name: If-Match, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeliveryInput'}
+      responses:
+        '200':
+          description: Delivery details updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/DeliveryDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /shipments/{shipment}/proof-of-delivery:
+    get:
+      tags: [Shipments]
+      security: [{cookieAuth: []}]
+      operationId: proofOfDelivery
+      parameters:
+        - {name: shipment, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Customer-safe proof of delivery or null.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ProofOfDeliveryDto'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /files/upload-intents:
+    post:
+      tags: [Files]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createUploadIntent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UploadIntentInput'}
+      responses:
+        '201':
+          description: Signed upload intent created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/UploadIntentDto'}
+        '413': {$ref: '#/components/responses/Problem'}
+        '415': {$ref: '#/components/responses/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /files/{fileId}/complete:
+    post:
+      tags: [Files]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: completeUpload
+      parameters:
+        - {name: fileId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '202':
+          description: Upload accepted for scanning.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/UploadedFileDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '413': {$ref: '#/components/responses/Problem'}
+  /payments/intents:
+    post:
+      tags: [Payments]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createPaymentIntent
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [invoiceId, method]
+              properties:
+                invoiceId: {type: integer}
+                method: {type: string, enum: [mobile-money, card]}
+      responses:
+        '201':
+          description: Payment intent created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/PaymentIntentDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /payments/intents/{intent}:
+    get:
+      tags: [Payments]
+      security: [{cookieAuth: []}]
+      operationId: showPaymentIntent
+      parameters:
+        - {name: intent, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Payment intent status.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/PaymentIntentDto'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /shipment-drafts:
+    get:
+      tags: [Shipments]
+      security: [{cookieAuth: []}]
+      operationId: listShipmentDrafts
+      responses:
+        '200':
+          description: Customer shipment drafts.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/ShipmentDraftDto'}}
+    post:
+      tags: [Shipments]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createShipmentDraft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ShipmentDraftInput'}
+      responses:
+        '201':
+          description: Shipment draft created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ShipmentDraftDto'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /shipment-drafts/{draft}:
+    parameters:
+      - {name: draft, in: path, required: true, schema: {type: integer}}
+    get:
+      tags: [Shipments]
+      security: [{cookieAuth: []}]
+      operationId: showShipmentDraft
+      responses:
+        '200':
+          description: Shipment draft.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ShipmentDraftDto'}
+        '404': {$ref: '#/components/responses/Problem'}
+    put:
+      tags: [Shipments]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: updateShipmentDraft
+      parameters:
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ShipmentDraftInput'}
+      responses:
+        '200':
+          description: Shipment draft updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ShipmentDraftDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+    delete:
+      tags: [Shipments]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: deleteShipmentDraft
+      parameters:
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      responses:
+        '204': {description: Shipment draft deleted.}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /quotes:
+    post:
+      tags: [Shipments]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createQuote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/QuoteInput'}
+      responses:
+        '201':
+          description: Quote snapshot created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/QuoteDto'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /quotes/{quote}:
+    get:
+      tags: [Shipments]
+      security: [{cookieAuth: []}]
+      operationId: showQuote
+      parameters:
+        - {name: quote, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Quote snapshot.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/QuoteDto'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /support/cases:
+    get:
+      tags: [Support]
+      security: [{cookieAuth: []}]
+      operationId: supportCases
+      responses:
+        '200':
+          description: Customer support cases.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/SupportCaseDto'}}
+    post:
+      tags: [Support]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createSupportCase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SupportCaseInput'}
+      responses:
+        '201':
+          description: Support case created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/SupportCaseDto'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /support/cases/{case}:
+    get:
+      tags: [Support]
+      security: [{cookieAuth: []}]
+      operationId: showSupportCase
+      parameters:
+        - {name: case, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Customer support case.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/SupportCaseDto'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /returns:
+    get:
+      tags: [Returns]
+      security: [{cookieAuth: []}]
+      operationId: returns
+      responses:
+        '200':
+          description: Customer return requests.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/ReturnRequestDto'}}
+    post:
+      tags: [Returns]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createReturn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReturnRequestInput'}
+      responses:
+        '201':
+          description: Return request created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ReturnRequestDto'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /returns/{return}:
+    get:
+      tags: [Returns]
+      security: [{cookieAuth: []}]
+      operationId: showReturn
+      parameters:
+        - {name: return, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Customer return request.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ReturnRequestDto'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /returns/{return}/cancel:
+    post:
+      tags: [Returns]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: cancelReturn
+      parameters:
+        - {name: return, in: path, required: true, schema: {type: integer}}
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      responses:
+        '200':
+          description: Return request cancelled.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ReturnRequestDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /pickups/current:
+    get:
+      tags: [Pickups]
+      security: [{cookieAuth: []}]
+      operationId: currentPickup
+      responses:
+        '200':
+          description: Current customer pickup or null.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/PickupDto'}
+  /pickups:
+    post:
+      tags: [Pickups]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createPickup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PickupInput'}
+      responses:
+        '201':
+          description: Pickup created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/PickupDto'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /pickups/{pickup}/cancel:
+    post:
+      tags: [Pickups]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: cancelPickup
+      parameters:
+        - {name: pickup, in: path, required: true, schema: {type: integer}}
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      responses:
+        '200':
+          description: Pickup cancelled.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/PickupDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /shipments:
+    get:
+      tags: [Shipments]
+      security: [{cookieAuth: []}]
+      operationId: listShipments
+      parameters:
+        - {name: q, in: query, schema: {type: string, maxLength: 100}}
+        - {name: status, in: query, schema: {type: string, enum: [active, delivered]}}
+        - {name: per_page, in: query, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+        - {name: cursor, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: Customer-owned shipments.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: {$ref: '#/components/schemas/ShipmentDto'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /shipments/{shipment}:
+    get:
+      tags: [Shipments]
+      security: [{cookieAuth: []}]
+      operationId: showShipment
+      parameters:
+        - {name: shipment, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Customer-owned shipment.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ShipmentDto'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /public/tracking/{trackingNumber}:
+    get:
+      tags: [Public Tracking]
+      operationId: publicTracking
+      parameters:
+        - {name: trackingNumber, in: path, required: true, schema: {type: string, pattern: '^[A-Za-z0-9_-]+$'}}
+      responses:
+        '200':
+          description: Public-safe tracking information.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/PublicShipmentDto'}
+        '404': {$ref: '#/components/responses/Problem'}
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: laravel_session
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+  headers:
+    RequestId:
+      description: Correlation identifier echoed by the API.
+      schema: {type: string}
+  schemas:
+    ApiSuccess:
+      type: object
+      required: [data, requestId]
+      properties:
+        data: {}
+        meta: {type: object, additionalProperties: true}
+        requestId: {type: string}
+    ApiSuccessHealth:
+      allOf:
+        - {$ref: '#/components/schemas/ApiSuccess'}
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [status, service]
+              properties:
+                status: {type: string}
+                service: {type: string}
+    ApiSuccessAuthUser:
+      allOf:
+        - {$ref: '#/components/schemas/ApiSuccess'}
+        - type: object
+          properties:
+            data: {$ref: '#/components/schemas/AuthUser'}
+    ApiSuccessNull:
+      allOf:
+        - {$ref: '#/components/schemas/ApiSuccess'}
+        - type: object
+          properties: {data: {type: 'null'}}
+    DeliveryInput:
+      type: object
+      properties:
+        recipientName: {type: string, maxLength: 255}
+        recipientPhone: {type: string, maxLength: 50}
+        recipientAddress: {type: string, maxLength: 1000}
+    DeliveryDto:
+      allOf:
+        - {$ref: '#/components/schemas/DeliveryInput'}
+        - type: object
+          required: [shipmentId, revision]
+          properties:
+            shipmentId: {type: string}
+            revision: {type: integer}
+    ProofOfDeliveryDto:
+      type: object
+      required: [shipmentId]
+      properties:
+        shipmentId: {type: string}
+        recipientName: {type: string, nullable: true}
+        occurredAt: {type: string, format: date-time, nullable: true}
+        method: {type: string, nullable: true}
+        evidenceUrl: {type: string, format: uri, nullable: true}
+    UploadIntentInput:
+      type: object
+      required: [fileName, contentType, sizeBytes, purpose]
+      properties:
+        fileName: {type: string}
+        contentType: {type: string}
+        sizeBytes: {type: integer, minimum: 1, maximum: 20971520}
+        purpose: {type: string, enum: [shipment-evidence, support-attachment, proof-of-delivery, profile-photo]}
+    UploadIntentDto:
+      type: object
+      required: [fileId, uploadUrl, headers, expiresAt]
+      properties:
+        fileId: {type: string, format: uuid}
+        uploadUrl: {type: string, format: uri}
+        headers: {type: object, additionalProperties: {type: string}}
+        expiresAt: {type: string, format: date-time}
+    UploadedFileDto:
+      type: object
+      required: [fileId, contentType, sizeBytes, status]
+      properties:
+        fileId: {type: string, format: uuid}
+        url: {type: string, format: uri, nullable: true}
+        contentType: {type: string}
+        sizeBytes: {type: integer}
+        status: {type: string, enum: [scan_pending, available, rejected]}
+        purpose: {type: string}
+        expiresAt: {type: string, format: date-time, nullable: true}
+        revision: {type: integer}
+    PaymentIntentDto:
+      type: object
+      required: [id, status, revision]
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [requires_action, processing, succeeded, failed]}
+        providerReference: {type: string, nullable: true}
+        clientToken: {type: string, nullable: true}
+        revision: {type: integer}
+    ShipmentDraftInput:
+      type: object
+      required: [payload]
+      properties:
+        payload: {type: object, additionalProperties: true}
+        expiresAt: {type: string, format: date-time, nullable: true}
+    ShipmentDraftDto:
+      allOf:
+        - {$ref: '#/components/schemas/ShipmentDraftInput'}
+        - type: object
+          required: [id, customerId, status, revision]
+          properties:
+            id: {type: string}
+            customerId: {type: string}
+            status: {type: string}
+            quoteId: {type: string, nullable: true}
+            shipmentId: {type: string, nullable: true}
+            revision: {type: integer, minimum: 1}
+            createdAt: {type: string, format: date-time, nullable: true}
+            updatedAt: {type: string, format: date-time, nullable: true}
+    QuoteInput:
+      type: object
+      required: [transportMode, deliveryOption, snapshot]
+      properties:
+        draftId: {type: integer, nullable: true}
+        transportMode: {type: string, enum: [air, sea]}
+        deliveryOption: {type: string}
+        snapshot: {type: object, additionalProperties: true}
+    QuoteDto:
+      allOf:
+        - {$ref: '#/components/schemas/QuoteInput'}
+        - type: object
+          required: [id, customerId, currency, amountMinor, status, expiresAt, revision]
+          properties:
+            id: {type: string}
+            customerId: {type: string}
+            currency: {type: string}
+            amountMinor: {type: integer, minimum: 0}
+            assumptions: {type: array}
+            status: {type: string, enum: [active, expired]}
+            expiresAt: {type: string, format: date-time}
+            revision: {type: integer, minimum: 1}
+    SupportCaseInput:
+      type: object
+      required: [category, subject, detail]
+      properties:
+        category: {type: string}
+        subject: {type: string}
+        detail: {type: string}
+        shipmentNumber: {type: string, nullable: true}
+    SupportCaseDto:
+      allOf:
+        - {$ref: '#/components/schemas/SupportCaseInput'}
+        - type: object
+          required: [id, customerId, status, revision]
+          properties:
+            id: {type: string}
+            customerId: {type: string}
+            status: {type: string, enum: [open, in_review, resolved]}
+            createdAt: {type: string, format: date-time, nullable: true}
+            displayCreatedAt: {type: string, nullable: true}
+            attachmentFileId: {type: string, nullable: true}
+            revision: {type: integer, minimum: 1}
+    ReturnRequestInput:
+      type: object
+      required: [shipmentId, reason, handover]
+      properties:
+        shipmentId: {type: integer}
+        reason: {type: string}
+        handover: {type: string, enum: [pickup, drop_off]}
+    ReturnRequestDto:
+      allOf:
+        - {$ref: '#/components/schemas/ReturnRequestInput'}
+        - type: object
+          required: [id, customerId, trackingNumber, status, revision]
+          properties:
+            id: {type: string}
+            customerId: {type: string}
+            trackingNumber: {type: string, nullable: true}
+            status: {type: string}
+            displayStatus: {type: string}
+            createdAt: {type: string, format: date-time, nullable: true}
+            revision: {type: integer, minimum: 1}
+    PickupInput:
+      type: object
+      required: [collectionPoint]
+      properties:
+        shipmentId: {type: integer, nullable: true}
+        collectionPoint: {type: string}
+        scheduledDate: {type: string, format: date, nullable: true}
+        scheduledTime: {type: string, nullable: true}
+    PickupDto:
+      allOf:
+        - {$ref: '#/components/schemas/PickupInput'}
+        - type: object
+          required: [id, customerId, status, revision]
+          properties:
+            id: {type: string}
+            customerId: {type: string}
+            status: {type: string}
+            revision: {type: integer, minimum: 1}
+    ApiSuccessReferenceData:
+      allOf:
+        - {$ref: '#/components/schemas/ApiSuccess'}
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [offices, deliveryOptions, transportOptions]
+              properties:
+                offices: {type: array, items: {$ref: '#/components/schemas/OfficeDto'}}
+                deliveryOptions: {type: array, items: {$ref: '#/components/schemas/DeliveryOptionDto'}}
+                transportOptions: {type: array, items: {$ref: '#/components/schemas/TransportOptionDto'}}
+    OfficeDto:
+      type: object
+      required: [id, name, address, detail]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        address: {type: string, nullable: true}
+        detail: {type: string, nullable: true}
+    DeliveryOptionDto:
+      type: object
+      required: [id, name, detail, eta, price, recommended]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        detail: {type: string, nullable: true}
+        eta: {type: string, nullable: true}
+        price: {$ref: '#/components/schemas/Money'}
+        recommended: {type: boolean}
+    TransportOptionDto:
+      type: object
+      required: [id, name, detail, eta]
+      properties:
+        id: {type: string, enum: [air, sea]}
+        name: {type: string}
+        detail: {type: string, nullable: true}
+        eta: {type: string, nullable: true}
+    InvoiceDto:
+      type: object
+      required: [id, customerId, invoiceNumber, status, total, lineItems, revision]
+      properties:
+        id: {type: string}
+        customerId: {type: string}
+        invoiceNumber: {type: string}
+        shipmentId: {type: string, nullable: true}
+        shipmentLabel: {type: string, nullable: true}
+        route: {type: object, additionalProperties: true}
+        issuedAt: {type: string, format: date-time, nullable: true}
+        issuedAtLabel: {type: string, nullable: true}
+        dueAt: {type: string, format: date-time, nullable: true}
+        dueAtLabel: {type: string, nullable: true}
+        status: {type: string, enum: [paid, unpaid]}
+        total: {$ref: '#/components/schemas/Money'}
+        lineItems: {type: array, items: {type: object, additionalProperties: true}}
+        paymentMethod: {type: string, nullable: true}
+        paidAt: {type: string, format: date-time, nullable: true}
+        paidAtLabel: {type: string, nullable: true}
+        revision: {type: integer, minimum: 1}
+    WalletDto:
+      type: object
+      required: [id, customerId, currency, availableBalance, pendingBalance, status, revision]
+      properties:
+        id: {type: string}
+        customerId: {type: string}
+        currency: {type: string}
+        availableBalance: {$ref: '#/components/schemas/Money'}
+        pendingBalance: {$ref: '#/components/schemas/Money'}
+        status: {type: string, enum: [active, restricted, closed]}
+        updatedAt: {type: string, format: date-time, nullable: true}
+        revision: {type: integer, minimum: 1}
+    WalletLedgerEntry:
+      type: object
+      required: [id, type, status, bucket, amount]
+      properties:
+        id: {type: string}
+        type: {type: string}
+        status: {type: string}
+        bucket: {type: string}
+        amount: {$ref: '#/components/schemas/Money'}
+        referenceType: {type: string, nullable: true}
+        referenceId: {type: string, nullable: true}
+        createdAt: {type: string, format: date-time, nullable: true}
+    NotificationDto:
+      type: object
+      required: [id, customerId, type, title, body, unread, revision]
+      properties:
+        id: {type: string}
+        customerId: {type: string}
+        type: {type: string, enum: [progress, arrival, exception, payment]}
+        title: {type: string}
+        body: {type: string}
+        occurredAt: {type: string, format: date-time, nullable: true}
+        displayTime: {type: string}
+        shipmentId: {type: string, nullable: true}
+        unread: {type: boolean}
+        revision: {type: integer, minimum: 1}
+    AddressInput:
+      type: object
+      required: [address, countryId, stateId]
+      properties:
+        address: {type: string, maxLength: 1000}
+        countryId: {type: integer}
+        stateId: {type: integer}
+        areaId: {type: integer, nullable: true}
+        streetAddressMap: {type: string, nullable: true}
+        lat: {type: string, nullable: true}
+        lng: {type: string, nullable: true}
+        url: {type: string, format: uri, nullable: true}
+        isDefault: {type: boolean}
+    RecipientInput:
+      type: object
+      required: [name, address, phone]
+      properties:
+        name: {type: string, maxLength: 255}
+        countryCode: {type: string, nullable: true, maxLength: 20}
+        address: {type: string, maxLength: 1000}
+        phone: {type: string, maxLength: 50}
+    RecipientDto:
+      allOf:
+        - {$ref: '#/components/schemas/RecipientInput'}
+        - type: object
+          required: [id, revision]
+          properties:
+            id: {type: string}
+            revision: {type: integer, minimum: 1}
+            createdAt: {type: string, format: date-time, nullable: true}
+            updatedAt: {type: string, format: date-time, nullable: true}
+    AddressDto:
+      allOf:
+        - {$ref: '#/components/schemas/AddressInput'}
+        - type: object
+          required: [id, revision, isDefault]
+          properties:
+            id: {type: string}
+            revision: {type: integer, minimum: 1}
+            createdAt: {type: string, format: date-time, nullable: true}
+            updatedAt: {type: string, format: date-time, nullable: true}
+    AuthUser:
+      type: object
+      required: [id, firstName, lastName, email, phone, provider, verified]
+      properties:
+        id: {type: string}
+        firstName: {type: string}
+        lastName: {type: string}
+        email: {type: string, format: email}
+        phone: {type: string, nullable: true}
+        avatar: {type: string, nullable: true}
+        provider: {type: string, enum: [password, google]}
+        verified: {type: boolean}
+    Money:
+      type: object
+      required: [currency, amountMinor]
+      properties:
+        currency: {type: string, minLength: 3, maxLength: 3}
+        amountMinor: {type: integer, minimum: 0}
+    TrackingEvent:
+      type: object
+      required: [id, label, detail, occurredAt, displayTime, complete, current]
+      properties:
+        id: {type: string}
+        label: {type: string}
+        detail: {type: string, nullable: true}
+        occurredAt: {type: string, format: date-time, nullable: true}
+        displayTime: {type: string}
+        complete: {type: boolean}
+        current: {type: boolean}
+    ShipmentDto:
+      type: object
+      required: [id, customerId, trackingNumber, transportMode, status, statusLabel, price, progress, events, allowedActions, revision]
+      properties:
+        id: {type: string}
+        customerId: {type: string}
+        trackingNumber: {type: string}
+        carrier: {type: string, nullable: true}
+        transportMode: {type: string, enum: [air, sea]}
+        packageName: {type: string, nullable: true}
+        origin: {type: string, nullable: true}
+        destination: {type: string, nullable: true}
+        etaAt: {type: string, format: date-time, nullable: true}
+        etaLabel: {type: string, nullable: true}
+        status: {type: string}
+        statusLabel: {type: string}
+        price: {$ref: '#/components/schemas/Money'}
+        imageUrl: {type: string, nullable: true}
+        progress: {type: integer, minimum: 0, maximum: 100}
+        events: {type: array, items: {$ref: '#/components/schemas/TrackingEvent'}}
+        nextAction: {type: string, nullable: true}
+        allowedActions: {type: array, items: {type: string}}
+        revision: {type: integer, minimum: 1}
+    PublicShipmentDto:
+      type: object
+      required: [id, trackingNumber, transportMode, status, statusLabel, progress, events, revision]
+      properties:
+        id: {type: string}
+        trackingNumber: {type: string}
+        carrier: {type: string, nullable: true}
+        transportMode: {type: string, enum: [air, sea]}
+        packageName: {type: string, nullable: true}
+        origin: {type: string, nullable: true}
+        destination: {type: string, nullable: true}
+        etaAt: {type: string, format: date-time, nullable: true}
+        etaLabel: {type: string, nullable: true}
+        status: {type: string}
+        statusLabel: {type: string}
+        imageUrl: {type: string, nullable: true}
+        progress: {type: integer, minimum: 0, maximum: 100}
+        events: {type: array, items: {$ref: '#/components/schemas/TrackingEvent'}}
+        revision: {type: integer, minimum: 1}
+    Problem:
+      type: object
+      required: [error, requestId]
+      properties:
+        error:
+          type: object
+          required: [code, message, retryable]
+          properties:
+            code: {type: string}
+            message: {type: string}
+            fieldErrors: {type: object, additionalProperties: {type: array, items: {type: string}}}
+            retryable: {type: boolean}
+        requestId: {type: string}
+  responses:
+    Problem:
+      description: API problem.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Unauthenticated:
+      description: No valid session.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Forbidden:
+      description: Authenticated account cannot use this portal.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    ValidationFailed:
+      description: Validation failed.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    CsrfMismatch:
+      description: CSRF token mismatch.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Problem'}

@@ -11,5 +11,6 @@
     "Currency": true,
     "DriverAppAddon": true,
     "CustomerAppAddon": true,
+    "CustomerPortalApi": true,
     "Rates": true
 }

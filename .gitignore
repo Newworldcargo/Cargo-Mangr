@@ -21,3 +21,4 @@ composer.lock
 package-lock.json
 index.php
 /public/index.php
+auth.json
