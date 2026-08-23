@@ -6,11 +6,21 @@ use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cookie;
+use Modules\CustomerPortalApi\Services\Portal\PortalBffService;
 
 class PortalCsrfMiddleware
 {
     public function handle(Request $request, Closure $next)
     {
+        $bff = app(PortalBffService::class);
+        $unsafe = in_array(strtoupper($request->method()), ['POST', 'PUT', 'PATCH', 'DELETE'], true);
+        if ($bff->isBffRequest($request)) {
+            if ($unsafe && !$bff->validBffCsrf($request)) {
+                return $this->problem($request, 'CSRF_TOKEN_MISMATCH', 'A valid CSRF token is required.', 419);
+            }
+            return $next($request);
+        }
+
         if (!$request->session()->token()) {
             $request->session()->regenerateToken();
         }

@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Modules\Cargo\Entities\Client;
 use Modules\CustomerPortalApi\Http\Resources\AuthUserResource;
+use Modules\CustomerPortalApi\Services\Portal\PortalBffService;
 
 class AuthController extends PortalController
 {
@@ -47,7 +48,8 @@ class AuthController extends PortalController
         $request->session()->regenerateToken();
         $user->setRelation('portalClient', $client);
 
-        return $this->success($request, (new AuthUserResource($user))->resolve($request));
+        $response = $this->success($request, (new AuthUserResource($user))->resolve($request));
+        return $this->withBffSessionHeaders($request, $response, $user);
     }
 
     public function register(Request $request)
@@ -98,7 +100,8 @@ class AuthController extends PortalController
         $request->session()->regenerateToken();
         $user->setRelation('portalClient', Client::where('user_id', $user->id)->first());
 
-        return $this->success($request, (new AuthUserResource($user))->resolve($request), 201);
+        $response = $this->success($request, (new AuthUserResource($user))->resolve($request), 201);
+        return $this->withBffSessionHeaders($request, $response, $user);
     }
 
     public function verify(Request $request)
@@ -179,8 +182,24 @@ class AuthController extends PortalController
         return $this->success($request, null);
     }
 
+    private function withBffSessionHeaders(Request $request, $response, $user)
+    {
+        $bff = app(PortalBffService::class);
+        if (!$bff->configured() || !$bff->authorizeServiceRequest($request)) {
+            return $response;
+        }
+
+        $issued = $bff->issueForUser($user, $request);
+        return $response->withHeaders([
+            'X-NWC-BFF-Session' => $issued['token'],
+            'X-NWC-BFF-CSRF-Token' => $issued['csrf'],
+            'Cache-Control' => 'no-store',
+        ]);
+    }
+
     public function logout(Request $request)
     {
+        app(PortalBffService::class)->revokeAssertion($request);
         Auth::guard('web')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();

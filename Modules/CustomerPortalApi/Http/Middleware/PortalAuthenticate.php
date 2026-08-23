@@ -7,11 +7,22 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Modules\CustomerPortalApi\Services\Portal\CustomerContext;
+use Modules\CustomerPortalApi\Services\Portal\PortalBffService;
 
 class PortalAuthenticate
 {
     public function handle(Request $request, Closure $next)
     {
+        $bff = app(PortalBffService::class);
+        $hasBffHeaders = $request->bearerToken() !== null || (string) $request->header('X-NWC-Customer-Assertion', '') !== '';
+        $bffUser = $bff->authenticateAssertion($request);
+        if ($hasBffHeaders && !$bffUser) {
+            return $this->problem($request, 'UNAUTHENTICATED', 'The server portal session is invalid or expired.', 401);
+        }
+        if ($bffUser) {
+            Auth::guard('web')->setUser($bffUser);
+        }
+
         if (!Auth::guard('web')->check()) {
             return $this->problem($request, 'UNAUTHENTICATED', 'A valid customer session is required.', 401);
         }

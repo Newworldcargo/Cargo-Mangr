@@ -8,6 +8,7 @@ use Illuminate\Foundation\Support\Providers\RouteServiceProvider as ServiceProvi
 use Modules\CustomerPortalApi\Http\Middleware\PortalContractMiddleware;
 use Modules\CustomerPortalApi\Http\Middleware\PortalCsrfMiddleware;
 use Modules\CustomerPortalApi\Http\Middleware\RequestIdMiddleware;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\BffSessionController;
 
 class RouteServiceProvider extends ServiceProvider
 {
@@ -21,8 +22,15 @@ class RouteServiceProvider extends ServiceProvider
     public function map()
     {
         if (env('INSTALLATION', false) === true) {
+            $this->mapBffRoutes();
             $this->mapApiRoutes();
         }
+    }
+
+    protected function mapBffRoutes()
+    {
+        Route::post('internal/bff/session-exchange', [BffSessionController::class, 'exchange'])
+            ->middleware(['api', RequestIdMiddleware::class, PortalContractMiddleware::class]);
     }
 
     protected function mapApiRoutes()

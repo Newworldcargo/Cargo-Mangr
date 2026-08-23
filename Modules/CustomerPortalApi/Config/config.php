@@ -20,4 +20,10 @@ return [
     'cookie_same_site' => env('CUSTOMER_PORTAL_COOKIE_SAME_SITE', 'lax'),
 
     'public_tracking_per_minute' => (int) env('CUSTOMER_PORTAL_PUBLIC_TRACKING_RATE', 30),
+
+    'bff_service_token' => env('CUSTOMER_PORTAL_BFF_SERVICE_TOKEN'),
+
+    'bff_shared_secret' => env('CUSTOMER_PORTAL_BFF_SHARED_SECRET'),
+
+    'bff_session_hours' => (int) env('CUSTOMER_PORTAL_BFF_SESSION_HOURS', 8),
 ];

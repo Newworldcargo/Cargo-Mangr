@@ -20,9 +20,13 @@ CUSTOMER_PORTAL_API_RATE_LIMIT=60
 CUSTOMER_PORTAL_PUBLIC_TRACKING_RATE=30
 CUSTOMER_PORTAL_COOKIE_SECURE=true
 CUSTOMER_PORTAL_COOKIE_SAME_SITE=lax
+# Keep these two values in the secret manager; do not commit them.
+CUSTOMER_PORTAL_BFF_SERVICE_TOKEN=<secret-manager-value>
+CUSTOMER_PORTAL_BFF_SHARED_SECRET=<secret-manager-value>
+CUSTOMER_PORTAL_BFF_SESSION_HOURS=8
 ```
 
-Use the project’s existing `APP_KEY`, database, mail, storage, and provider configuration only through the secret manager. Never copy the public repository’s former `.env.example` values into staging.
+Use the project’s existing `APP_KEY`, database, mail, storage, and provider configuration only through the secret manager. Never copy the public repository’s former `.env.example` values into staging. Configure the React server with `NWC_BACKEND_ORIGIN=https://laravel-staging.example.com`, `NWC_BACKEND_API_PREFIX=/api`, `NWC_BFF_SERVICE_TOKEN` matching the Laravel service-token value, `NWC_BFF_SHARED_SECRET` matching the Laravel signing-secret value, and `NWC_BFF_ALLOWED_ORIGIN=https://portal-staging.example.com`. The service token and signing secret must exist only in server-side secret storage.
 
 ## 2. Deploy and migrate
 
@@ -38,9 +42,22 @@ php artisan config:cache
 
 The portal migrations add `revision` columns and indexes to `shipments`, `client_addresses`, and `receivers`. Confirm the migration SQL on staging first and take a verified backup before running it. The migrations are additive and use `Schema::hasColumn` guards, but the deployment still needs the project’s normal rollback procedure.
 
-## 3. Browser/session smoke test
+## 3. Server-to-server BFF smoke test
 
-From the React staging origin, request the API base URL with credentials included. First obtain the Laravel session/CSRF cookies using the application’s CSRF bootstrap behavior. Then call login/register/verify as defined by the React adapter. For unsafe authenticated calls, echo the readable `nwc_csrf` value in `X-CSRF-Token`.
+The browser must call only the React server’s same-origin `/api/gateway/v1/...` endpoint. The React server must call Laravel with its private bearer service token. Laravel login or registration should return `X-NWC-BFF-Session` and `X-NWC-BFF-CSRF-Token` response headers; the React server converts them into its HttpOnly portal-session cookie and readable CSRF cookie. For every authenticated request, the React server must first call `POST /internal/bff/session-exchange` with the private service token and portal-session cookie, then forward the resulting customer assertion and CSRF header to `/api/v1/...`.
+
+Run these checks from the React staging origin and inspect only redacted headers/logs:
+
+| Check | Expected result |
+|---|---|
+| Browser `POST /api/gateway/v1/auth/login` | React server returns the Laravel JSON envelope and sets secure BFF cookies; no service token reaches browser JavaScript. |
+| React server to Laravel exchange | `POST /internal/bff/session-exchange` returns `X-NWC-Customer-Assertion` and `X-NWC-BFF-CSRF-Token`; no raw portal token is logged. |
+| Browser `GET /api/gateway/v1/session` | React server performs exchange and Laravel returns the authenticated customer. |
+| Browser unsafe mutation | React server forwards service token, assertion, and CSRF header; Laravel rejects missing or invalid CSRF with `419`. |
+| Expired/revoked portal cookie | Exchange returns `401`; React gateway clears or expires the browser session. |
+| Direct browser call to Laravel | Not required for the BFF topology; direct cross-origin access remains disabled. |
+
+The existing direct Laravel browser-session checks remain useful for the Laravel API itself. For unsafe direct calls, echo the readable `nwc_csrf` value in `X-CSRF-Token`.
 
 Expected behavior:
 
@@ -74,6 +91,7 @@ Keep the React island in mock mode until the following are attached to the pull 
 - Feature-test output from the controlled Composer environment.
 - Cross-customer authorization test output.
 - Browser cookie/CSRF/CORS smoke-test output.
+- BFF-to-Laravel session-exchange and assertion output.
 - Migration and rollback rehearsal output.
 - Staging error-rate and latency observations.
 

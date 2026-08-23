@@ -6,6 +6,8 @@ This module provides the first versioned API slice for the separate React custom
 
 The module exposes the following routes under `/api/v1`:
 
+The internal BFF exchange endpoint is mounted separately at `POST /internal/bff/session-exchange`; it is not a browser-facing route and requires the configured service bearer token.
+
 - `GET /healthz`
 - `GET /readyz`
 - `POST /auth/login`
@@ -30,9 +32,12 @@ CUSTOMER_PORTAL_API_RATE_LIMIT=60
 CUSTOMER_PORTAL_PUBLIC_TRACKING_RATE=30
 CUSTOMER_PORTAL_COOKIE_SECURE=true
 CUSTOMER_PORTAL_COOKIE_SAME_SITE=lax
+CUSTOMER_PORTAL_BFF_SERVICE_TOKEN=<same-secret-as-the-private-BFF-service-token>
+CUSTOMER_PORTAL_BFF_SHARED_SECRET=<separate-signing-secret>
+CUSTOMER_PORTAL_BFF_SESSION_HOURS=8
 ```
 
-The current branch intentionally does not modify the global CORS configuration because the final allowed origin and same-origin/cross-origin deployment topology must be confirmed first. Configure the API edge and Laravel CORS policy in staging before enabling the React island’s HTTP mode.
+The current branch intentionally does not modify the global CORS configuration because the BFF design keeps browser requests same-origin with the React server. Configure the React server with `NWC_BACKEND_ORIGIN=https://laravel-staging.example.com`, `NWC_BACKEND_API_PREFIX=/api`, `NWC_BFF_SERVICE_TOKEN` matching the Laravel value, `NWC_BFF_SHARED_SECRET` matching the Laravel value, and `NWC_BFF_ALLOWED_ORIGIN=https://portal-staging.example.com`. The BFF must remain the only component holding the service token. Configure and test this only in staging before enabling the React island’s HTTP mode.
 
 ## Data ownership
 
