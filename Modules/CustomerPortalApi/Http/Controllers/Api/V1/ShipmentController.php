@@ -24,9 +24,19 @@ class ShipmentController extends PortalController
             ->orderByDesc('id');
 
         $search = trim((string) $request->query('q', ''));
-        if ($search !== '') {
-            $query->where('code', 'like', '%' . substr($search, 0, 100) . '%');
-        }
+            if ($search !== '') {
+                $needle = substr($search, 0, 100);
+                $query->where(function ($searchQuery) use ($needle) {
+                    $searchQuery->where('code', 'like', '%' . $needle . '%')
+                        ->orWhere('reciver_address', 'like', '%' . $needle . '%')
+                        ->orWhere('to_address', 'like', '%' . $needle . '%')
+                        ->orWhere('next_destination', 'like', '%' . $needle . '%')
+                        ->orWhereHas('consignment', function ($consignmentQuery) use ($needle) {
+                            $consignmentQuery->where('source', 'like', '%' . $needle . '%')
+                                ->orWhere('destination', 'like', '%' . $needle . '%');
+                        });
+                });
+            }
 
         $status = strtolower(trim((string) $request->query('status', '')));
         if ($status === 'delivered') {

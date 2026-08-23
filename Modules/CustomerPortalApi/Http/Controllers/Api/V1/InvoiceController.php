@@ -19,6 +19,17 @@ class InvoiceController extends PortalController
             ->orderByDesc('created_at')
             ->orderByDesc('id');
 
+        $search = trim((string) $request->query('q', ''));
+        if ($search !== '') {
+            $needle = substr($search, 0, 100);
+            $query->where(function ($searchQuery) use ($needle) {
+                $searchQuery->where('receipt_number', 'like', '%' . $needle . '%')
+                    ->orWhereHas('shipment', function ($shipmentQuery) use ($needle) {
+                        $shipmentQuery->where('code', 'like', '%' . $needle . '%');
+                    });
+            });
+        }
+
         $status = strtolower((string) $request->query('status', ''));
         if ($status === 'paid') {
             $query->whereIn('status', ['completed', 'refund_requested', 'partially_refunded']);
