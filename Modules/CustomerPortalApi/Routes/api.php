@@ -6,10 +6,12 @@ use Modules\CustomerPortalApi\Http\Controllers\Api\V1\AuthController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\HealthController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\InvoiceController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\DraftQuoteController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\FileController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\NotificationController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ReferenceDataController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ShipmentController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ProfileController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\PaymentController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\PickupController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ReturnController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\SupportController;
@@ -56,6 +58,11 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
     Route::get('invoices/{invoice}', [InvoiceController::class, 'show'])->whereNumber('invoice');
     Route::get('wallet', [WalletController::class, 'show']);
     Route::get('wallet/transactions', [WalletController::class, 'transactions']);
+
+    Route::post('files/upload-intents', [FileController::class, 'createIntent']);
+    Route::post('files/{fileId}/complete', [FileController::class, 'complete']);
+    Route::post('payments/intents', [PaymentController::class, 'createIntent']);
+    Route::get('payments/intents/{intent}', [PaymentController::class, 'showIntent']);
 
     Route::get('shipment-drafts', [DraftQuoteController::class, 'drafts']);
     Route::post('shipment-drafts', [DraftQuoteController::class, 'createDraft']);

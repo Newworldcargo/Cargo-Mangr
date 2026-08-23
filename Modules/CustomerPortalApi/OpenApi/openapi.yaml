@@ -477,6 +477,100 @@ paths:
         '404': {$ref: '#/components/responses/Problem'}
         '409': {$ref: '#/components/responses/Problem'}
         '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /files/upload-intents:
+    post:
+      tags: [Files]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createUploadIntent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UploadIntentInput'}
+      responses:
+        '201':
+          description: Signed upload intent created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/UploadIntentDto'}
+        '413': {$ref: '#/components/responses/Problem'}
+        '415': {$ref: '#/components/responses/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /files/{fileId}/complete:
+    post:
+      tags: [Files]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: completeUpload
+      parameters:
+        - {name: fileId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '202':
+          description: Upload accepted for scanning.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/UploadedFileDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '413': {$ref: '#/components/responses/Problem'}
+  /payments/intents:
+    post:
+      tags: [Payments]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createPaymentIntent
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [invoiceId, method]
+              properties:
+                invoiceId: {type: integer}
+                method: {type: string, enum: [mobile-money, card]}
+      responses:
+        '201':
+          description: Payment intent created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/PaymentIntentDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /payments/intents/{intent}:
+    get:
+      tags: [Payments]
+      security: [{cookieAuth: []}]
+      operationId: showPaymentIntent
+      parameters:
+        - {name: intent, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Payment intent status.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/PaymentIntentDto'}
+        '404': {$ref: '#/components/responses/Problem'}
   /shipment-drafts:
     get:
       tags: [Shipments]
@@ -908,6 +1002,43 @@ components:
         - {$ref: '#/components/schemas/ApiSuccess'}
         - type: object
           properties: {data: {type: 'null'}}
+    UploadIntentInput:
+      type: object
+      required: [fileName, contentType, sizeBytes, purpose]
+      properties:
+        fileName: {type: string}
+        contentType: {type: string}
+        sizeBytes: {type: integer, minimum: 1, maximum: 20971520}
+        purpose: {type: string, enum: [shipment-evidence, support-attachment, proof-of-delivery, profile-photo]}
+    UploadIntentDto:
+      type: object
+      required: [fileId, uploadUrl, headers, expiresAt]
+      properties:
+        fileId: {type: string, format: uuid}
+        uploadUrl: {type: string, format: uri}
+        headers: {type: object, additionalProperties: {type: string}}
+        expiresAt: {type: string, format: date-time}
+    UploadedFileDto:
+      type: object
+      required: [fileId, contentType, sizeBytes, status]
+      properties:
+        fileId: {type: string, format: uuid}
+        url: {type: string, format: uri, nullable: true}
+        contentType: {type: string}
+        sizeBytes: {type: integer}
+        status: {type: string, enum: [scan_pending, available, rejected]}
+        purpose: {type: string}
+        expiresAt: {type: string, format: date-time, nullable: true}
+        revision: {type: integer}
+    PaymentIntentDto:
+      type: object
+      required: [id, status, revision]
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [requires_action, processing, succeeded, failed]}
+        providerReference: {type: string, nullable: true}
+        clientToken: {type: string, nullable: true}
+        revision: {type: integer}
     ShipmentDraftInput:
       type: object
       required: [payload]
