@@ -254,6 +254,101 @@ paths:
         '404': {$ref: '#/components/responses/Problem'}
         '409': {$ref: '#/components/responses/Problem'}
         '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /recipients:
+    get:
+      tags: [Auth]
+      security: [{cookieAuth: []}]
+      operationId: listRecipients
+      responses:
+        '200':
+          description: Customer-owned recipients.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/RecipientDto'}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    post:
+      tags: [Auth]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createRecipient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RecipientInput'}
+      responses:
+        '201':
+          description: Recipient created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/RecipientDto'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /recipients/{recipient}:
+    parameters:
+      - {name: recipient, in: path, required: true, schema: {type: integer}}
+    get:
+      tags: [Auth]
+      security: [{cookieAuth: []}]
+      operationId: showRecipient
+      responses:
+        '200':
+          description: Customer-owned recipient.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/RecipientDto'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/Problem'}
+    patch:
+      tags: [Auth]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: updateRecipient
+      parameters:
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RecipientInput'}
+      responses:
+        '200':
+          description: Recipient updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/RecipientDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+    delete:
+      tags: [Auth]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: deleteRecipient
+      parameters:
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      responses:
+        '204': {description: Recipient archived.}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
   /shipments:
     get:
       tags: [Shipments]
@@ -373,6 +468,24 @@ components:
         lng: {type: string, nullable: true}
         url: {type: string, format: uri, nullable: true}
         isDefault: {type: boolean}
+    RecipientInput:
+      type: object
+      required: [name, address, phone]
+      properties:
+        name: {type: string, maxLength: 255}
+        countryCode: {type: string, nullable: true, maxLength: 20}
+        address: {type: string, maxLength: 1000}
+        phone: {type: string, maxLength: 50}
+    RecipientDto:
+      allOf:
+        - {$ref: '#/components/schemas/RecipientInput'}
+        - type: object
+          required: [id, revision]
+          properties:
+            id: {type: string}
+            revision: {type: integer, minimum: 1}
+            createdAt: {type: string, format: date-time, nullable: true}
+            updatedAt: {type: string, format: date-time, nullable: true}
     AddressDto:
       allOf:
         - {$ref: '#/components/schemas/AddressInput'}

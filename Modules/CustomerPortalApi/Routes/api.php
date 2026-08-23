@@ -6,6 +6,7 @@ use Modules\CustomerPortalApi\Http\Controllers\Api\V1\AuthController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\HealthController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ShipmentController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ProfileController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\RecipientController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\SessionController;
 use Modules\CustomerPortalApi\Http\Middleware\PortalAuthenticate;
 
@@ -34,6 +35,12 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
     Route::get('addresses/{address}', [AddressController::class, 'show'])->whereNumber('address');
     Route::patch('addresses/{address}', [AddressController::class, 'update'])->whereNumber('address');
     Route::delete('addresses/{address}', [AddressController::class, 'destroy'])->whereNumber('address');
+
+    Route::get('recipients', [RecipientController::class, 'index']);
+    Route::post('recipients', [RecipientController::class, 'store']);
+    Route::get('recipients/{recipient}', [RecipientController::class, 'show'])->whereNumber('recipient');
+    Route::patch('recipients/{recipient}', [RecipientController::class, 'update'])->whereNumber('recipient');
+    Route::delete('recipients/{recipient}', [RecipientController::class, 'destroy'])->whereNumber('recipient');
 
     Route::get('shipments', [ShipmentController::class, 'index']);
     Route::get('shipments/{shipment}', [ShipmentController::class, 'show'])->whereNumber('shipment');
