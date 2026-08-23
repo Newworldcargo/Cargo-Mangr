@@ -1,0 +1,342 @@
+openapi: 3.1.0
+info:
+  title: New World Cargo Customer Portal API
+  version: 1.0.0
+  description: Versioned customer-owned API for the separate React customer island.
+servers:
+  - url: https://api.example.com/api/v1
+    description: Configure per environment.
+tags:
+  - name: Health
+  - name: Auth
+  - name: Shipments
+  - name: Public Tracking
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      operationId: health
+      responses:
+        '200':
+          description: API process is alive.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessHealth'}
+  /readyz:
+    get:
+      tags: [Health]
+      operationId: ready
+      responses:
+        '200':
+          description: API is ready for traffic.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessHealth'}
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier, password]
+              properties:
+                identifier: {type: string, maxLength: 255}
+                password: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: Customer session created.
+          headers:
+            Set-Cookie: {schema: {type: string}}
+            X-Request-ID: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessAuthUser'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /auth/register:
+    post:
+      tags: [Auth]
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [firstName, email, phone, password]
+              properties:
+                firstName: {type: string, minLength: 2, maxLength: 80}
+                lastName: {type: string, maxLength: 80}
+                email: {type: string, format: email}
+                phone: {type: string, maxLength: 30}
+                password: {type: string, minLength: 8}
+      responses:
+        '201':
+          description: Customer account created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessAuthUser'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /auth/verify:
+    post:
+      tags: [Auth]
+      operationId: verify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: {type: string, pattern: '^[0-9]{6}$'}
+      responses:
+        '200':
+          description: Contact verified.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessNull'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /auth/logout:
+    post:
+      tags: [Auth]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: logout
+      responses:
+        '204': {description: Session revoked.}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /session:
+    get:
+      tags: [Auth]
+      security: [{cookieAuth: []}]
+      operationId: session
+      responses:
+        '200':
+          description: Current authenticated customer.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessAuthUser'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /shipments:
+    get:
+      tags: [Shipments]
+      security: [{cookieAuth: []}]
+      operationId: listShipments
+      parameters:
+        - {name: q, in: query, schema: {type: string, maxLength: 100}}
+        - {name: status, in: query, schema: {type: string, enum: [active, delivered]}}
+        - {name: per_page, in: query, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+        - {name: cursor, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: Customer-owned shipments.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: {$ref: '#/components/schemas/ShipmentDto'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /shipments/{shipment}:
+    get:
+      tags: [Shipments]
+      security: [{cookieAuth: []}]
+      operationId: showShipment
+      parameters:
+        - {name: shipment, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Customer-owned shipment.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ShipmentDto'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /public/tracking/{trackingNumber}:
+    get:
+      tags: [Public Tracking]
+      operationId: publicTracking
+      parameters:
+        - {name: trackingNumber, in: path, required: true, schema: {type: string, pattern: '^[A-Za-z0-9_-]+$'}}
+      responses:
+        '200':
+          description: Public-safe tracking information.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/PublicShipmentDto'}
+        '404': {$ref: '#/components/responses/Problem'}
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: laravel_session
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+  headers:
+    RequestId:
+      description: Correlation identifier echoed by the API.
+      schema: {type: string}
+  schemas:
+    ApiSuccess:
+      type: object
+      required: [data, requestId]
+      properties:
+        data: {}
+        meta: {type: object, additionalProperties: true}
+        requestId: {type: string}
+    ApiSuccessHealth:
+      allOf:
+        - {$ref: '#/components/schemas/ApiSuccess'}
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [status, service]
+              properties:
+                status: {type: string}
+                service: {type: string}
+    ApiSuccessAuthUser:
+      allOf:
+        - {$ref: '#/components/schemas/ApiSuccess'}
+        - type: object
+          properties:
+            data: {$ref: '#/components/schemas/AuthUser'}
+    ApiSuccessNull:
+      allOf:
+        - {$ref: '#/components/schemas/ApiSuccess'}
+        - type: object
+          properties: {data: {type: 'null'}}
+    AuthUser:
+      type: object
+      required: [id, firstName, lastName, email, phone, provider, verified]
+      properties:
+        id: {type: string}
+        firstName: {type: string}
+        lastName: {type: string}
+        email: {type: string, format: email}
+        phone: {type: string, nullable: true}
+        avatar: {type: string, nullable: true}
+        provider: {type: string, enum: [password, google]}
+        verified: {type: boolean}
+    Money:
+      type: object
+      required: [currency, amountMinor]
+      properties:
+        currency: {type: string, minLength: 3, maxLength: 3}
+        amountMinor: {type: integer, minimum: 0}
+    TrackingEvent:
+      type: object
+      required: [id, label, detail, occurredAt, displayTime, complete, current]
+      properties:
+        id: {type: string}
+        label: {type: string}
+        detail: {type: string, nullable: true}
+        occurredAt: {type: string, format: date-time, nullable: true}
+        displayTime: {type: string}
+        complete: {type: boolean}
+        current: {type: boolean}
+    ShipmentDto:
+      type: object
+      required: [id, customerId, trackingNumber, transportMode, status, statusLabel, price, progress, events, allowedActions, revision]
+      properties:
+        id: {type: string}
+        customerId: {type: string}
+        trackingNumber: {type: string}
+        carrier: {type: string, nullable: true}
+        transportMode: {type: string, enum: [air, sea]}
+        packageName: {type: string, nullable: true}
+        origin: {type: string, nullable: true}
+        destination: {type: string, nullable: true}
+        etaAt: {type: string, format: date-time, nullable: true}
+        etaLabel: {type: string, nullable: true}
+        status: {type: string}
+        statusLabel: {type: string}
+        price: {$ref: '#/components/schemas/Money'}
+        imageUrl: {type: string, nullable: true}
+        progress: {type: integer, minimum: 0, maximum: 100}
+        events: {type: array, items: {$ref: '#/components/schemas/TrackingEvent'}}
+        nextAction: {type: string, nullable: true}
+        allowedActions: {type: array, items: {type: string}}
+        revision: {type: integer, minimum: 1}
+    PublicShipmentDto:
+      type: object
+      required: [id, trackingNumber, transportMode, status, statusLabel, progress, events, revision]
+      properties:
+        id: {type: string}
+        trackingNumber: {type: string}
+        carrier: {type: string, nullable: true}
+        transportMode: {type: string, enum: [air, sea]}
+        packageName: {type: string, nullable: true}
+        origin: {type: string, nullable: true}
+        destination: {type: string, nullable: true}
+        etaAt: {type: string, format: date-time, nullable: true}
+        etaLabel: {type: string, nullable: true}
+        status: {type: string}
+        statusLabel: {type: string}
+        imageUrl: {type: string, nullable: true}
+        progress: {type: integer, minimum: 0, maximum: 100}
+        events: {type: array, items: {$ref: '#/components/schemas/TrackingEvent'}}
+        revision: {type: integer, minimum: 1}
+    Problem:
+      type: object
+      required: [error, requestId]
+      properties:
+        error:
+          type: object
+          required: [code, message, retryable]
+          properties:
+            code: {type: string}
+            message: {type: string}
+            fieldErrors: {type: object, additionalProperties: {type: array, items: {type: string}}}
+            retryable: {type: boolean}
+        requestId: {type: string}
+  responses:
+    Problem:
+      description: API problem.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Unauthenticated:
+      description: No valid session.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Forbidden:
+      description: Authenticated account cannot use this portal.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    ValidationFailed:
+      description: Validation failed.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    CsrfMismatch:
+      description: CSRF token mismatch.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Problem'}

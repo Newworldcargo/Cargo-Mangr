@@ -1,0 +1,13 @@
+{
+    "name": "CustomerPortalApi",
+    "alias": "customerportalapi",
+    "description": "Versioned customer portal API for the separate React island",
+    "keywords": ["api", "customer-portal"],
+    "priority": 0,
+    "providers": [
+        "Modules\\CustomerPortalApi\\Providers\\CustomerPortalApiServiceProvider"
+    ],
+    "aliases": {},
+    "files": [],
+    "requires": []
+}
