@@ -3,6 +3,8 @@
 return [
     'prefix' => 'api/v1',
 
+    'url' => env('CUSTOMER_PORTAL_API_URL', 'https://api.newworldcargo.com'),
+
     'allowed_origins' => array_values(array_filter(array_map('trim', explode(',', env('CUSTOMER_PORTAL_API_ALLOWED_ORIGINS', ''))))),
 
     'max_per_page' => (int) env('CUSTOMER_PORTAL_API_MAX_PER_PAGE', 50),
