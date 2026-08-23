@@ -477,6 +477,99 @@ paths:
         '404': {$ref: '#/components/responses/Problem'}
         '409': {$ref: '#/components/responses/Problem'}
         '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /shipments/{shipment}/actions:
+    post:
+      tags: [Shipments]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: shipmentAction
+      parameters:
+        - {name: shipment, in: path, required: true, schema: {type: integer}}
+        - {name: If-Match, in: header, required: true, schema: {type: string}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: {type: string}
+      responses:
+        '200':
+          description: Shipment action result.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ShipmentDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /shipments/{shipment}/delivery:
+    parameters:
+      - {name: shipment, in: path, required: true, schema: {type: integer}}
+    get:
+      tags: [Shipments]
+      security: [{cookieAuth: []}]
+      operationId: shipmentDelivery
+      responses:
+        '200':
+          description: Customer delivery details.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/DeliveryDto'}
+        '404': {$ref: '#/components/responses/Problem'}
+    patch:
+      tags: [Shipments]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: updateShipmentDelivery
+      parameters:
+        - {name: If-Match, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeliveryInput'}
+      responses:
+        '200':
+          description: Delivery details updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/DeliveryDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /shipments/{shipment}/proof-of-delivery:
+    get:
+      tags: [Shipments]
+      security: [{cookieAuth: []}]
+      operationId: proofOfDelivery
+      parameters:
+        - {name: shipment, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Customer-safe proof of delivery or null.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ProofOfDeliveryDto'}
+        '404': {$ref: '#/components/responses/Problem'}
   /files/upload-intents:
     post:
       tags: [Files]
@@ -1002,6 +1095,29 @@ components:
         - {$ref: '#/components/schemas/ApiSuccess'}
         - type: object
           properties: {data: {type: 'null'}}
+    DeliveryInput:
+      type: object
+      properties:
+        recipientName: {type: string, maxLength: 255}
+        recipientPhone: {type: string, maxLength: 50}
+        recipientAddress: {type: string, maxLength: 1000}
+    DeliveryDto:
+      allOf:
+        - {$ref: '#/components/schemas/DeliveryInput'}
+        - type: object
+          required: [shipmentId, revision]
+          properties:
+            shipmentId: {type: string}
+            revision: {type: integer}
+    ProofOfDeliveryDto:
+      type: object
+      required: [shipmentId]
+      properties:
+        shipmentId: {type: string}
+        recipientName: {type: string, nullable: true}
+        occurredAt: {type: string, format: date-time, nullable: true}
+        method: {type: string, nullable: true}
+        evidenceUrl: {type: string, format: uri, nullable: true}
     UploadIntentInput:
       type: object
       required: [fileName, contentType, sizeBytes, purpose]
