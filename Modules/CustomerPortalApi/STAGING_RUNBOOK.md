@@ -14,6 +14,7 @@ Set the following non-secret values in the staging environment:
 APP_ENV=staging
 APP_DEBUG=false
 INSTALLATION=true
+CUSTOMER_PORTAL_API_URL=https://api.newworldcargo.com
 CUSTOMER_PORTAL_API_ALLOWED_ORIGINS=https://portal-staging.example.com
 CUSTOMER_PORTAL_API_MAX_PER_PAGE=50
 CUSTOMER_PORTAL_API_RATE_LIMIT=60
@@ -26,7 +27,7 @@ CUSTOMER_PORTAL_BFF_SHARED_SECRET=<secret-manager-value>
 CUSTOMER_PORTAL_BFF_SESSION_HOURS=8
 ```
 
-Use the project’s existing `APP_KEY`, database, mail, storage, and provider configuration only through the secret manager. Never copy the public repository’s former `.env.example` values into staging. Configure the React server with `NWC_BACKEND_ORIGIN=https://laravel-staging.example.com`, `NWC_BACKEND_API_PREFIX=/api`, `NWC_BFF_SERVICE_TOKEN` matching the Laravel service-token value, `NWC_BFF_SHARED_SECRET` matching the Laravel signing-secret value, and `NWC_BFF_ALLOWED_ORIGIN=https://portal-staging.example.com`. The service token and signing secret must exist only in server-side secret storage.
+Use the project’s existing `APP_KEY`, database, mail, storage, and provider configuration only through the secret manager. Never copy the public repository’s former `.env.example` values into staging. Configure the React server with `NWC_BACKEND_ORIGIN=https://api.newworldcargo.com`, `NWC_BACKEND_API_PREFIX=/api`, `NWC_BFF_SERVICE_TOKEN` matching the Laravel service-token value, `NWC_BFF_SHARED_SECRET` matching the Laravel signing-secret value, and `NWC_BFF_ALLOWED_ORIGIN=https://portal-staging.example.com`. The service token and signing secret must exist only in server-side secret storage. For staging, use the real staging hostname instead of the production API hostname until the API virtual host and TLS certificate have been verified; the production value is documented here for the final release environment.
 
 ## 2. Deploy and migrate
 
@@ -84,7 +85,7 @@ Test login, registration, and verification rate limits with repeated failures. C
 
 ## 5. React activation gate
 
-Keep the React island in mock mode until the following are attached to the pull request:
+Keep production traffic disabled until the following are attached to the pull request. The React code now defaults to HTTP/BFF mode; use an explicit mock-mode environment variable only for isolated demos:
 
 - OpenAPI validation output.
 - Frontend DTO/Zod compatibility output.
@@ -95,4 +96,4 @@ Keep the React island in mock mode until the following are attached to the pull 
 - Migration and rollback rehearsal output.
 - Staging error-rate and latency observations.
 
-Only after approval should staging set `VITE_NWC_DATA_MODE=http` and the staging API base URL. Production activation requires a separate approval, a backup, a migration window, health checks, monitoring, and a documented rollback.
+After the checks pass, staging should run with the React HTTP/BFF mode and its staging Laravel upstream. Production activation requires a separate approval, a backup, a migration window, the verified `https://api.newworldcargo.com` virtual host and TLS certificate, health checks, monitoring, and a documented rollback.
