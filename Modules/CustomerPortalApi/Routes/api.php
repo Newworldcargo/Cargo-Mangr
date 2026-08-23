@@ -5,6 +5,7 @@ use Modules\CustomerPortalApi\Http\Controllers\Api\V1\AddressController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\AuthController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\HealthController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\InvoiceController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\DraftQuoteController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\NotificationController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ReferenceDataController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ShipmentController;
@@ -55,6 +56,14 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
     Route::get('invoices/{invoice}', [InvoiceController::class, 'show'])->whereNumber('invoice');
     Route::get('wallet', [WalletController::class, 'show']);
     Route::get('wallet/transactions', [WalletController::class, 'transactions']);
+
+    Route::get('shipment-drafts', [DraftQuoteController::class, 'drafts']);
+    Route::post('shipment-drafts', [DraftQuoteController::class, 'createDraft']);
+    Route::get('shipment-drafts/{draft}', [DraftQuoteController::class, 'showDraft'])->whereNumber('draft');
+    Route::put('shipment-drafts/{draft}', [DraftQuoteController::class, 'updateDraft'])->whereNumber('draft');
+    Route::delete('shipment-drafts/{draft}', [DraftQuoteController::class, 'deleteDraft'])->whereNumber('draft');
+    Route::post('quotes', [DraftQuoteController::class, 'createQuote']);
+    Route::get('quotes/{quote}', [DraftQuoteController::class, 'showQuote'])->whereNumber('quote');
 
     Route::get('notifications', [NotificationController::class, 'index']);
     Route::patch('notifications/{notification}/read', [NotificationController::class, 'read']);

@@ -477,6 +477,138 @@ paths:
         '404': {$ref: '#/components/responses/Problem'}
         '409': {$ref: '#/components/responses/Problem'}
         '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /shipment-drafts:
+    get:
+      tags: [Shipments]
+      security: [{cookieAuth: []}]
+      operationId: listShipmentDrafts
+      responses:
+        '200':
+          description: Customer shipment drafts.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/ShipmentDraftDto'}}
+    post:
+      tags: [Shipments]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createShipmentDraft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ShipmentDraftInput'}
+      responses:
+        '201':
+          description: Shipment draft created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ShipmentDraftDto'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /shipment-drafts/{draft}:
+    parameters:
+      - {name: draft, in: path, required: true, schema: {type: integer}}
+    get:
+      tags: [Shipments]
+      security: [{cookieAuth: []}]
+      operationId: showShipmentDraft
+      responses:
+        '200':
+          description: Shipment draft.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ShipmentDraftDto'}
+        '404': {$ref: '#/components/responses/Problem'}
+    put:
+      tags: [Shipments]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: updateShipmentDraft
+      parameters:
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ShipmentDraftInput'}
+      responses:
+        '200':
+          description: Shipment draft updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/ShipmentDraftDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+    delete:
+      tags: [Shipments]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: deleteShipmentDraft
+      parameters:
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      responses:
+        '204': {description: Shipment draft deleted.}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+  /quotes:
+    post:
+      tags: [Shipments]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createQuote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/QuoteInput'}
+      responses:
+        '201':
+          description: Quote snapshot created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/QuoteDto'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /quotes/{quote}:
+    get:
+      tags: [Shipments]
+      security: [{cookieAuth: []}]
+      operationId: showQuote
+      parameters:
+        - {name: quote, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Quote snapshot.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/QuoteDto'}
+        '404': {$ref: '#/components/responses/Problem'}
   /support/cases:
     get:
       tags: [Support]
@@ -776,6 +908,48 @@ components:
         - {$ref: '#/components/schemas/ApiSuccess'}
         - type: object
           properties: {data: {type: 'null'}}
+    ShipmentDraftInput:
+      type: object
+      required: [payload]
+      properties:
+        payload: {type: object, additionalProperties: true}
+        expiresAt: {type: string, format: date-time, nullable: true}
+    ShipmentDraftDto:
+      allOf:
+        - {$ref: '#/components/schemas/ShipmentDraftInput'}
+        - type: object
+          required: [id, customerId, status, revision]
+          properties:
+            id: {type: string}
+            customerId: {type: string}
+            status: {type: string}
+            quoteId: {type: string, nullable: true}
+            shipmentId: {type: string, nullable: true}
+            revision: {type: integer, minimum: 1}
+            createdAt: {type: string, format: date-time, nullable: true}
+            updatedAt: {type: string, format: date-time, nullable: true}
+    QuoteInput:
+      type: object
+      required: [transportMode, deliveryOption, snapshot]
+      properties:
+        draftId: {type: integer, nullable: true}
+        transportMode: {type: string, enum: [air, sea]}
+        deliveryOption: {type: string}
+        snapshot: {type: object, additionalProperties: true}
+    QuoteDto:
+      allOf:
+        - {$ref: '#/components/schemas/QuoteInput'}
+        - type: object
+          required: [id, customerId, currency, amountMinor, status, expiresAt, revision]
+          properties:
+            id: {type: string}
+            customerId: {type: string}
+            currency: {type: string}
+            amountMinor: {type: integer, minimum: 0}
+            assumptions: {type: array}
+            status: {type: string, enum: [active, expired]}
+            expiresAt: {type: string, format: date-time}
+            revision: {type: integer, minimum: 1}
     SupportCaseInput:
       type: object
       required: [category, subject, detail]
