@@ -133,6 +133,52 @@ class AuthController extends PortalController
         return $this->success($request, null);
     }
 
+    public function resendVerification(Request $request)
+    {
+        $user = Auth::guard('web')->user();
+        if (!$user) {
+            return $this->problem($request, 'UNAUTHENTICATED', 'Your verification session has expired.', 401);
+        }
+        if ((bool) $user->verified) {
+            return $this->success($request, null);
+        }
+
+        $user->otp = random_int(100000, 999999);
+        $user->otp_expires_at = now()->addMinutes(10);
+        $user->save();
+        return $this->success($request, null);
+    }
+
+    public function verifyPassword(Request $request)
+    {
+        $validator = Validator::make($request->all(), ['password' => ['required', 'string']]);
+        if ($validator->fails()) return $this->problem($request, 'VALIDATION_FAILED', 'A password is required.', 422, $validator->errors()->toArray());
+        $user = Auth::guard('web')->user();
+        if (!$user || !Hash::check($request->input('password'), $user->password)) {
+            return $this->problem($request, 'CURRENT_PASSWORD_INVALID', 'The current password is invalid.', 422);
+        }
+        $request->session()->put('portal_recent_auth_at', now()->timestamp);
+        return $this->success($request, null);
+    }
+
+    public function changePassword(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'currentPassword' => ['required', 'string'],
+            'nextPassword' => ['required', 'string', 'min:8'],
+        ]);
+        if ($validator->fails()) return $this->problem($request, 'VALIDATION_FAILED', 'Please correct the password fields.', 422, $validator->errors()->toArray());
+        $user = Auth::guard('web')->user();
+        if (!$user || !Hash::check($request->input('currentPassword'), $user->password)) {
+            return $this->problem($request, 'CURRENT_PASSWORD_INVALID', 'The current password is invalid.', 422);
+        }
+        $user->password = Hash::make($request->input('nextPassword'));
+        $user->save();
+        $request->session()->regenerate();
+        $request->session()->regenerateToken();
+        return $this->success($request, null);
+    }
+
     public function logout(Request $request)
     {
         Auth::guard('web')->logout();

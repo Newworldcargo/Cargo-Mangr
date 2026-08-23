@@ -12,6 +12,8 @@ use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ReferenceDataController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ShipmentController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ProfileController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\PaymentController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ShipmentActionController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ShipmentDeliveryController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\PickupController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ReturnController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\SupportController;
@@ -30,14 +32,17 @@ Route::post('auth/login', [AuthController::class, 'login'])
 Route::post('auth/register', [AuthController::class, 'register'])
     ->middleware('throttle:customer-portal');
 Route::post('auth/verify', [AuthController::class, 'verify'])
-    ->middleware('throttle:customer-portal');
-
+    ->middleware([PortalCsrfMiddleware::class, 'throttle:customer-portal']);
+Route::post('auth/verify/resend', [AuthController::class, 'resendVerification'])
+    ->middleware([PortalCsrfMiddleware::class, 'throttle:customer-portal']);
 Route::get('public/tracking/{trackingNumber}', [ShipmentController::class, 'publicTracking'])
     ->middleware('throttle:customer-portal-public-tracking')
     ->where('trackingNumber', '[A-Za-z0-9_-]+');
 
 Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->group(function () {
     Route::get('session', [SessionController::class, 'show']);
+    Route::post('auth/password/verify', [AuthController::class, 'verifyPassword']);
+    Route::post('auth/password/change', [AuthController::class, 'changePassword']);
     Route::post('auth/logout', [AuthController::class, 'logout']);
     Route::get('profile', [ProfileController::class, 'show']);
     Route::patch('profile', [ProfileController::class, 'update']);
@@ -91,4 +96,8 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
 
     Route::get('shipments', [ShipmentController::class, 'index']);
     Route::get('shipments/{shipment}', [ShipmentController::class, 'show'])->whereNumber('shipment');
+    Route::post('shipments/{shipment}/actions', [ShipmentActionController::class, 'store'])->whereNumber('shipment');
+    Route::get('shipments/{shipment}/delivery', [ShipmentDeliveryController::class, 'show'])->whereNumber('shipment');
+    Route::patch('shipments/{shipment}/delivery', [ShipmentDeliveryController::class, 'update'])->whereNumber('shipment');
+    Route::get('shipments/{shipment}/proof-of-delivery', [ShipmentDeliveryController::class, 'proofOfDelivery'])->whereNumber('shipment');
 });

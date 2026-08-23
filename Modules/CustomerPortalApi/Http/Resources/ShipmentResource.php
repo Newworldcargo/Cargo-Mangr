@@ -35,8 +35,8 @@ class ShipmentResource extends JsonResource
             'imageUrl' => null,
             'progress' => $this->portalProgress(),
             'events' => $this->portalEvents(),
-            'nextAction' => null,
-            'allowedActions' => [],
+            'nextAction' => $this->allowedActions()[0] ?? null,
+            'allowedActions' => $this->allowedActions(),
             'revision' => (int) ($this->revision ?: 1),
         ];
     }
@@ -84,6 +84,23 @@ class ShipmentResource extends JsonResource
         } catch (\Throwable $e) {
             return null;
         }
+    }
+
+    private function allowedActions()
+    {
+        $status = $this->portalStatus()['status'];
+        $actions = ['report_issue'];
+        if ($status === 'pending' && in_array((int) $this->status_id, [Shipment::SAVED_STATUS, Shipment::REQUESTED_STATUS], true)) {
+            $actions[] = 'cancel';
+        }
+        if ($status === 'delivered') {
+            $actions[] = 'duplicate';
+        }
+        if ($status === 'at_destination') {
+            $actions[] = 'edit_delivery';
+            $actions[] = 'collect_from_depot';
+        }
+        return $actions;
     }
 
     private function portalStatus()
