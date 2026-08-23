@@ -124,6 +124,136 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ApiSuccessAuthUser'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
+  /profile:
+    get:
+      tags: [Auth]
+      security: [{cookieAuth: []}]
+      operationId: profile
+      responses:
+        '200':
+          description: Current authenticated customer profile.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessAuthUser'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    patch:
+      tags: [Auth]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: updateProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                firstName: {type: string, minLength: 2, maxLength: 80}
+                lastName: {type: string, maxLength: 80}
+                phone: {type: string, maxLength: 30}
+      responses:
+        '200':
+          description: Updated customer profile.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiSuccessAuthUser'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /addresses:
+    get:
+      tags: [Auth]
+      security: [{cookieAuth: []}]
+      operationId: listAddresses
+      responses:
+        '200':
+          description: Customer-owned addresses.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {type: array, items: {$ref: '#/components/schemas/AddressDto'}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    post:
+      tags: [Auth]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: createAddress
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AddressInput'}
+      responses:
+        '201':
+          description: Address created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/AddressDto'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /addresses/{address}:
+    parameters:
+      - {name: address, in: path, required: true, schema: {type: integer}}
+    get:
+      tags: [Auth]
+      security: [{cookieAuth: []}]
+      operationId: showAddress
+      responses:
+        '200':
+          description: Customer-owned address.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/AddressDto'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/Problem'}
+    patch:
+      tags: [Auth]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: updateAddress
+      parameters:
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AddressInput'}
+      responses:
+        '200':
+          description: Address updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/ApiSuccess'}
+                  - type: object
+                    properties:
+                      data: {$ref: '#/components/schemas/AddressDto'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
+    delete:
+      tags: [Auth]
+      security: [{cookieAuth: [], csrfHeader: []}]
+      operationId: deleteAddress
+      parameters:
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      responses:
+        '204': {description: Address archived.}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '419': {$ref: '#/components/responses/CsrfMismatch'}
   /shipments:
     get:
       tags: [Shipments]
@@ -230,6 +360,29 @@ components:
         - {$ref: '#/components/schemas/ApiSuccess'}
         - type: object
           properties: {data: {type: 'null'}}
+    AddressInput:
+      type: object
+      required: [address, countryId, stateId]
+      properties:
+        address: {type: string, maxLength: 1000}
+        countryId: {type: integer}
+        stateId: {type: integer}
+        areaId: {type: integer, nullable: true}
+        streetAddressMap: {type: string, nullable: true}
+        lat: {type: string, nullable: true}
+        lng: {type: string, nullable: true}
+        url: {type: string, format: uri, nullable: true}
+        isDefault: {type: boolean}
+    AddressDto:
+      allOf:
+        - {$ref: '#/components/schemas/AddressInput'}
+        - type: object
+          required: [id, revision, isDefault]
+          properties:
+            id: {type: string}
+            revision: {type: integer, minimum: 1}
+            createdAt: {type: string, format: date-time, nullable: true}
+            updatedAt: {type: string, format: date-time, nullable: true}
     AuthUser:
       type: object
       required: [id, firstName, lastName, email, phone, provider, verified]

@@ -4,7 +4,7 @@
 
 The branch `feature/customer-portal-api-v1` now contains an isolated `Modules/CustomerPortalApi` module. It is mounted under `/api/v1` and does not add routes to the existing unversioned root API, Cargo API, CustomerAppAddon API, or Laravel customer UI.
 
-The first vertical slice includes health/readiness endpoints, customer registration, login, verification, logout, current session, customer-owned shipment list/detail, public-safe tracking, request IDs, structured success/problem envelopes, CSRF cookie/header enforcement, customer-context ownership checks, dedicated rate limiting, shipment revision migration, OpenAPI 3.1 documentation, and feature tests.
+The first vertical slice includes health/readiness endpoints, customer registration, login, verification, logout, current session, customer-owned shipment list/detail, public-safe tracking, profile read/update, customer-owned address list/detail/create/update/archive, request IDs, structured success/problem envelopes, CSRF cookie/header enforcement, customer-context ownership checks, dedicated rate limiting, shipment and address revision migrations, OpenAPI 3.1 documentation, and feature tests.
 
 ## Security behavior
 
