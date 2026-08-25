@@ -50,59 +50,8 @@
             });
         }
             
-        let selectedShipmentId = null;
-        const originalTotal = parseFloat({{ $totalAmount }});
+        let selectedShipmentId = window.selectedShipmentId || null;
         const refundMaxAmount = parseFloat({{ $remainingRefundAmount ?? $totalAmount }});
-        const discountTypeEl = document.getElementById('discountType');
-        const discountValueEl = document.getElementById('discountValue');
-        const finalTotalEl = document.getElementById('finalTotal');
-        const methodOfPaymentEl = document.getElementById('methodOfPayment');
-        let methodOfPaymentDefault = methodOfPaymentEl ? methodOfPaymentEl.dataset.default || '' : '';
-
-        function openMarkPaidModal(shipmentId) {
-            selectedShipmentId = shipmentId;
-            if (discountTypeEl) {
-                discountTypeEl.value = '';
-            }
-            if (discountValueEl) {
-                discountValueEl.value = 0;
-            }
-            if (finalTotalEl) {
-                finalTotalEl.textContent = originalTotal.toFixed(2);
-            }
-            if (methodOfPaymentEl) {
-                methodOfPaymentEl.value = methodOfPaymentDefault || '';
-            }
-            $('#markPaidModal').modal('show');
-        }
-
-        function computeFinalTotal() {
-            if (!discountTypeEl || !discountValueEl || !finalTotalEl) {
-                return;
-            }
-            const type = discountTypeEl.value;
-            const discountVal = parseFloat(discountValueEl.value) || 0;
-            let finalTotal = originalTotal;
-
-            if (type === 'fixed') {
-                finalTotal = originalTotal - discountVal;
-            } else if (type === 'percent') {
-                finalTotal = originalTotal - (originalTotal * (discountVal / 100));
-            }
-
-            if (finalTotal < 0) finalTotal = 0;
-
-            finalTotalEl.textContent = finalTotal.toFixed(2);
-        }
-
-        if (discountTypeEl) {
-            discountTypeEl.addEventListener('change', computeFinalTotal);
-        }
-        if (discountValueEl) {
-            discountValueEl.addEventListener('input', computeFinalTotal);
-        }
-
-
 
         const refundTypeEl = document.getElementById('refundType');
         const refundAmountEl = document.getElementById('refundAmount');

@@ -256,18 +256,18 @@
                 $transactionReceipt = $shipment->receipt;
                 $activeReceiptNumber = $transactionReceipt?->receipt_number ?? $receipt?->receipt_number;
                 $existingPaidTotal = 0.0;
-                if ($activeReceiptNumber) {
-                    $existingPaidTotal = (float) ($shipment->paymentReceipts ?? collect())
-                        ->filter(function ($paymentReceipt) use ($activeReceiptNumber) {
-                            return $paymentReceipt->receipt_number === $activeReceiptNumber
-                                || str_starts_with((string) $paymentReceipt->receipt_number, $activeReceiptNumber . '-');
-                        })
-                        ->sum('amount');
-                }
                 if ($transactionReceipt && $transactionReceipt->status === 'partially_paid') {
                     $totalAmount = (float) $transactionReceipt->total;
                     $paymentCurrency = strtoupper($transactionReceipt->currency ?? $paymentCurrency);
                     $paymentSymbol = currency_symbol_for($paymentCurrency);
+                    if ($activeReceiptNumber) {
+                        $existingPaidTotal = (float) ($shipment->paymentReceipts ?? collect())
+                            ->filter(function ($paymentReceipt) use ($activeReceiptNumber) {
+                                return $paymentReceipt->receipt_number === $activeReceiptNumber
+                                    || str_starts_with((string) $paymentReceipt->receipt_number, $activeReceiptNumber . '-');
+                            })
+                            ->sum('amount');
+                    }
                 }
                 $paymentMethodOptions = [
                     'cash_payment' => 'Cash Payment',
