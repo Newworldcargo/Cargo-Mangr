@@ -43,7 +43,12 @@
         $paymentStatusTone = $shipment->paid == 1 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700';
         $receipt = $shipment->receipt;
         $nwcReceipt = $shipment->nwcReceipt;
-        $paymentReceipts = $shipment->paymentReceipts ?? collect();
+        $currentReceiptNumber = $receipt?->receipt_number ?? $nwcReceipt?->receipt_number;
+        $paymentReceipts = ($shipment->paymentReceipts ?? collect())->filter(function ($paymentReceipt) use ($currentReceiptNumber) {
+            return empty($currentReceiptNumber)
+                || empty($paymentReceipt->receipt_number)
+                || str_starts_with($paymentReceipt->receipt_number, $currentReceiptNumber . '-');
+        });
         $latestPaymentReceipt = $paymentReceipts->sortByDesc('created_at')->first();
         $paidAt = $latestPaymentReceipt?->created_at ?? $nwcReceipt?->created_at ?? $receipt?->created_at;
         $cashierName = $latestPaymentReceipt?->cashier_name

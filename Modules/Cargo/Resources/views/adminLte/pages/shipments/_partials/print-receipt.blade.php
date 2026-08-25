@@ -5,16 +5,21 @@
 </button>
 @php
     $nwcReceipt = $shipment->nwcReceipt;
-    $paymentReceipts = $shipment->paymentReceipts ?? collect();
+    $receiptNumber = $shipment?->receipt?->receipt_number ?? $nwcReceipt?->receipt_number ?? '-';
+    $paymentReceipts = ($shipment->paymentReceipts ?? collect())->filter(function ($paymentReceipt) use ($receiptNumber) {
+        return $receiptNumber === '-'
+            || empty($paymentReceipt->receipt_number)
+            || str_starts_with($paymentReceipt->receipt_number, $receiptNumber . '-');
+    });
     $latestPaymentReceipt = $paymentReceipts->sortByDesc('created_at')->first();
     $chargeLines = $shipment->chargeLines ?? \App\Models\ShipmentChargeLine::where('shipment_id', $shipment->id)->orderBy('sort_order')->get();
     $chargeLinesTotal = $chargeLines->sum('amount');
-    $receiptCurrency = strtoupper($latestPaymentReceipt?->currency ?? $nwcReceipt?->payment_currency ?? $shipment?->receipt?->currency ?? 'ZMW');
+    $receiptCurrency = strtoupper($shipment?->receipt?->currency ?? $latestPaymentReceipt?->currency ?? $nwcReceipt?->payment_currency ?? 'ZMW');
     $receiptSymbol = currency_symbol_for($receiptCurrency);
-    $receiptNumber = $shipment?->receipt?->receipt_number ?? $nwcReceipt?->receipt_number ?? '-';
-    $receiptTotal = $paymentReceipts->isNotEmpty()
-        ? $paymentReceipts->sum('amount')
-        : ($shipment?->receipt?->total ?? (strtoupper($nwcReceipt?->payment_currency ?? '') === 'USD'
+    $receiptTotal = $shipment?->receipt?->total
+        ?? ($paymentReceipts->isNotEmpty()
+            ? $paymentReceipts->sum('amount')
+            : (strtoupper($nwcReceipt?->payment_currency ?? '') === 'USD'
             ? $nwcReceipt?->bill_usd
             : $nwcReceipt?->bill_kwacha));
     $receiptUser = $latestPaymentReceipt?->cashier_name
