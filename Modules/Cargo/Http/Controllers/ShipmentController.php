@@ -1790,7 +1790,7 @@ class ShipmentController extends Controller
 
     public function updatePaymentMeth(Request $request)
     {
-        $shipment = Shipment::where('id', $request->shipment_id)->first();
+        $shipment = Shipment::with('branch')->where('id', $request->shipment_id)->first();
 
         if (!$shipment) {
             return response()->json(['success' => false, 'message' => 'Shipment not found'], 404);
@@ -1802,7 +1802,13 @@ class ShipmentController extends Controller
 
         return response()->json([
             'success' => true,
-            'shipment' => $shipment
+            'shipment' => $shipment,
+            'display_currency' => $this->shipmentPaymentCurrency($shipment),
+            'display_symbol' => currency_symbol_for($this->shipmentPaymentCurrency($shipment)),
+            'display_amount' => $this->shipmentPaymentAmount($shipment),
+            'base_currency' => 'USD',
+            'base_symbol' => currency_symbol_for('USD'),
+            'base_amount' => round((float) ($shipment->amount_to_be_collected ?? 0), 2),
         ], 200);
     }
 
@@ -1982,7 +1988,7 @@ class ShipmentController extends Controller
         DB::beginTransaction();
 
         try {
-            $shipment = Shipment::with('nwcReceipt')->findOrFail($request->shipment_id);
+            $shipment = Shipment::with(['nwcReceipt', 'branch'])->findOrFail($request->shipment_id);
             $oldValues = $shipment->only(['paid']);
 
             $discountType = $request->filled('discount_type') ? $request->discount_type : null;
@@ -2010,13 +2016,11 @@ class ShipmentController extends Controller
                 ];
             }
 
-            // Authoritative base amount: shipment collection total (ZMW) + charge lines.
-            // The shipment display converts amount_to_be_collected (USD) to ZMW; charges are ZMW.
-            $shipmentBase = (float) convert_currency($shipment->amount_to_be_collected, 'usd', 'zmw');
-            if (!is_numeric($shipmentBase)) {
-                $sanitized = preg_replace('/[^0-9.\\-]/', '', (string) $shipmentBase);
-                $shipmentBase = $sanitized === '' ? (float) ($shipment->amount_to_be_collected ?? 0) : (float) $sanitized;
-            }
+            // Authoritative base amount in the same currency shown in the payment modal.
+            // Shipments store amount_to_be_collected in USD; branches without a currency keep
+            // the existing ZMW behavior.
+            $paymentCurrency = $this->shipmentPaymentCurrency($shipment);
+            $shipmentBase = $this->shipmentPaymentAmount($shipment);
             $baseAmount = $shipmentBase + $chargeTotal;
 
             $discountValue = $request->discount_value !== null ? (float) $request->discount_value : 0.0;
@@ -2058,6 +2062,7 @@ class ShipmentController extends Controller
                 'discount_type'  => $discountType,
                 'discount_value' => $discountValue,
                 'total'          => $calculatedFinalTotal,
+                'currency'       => $paymentCurrency,
                 'status'         => 'completed',
             ]);
 
@@ -2074,6 +2079,7 @@ class ShipmentController extends Controller
                         'shipment_id' => $shipment->id,
                         'method_of_payment' => trim($method),
                         'amount' => (float) $request->payment_amount[$index],
+                        'currency' => $paymentCurrency,
                         'receipt_number' => $receiptNumber,
                         'cashier_name' => $cashierName,
                         'user_id' => $user?->id,
@@ -2088,6 +2094,7 @@ class ShipmentController extends Controller
                 'rate',
                 'bill_usd',
                 'bill_kwacha',
+                'payment_currency',
                 'method_of_payment',
                 'discount_type',
                 'discount_value',
@@ -2097,8 +2104,10 @@ class ShipmentController extends Controller
             $existingReceipt = $shipment->nwcReceipt;
             $oldReceiptValues = $existingReceipt ? $existingReceipt->only($receiptAttributeKeys) : [];
 
-            $exchangeRateRecord = CurrencyExchangeRate::query()->first();
-            $exchangeRate = $exchangeRateRecord ? (float) $exchangeRateRecord->exchange_rate : null;
+            $exchangeRate = CurrencyExchangeRate::where('from_currency', 'USD')
+                ->where('to_currency', 'ZMW')
+                ->value('exchange_rate');
+            $exchangeRate = $exchangeRate ? (float) $exchangeRate : null;
 
             $billKwachaValue = convert_currency($shipment->amount_to_be_collected, 'usd', 'zmw');
             if (!is_numeric($billKwachaValue)) {
@@ -2110,11 +2119,9 @@ class ShipmentController extends Controller
 
             $billUsd = round((float) $shipment->amount_to_be_collected, 2);
 
-            if ($exchangeRate && $exchangeRate > 0) {
-                $billUsd = round($billKwacha / $exchangeRate, 2);
-            } elseif ($billUsd > 0 && $billKwacha > 0) {
+            if ((!$exchangeRate || $exchangeRate <= 0) && $billUsd > 0 && $billKwacha > 0) {
                 $exchangeRate = round($billKwacha / $billUsd, 6);
-            } else {
+            } elseif (!$exchangeRate || $exchangeRate <= 0) {
                 $exchangeRate = null;
             }
 
@@ -2126,6 +2133,7 @@ class ShipmentController extends Controller
                 'rate'              => $exchangeRate,
                 'bill_usd'          => $billUsd,
                 'bill_kwacha'       => $billKwacha,
+                'payment_currency'  => $paymentCurrency,
                 'method_of_payment' => $firstPaymentMethod,
                 'discount_type'     => $discountType,
                 'discount_value'    => $discountValue,
@@ -2160,6 +2168,7 @@ class ShipmentController extends Controller
             // Persist charge lines
             $chargeLineModels = [];
             foreach ($chargeLines as $charge) {
+                $charge['currency'] = $paymentCurrency;
                 $chargeLineModels[] = \App\Models\ShipmentChargeLine::create(array_merge(['shipment_id' => $shipment->id], $charge));
             }
             foreach ($chargeLineModels as $chargeLine) {
@@ -2202,6 +2211,38 @@ class ShipmentController extends Controller
                 'message' => $th->getMessage(),
             ], 500);
         }
+    }
+
+    private function shipmentPaymentCurrency(Shipment $shipment): string
+    {
+        if (auth()->check() && (int) auth()->user()->role === 3) {
+            $branchCurrency = \Modules\Cargo\Entities\Branch::where('user_id', auth()->id())->value('default_currency');
+            if ($branchCurrency) {
+                return strtoupper($branchCurrency);
+            }
+        }
+
+        return strtoupper($shipment->branch?->default_currency ?: 'ZMW');
+    }
+
+    private function shipmentPaymentAmount(Shipment $shipment): float
+    {
+        $amount = (float) ($shipment->amount_to_be_collected ?? 0);
+        $currency = $this->shipmentPaymentCurrency($shipment);
+
+        if ($currency === 'USD') {
+            return round($amount, 2);
+        }
+
+        if ($currency === 'ZMW') {
+            return round((float) convert_currency($amount, 'usd', 'zmw'), 2);
+        }
+
+        $rate = CurrencyExchangeRate::where('from_currency', 'USD')
+            ->where('to_currency', $currency)
+            ->value('exchange_rate');
+
+        return $rate && $rate > 0 ? round($amount * (float) $rate, 2) : round($amount, 2);
     }
 
 

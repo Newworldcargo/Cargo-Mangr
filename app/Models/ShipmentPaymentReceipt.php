@@ -15,6 +15,7 @@ class ShipmentPaymentReceipt extends Model
         'shipment_id',
         'method_of_payment',
         'amount',
+        'currency',
         'receipt_number',
         'cashier_name',
         'user_id',

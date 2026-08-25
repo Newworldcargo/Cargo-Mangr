@@ -16,6 +16,7 @@ class Transxn extends Model
         'discount_type',
         'discount_value',
         'total',
+        'currency',
         'status',
         'refunded_at',
         'refund_reason',

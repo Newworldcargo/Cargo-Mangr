@@ -1,6 +1,33 @@
 <div class="w-full">
     @php
         use Carbon\Carbon;
+        use Illuminate\Support\HtmlString;
+
+        $viewerBranch = auth()->user()->role == 3
+            ? \Modules\Cargo\Entities\Branch::where('user_id', auth()->id())->first()
+            : null;
+        $viewerCurrency = strtoupper($viewerBranch?->default_currency ?: 'ZMW');
+        $viewerSymbol = currency_symbol_for($viewerCurrency);
+        $formatShipmentAmount = function ($shipment, string $primaryClass = 'text-dark text-md font-weight-bold', string $secondaryClass = 'text-warning text-sm') use ($viewerCurrency, $viewerSymbol) {
+            $usdAmount = (float) ($shipment->amount_to_be_collected ?? 0);
+            if ($viewerCurrency === 'USD') {
+                return new HtmlString('<span class="' . e($primaryClass) . '">$' . number_format($usdAmount, 2) . '</span>');
+            }
+
+            if ($viewerCurrency === 'ZMW') {
+                $displayAmount = convert_currency($usdAmount, 'usd', 'zmw');
+            } else {
+                $rate = \App\Models\CurrencyExchangeRate::where('from_currency', 'USD')
+                    ->where('to_currency', $viewerCurrency)
+                    ->value('exchange_rate');
+                $displayAmount = $rate ? ($usdAmount * (float) $rate) : $usdAmount;
+            }
+
+            return new HtmlString(
+                '<span class="' . e($primaryClass) . '">' . e($viewerSymbol) . number_format($displayAmount, 2) . ' ' . e($viewerCurrency) . '</span>' .
+                '<span class="' . e($secondaryClass) . '"> ($' . number_format($usdAmount, 2) . ' USD)</span>'
+            );
+        };
     @endphp
     <div class="row">
         <div id="column3" class="col-md-12 px-6">
@@ -112,10 +139,7 @@
                                 </td>
                                 <td>{{ $shipment->client_phone ?? 'No phone' }}</td>
                                 <td>
-                                    <span class="text-dark text-md font-weight-bold">
-                                        K{{ number_format(convert_currency($shipment->amount_to_be_collected, 'usd', 'zmw'), 2) }}
-                                    </span>
-                                    <span class="text-warning text-sm">(${{ $shipment->amount_to_be_collected }})</span>
+                                    {!! $formatShipmentAmount($shipment) !!}
                                 </td>
                                 <td>
                                     @if ($shipment->paid)
@@ -187,8 +211,7 @@
                                     </div>
                                 </div>
                                 <div class="shipment-amount text-end pe-3">
-                                    <div class="fw-bold text-dark fs-6">K{{ number_format(convert_currency($shipment->amount_to_be_collected, 'usd', 'zmw'), 2) }}</div>
-                                    <div class="text-warning small">(${{ $shipment->amount_to_be_collected }})</div>
+                                    <div>{!! $formatShipmentAmount($shipment, 'fw-bold text-dark fs-6', 'text-warning small d-block') !!}</div>
                                     <span class="badge {{ $shipment->paid ? 'bg-success' : 'bg-secondary' }} rounded-pill px-2 py-1 mt-1">{{ $shipment->paid ? 'PAID' : 'UNPAID' }}</span>
                                     <div class="text-muted small mt-1">{{ $shipment->created_at->toFormattedDateString() }}</div>
                                 </div>
@@ -232,8 +255,7 @@
                                             @endforeach
                                         </small>
                                     </div>
-                                    <div class="fw-bold text-dark fs-6 mb-1">K{{ number_format(convert_currency($shipment->amount_to_be_collected, 'usd', 'zmw'), 2) }}</div>
-                                    <small class="text-warning">(${{ $shipment->amount_to_be_collected }})</small>
+                                    <div>{!! $formatShipmentAmount($shipment, 'fw-bold text-dark fs-6 mb-1', 'text-warning small d-block') !!}</div>
                                 </div>
                                 <div class="card-footer bg-white border-0 pt-0 pb-3 px-3">
                                     <div class="d-flex justify-content-between align-items-center">

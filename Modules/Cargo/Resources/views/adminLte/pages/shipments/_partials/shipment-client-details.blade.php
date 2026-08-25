@@ -55,7 +55,10 @@
             ? $paymentReceipts
             : collect($nwcReceipt ? [[
                 'method_of_payment' => $nwcReceipt->method_of_payment,
-                'amount' => $receipt?->total ?? $nwcReceipt->bill_kwacha,
+                'amount' => strtoupper($nwcReceipt->payment_currency ?? '') === 'USD'
+                    ? ($nwcReceipt->bill_usd ?? $receipt?->total)
+                    : ($receipt?->total ?? $nwcReceipt->bill_kwacha),
+                'currency' => $nwcReceipt->payment_currency ?? $receipt?->currency,
                 'receipt_number' => $nwcReceipt->receipt_number,
             ]] : []);
         if ($receipt) {
@@ -106,12 +109,15 @@
                                     @php
                                         $method = is_array($paymentRow) ? ($paymentRow['method_of_payment'] ?? null) : $paymentRow->method_of_payment;
                                         $amount = is_array($paymentRow) ? ($paymentRow['amount'] ?? null) : $paymentRow->amount;
+                                        $rowCurrency = is_array($paymentRow) ? ($paymentRow['currency'] ?? null) : ($paymentRow->currency ?? null);
+                                        $rowCurrency = $rowCurrency ?: 'ZMW';
+                                        $rowSymbol = currency_symbol_for($rowCurrency);
                                         $receiptNumber = is_array($paymentRow) ? ($paymentRow['receipt_number'] ?? null) : $paymentRow->receipt_number;
                                     @endphp
                                     <div class="flex justify-between gap-4">
                                         <span>{{ $method ? ucwords(str_replace('_', ' ', $method)) : 'Payment' }}</span>
                                         <span class="font-semibold text-gray-900 text-right">
-                                            K{{ number_format((float) $amount, 2) }}
+                                            {{ $rowSymbol }}{{ number_format((float) $amount, 2) }} {{ $rowCurrency }}
                                         </span>
                                     </div>
                                     @if ($receiptNumber)
@@ -130,8 +136,7 @@
     <div class="w-full md:w-1/3 px-4 mb-6">
         <div class="p-5 bg-gray-50 rounded-lg shadow-sm h-full">
             <h2 class="text-lg font-semibold text-gray-700 mb-3">{{ __('cargo::view.amount_to_be_collected') }}</h2>
-            <div class="text-2xl font-bold text-blue-600">K{{ number_format(convert_currency($shipment->amount_to_be_collected, 'usd', 'zmw'), 2) }}</div>
-            <span class="text-muted text-sm">(${{ $shipment->amount_to_be_collected }})</span>
+            <div class="text-2xl font-bold text-blue-600">{!! $formatViewerAmount($shipment->amount_to_be_collected) !!}</div>
         </div>
     </div>
     @endif

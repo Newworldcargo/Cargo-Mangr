@@ -1,3 +1,10 @@
+@php
+    $checkoutBranch = auth()->user()->role == 3
+        ? \Modules\Cargo\Entities\Branch::where('user_id', auth()->id())->first()
+        : null;
+    $checkoutCurrency = strtoupper($checkoutBranch?->default_currency ?: ($shipment->branch?->default_currency ?: 'ZMW'));
+    $checkoutSymbol = currency_symbol_for($checkoutCurrency);
+@endphp
 <div id="checkoutModal" class="checkout-modal">
     <div class="checkout-modal-content">
         <span class="close" onclick="closeCheckoutModal()">&times;</span>
@@ -21,12 +28,15 @@
                     {{-- <button type="button" class="payment-method" data-method="stripe_payment">
                         <i class="fa fa-stripe"></i> Stripe
                     </button> --}}
-                    <button type="button" class="payment-method" data-method="mobile">
-                        <i class="fa fa-mobile"></i> Mobile Money
-                    </button>
+                    @if ($checkoutCurrency === 'ZMW')
+                        <button type="button" class="payment-method" data-method="mobile">
+                            <i class="fa fa-mobile"></i> Mobile Money
+                        </button>
+                    @endif
                 </div>
 
-                <div id="mobile-money-input" style="display: none;">
+                @if ($checkoutCurrency === 'ZMW')
+                    <div id="mobile-money-input" style="display: none;">
                     <h4>Mobile Network:</h4>
                     <div class="mobile-networks">
                         <button type="button" class="mobile-network" data-network="AIRTEL_OAPI_ZMB">
@@ -43,7 +53,8 @@
                         <label>Phone Number:</label>
                         <input type="text" id="phone-number" placeholder="ex. 772147755" class="form-control" name="phone">
                     </div>
-                </div>
+                    </div>
+                @endif
 
                 <input type="hidden" id="payment-method-selected" name="payment_method">
                 <input type="hidden" id="mobile-network-selected" name="correspondant">
@@ -61,6 +72,7 @@
                     <p><strong>Tracking ID:</strong> <span id="tracking-id"></span></p>
                     <p><strong>Recipient:</strong> <span id="recipient"></span></p>
                     <p><strong>Address:</strong> <span id="address"></span></p>
+                    <p id="usd-base-row" style="display: none;"><strong>USD Price Before Conversion:</strong> <span id="usd-base-amount"></span></p>
                     <p><strong>Total Amount:</strong> <span id="amount"></span></p>
                 </div>
 
@@ -337,7 +349,19 @@ function updateShipment() {
             document.getElementById('tracking-id').textContent = data.shipment.code; // Use correct field
             document.getElementById('recipient').textContent = data.shipment.reciver_name; // Use correct field
             document.getElementById('address').textContent = data.shipment.reciver_address;
-            document.getElementById('amount').textContent = `$${data.shipment.amount_to_be_collected}`;
+            const amount = Number(data.display_amount ?? data.shipment.amount_to_be_collected ?? 0);
+            const symbol = data.display_symbol ?? @json($checkoutSymbol);
+            const currency = data.display_currency ?? @json($checkoutCurrency);
+            document.getElementById('amount').textContent = `${symbol}${amount.toFixed(2)} ${currency}`;
+            const usdBaseRow = document.getElementById('usd-base-row');
+            const usdBaseAmount = document.getElementById('usd-base-amount');
+            const baseAmount = Number(data.base_amount ?? data.shipment.amount_to_be_collected ?? 0);
+            if (usdBaseRow && usdBaseAmount && currency !== 'USD') {
+                usdBaseAmount.textContent = `$${baseAmount.toFixed(2)} USD`;
+                usdBaseRow.style.display = '';
+            } else if (usdBaseRow) {
+                usdBaseRow.style.display = 'none';
+            }
 
             nextStep(1);
         } else {
@@ -364,10 +388,19 @@ document.querySelectorAll('.payment-method').forEach(button => {
 
         // Show/hide mobile money input based on selection
         if (this.getAttribute('data-method') === 'mobile') {
-            document.getElementById('mobile-money-input').style.display = 'block';
-            document.getElementById('mobile-money-input2').style.display = 'none';
+            const mobileMoneyInput = document.getElementById('mobile-money-input');
+            const mobileMoneyInput2 = document.getElementById('mobile-money-input2');
+            if (mobileMoneyInput) {
+                mobileMoneyInput.style.display = 'block';
+            }
+            if (mobileMoneyInput2) {
+                mobileMoneyInput2.style.display = 'none';
+            }
         } else {
-            document.getElementById('mobile-money-input').style.display = 'none';
+            const mobileMoneyInput = document.getElementById('mobile-money-input');
+            if (mobileMoneyInput) {
+                mobileMoneyInput.style.display = 'none';
+            }
             document.getElementById('mobile-network-selected').value = '';
         }
     });
@@ -390,7 +423,9 @@ document.querySelectorAll('.mobile-network').forEach(button => {
     });
 });
 
-document.getElementById('phone-number').addEventListener('input', function(e) {
+const phoneNumberInput = document.getElementById('phone-number');
+if (phoneNumberInput) {
+phoneNumberInput.addEventListener('input', function(e) {
     let inputValue = e.target.value;
 
     // Remove all non-numeric characters
@@ -409,5 +444,6 @@ document.getElementById('phone-number').addEventListener('input', function(e) {
     // Update the value in the input field
     e.target.value = inputValue;
 });
+}
 
 </script>

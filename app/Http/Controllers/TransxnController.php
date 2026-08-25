@@ -29,30 +29,32 @@ class TransxnController extends Controller
      *  - refunded   = refunded_at is set; amount = refunded_amount when > 0,
      *                 otherwise the full transaction total
      */
-    private function periodTotals(Carbon $start, Carbon $end, $scopeQuery = null): array
+    private function periodTotals(Carbon $start, Carbon $end, $scopeQuery = null, string $displayCurrency = 'ZMW'): array
     {
         $q = Transxn::whereIn('status', ['completed', 'refund_requested', 'partially_refunded'])
             ->whereBetween('created_at', [$start, $end]);
         if ($scopeQuery) { $scopeQuery($q); }
-        $totals = $q
-            ->selectRaw('COUNT(*) AS cnt, COALESCE(SUM(total),0) AS total')
-            ->first();
+        $completedRows = $q
+            ->selectRaw('currency, COUNT(*) AS cnt, COALESCE(SUM(total),0) AS total')
+            ->groupBy('currency')
+            ->get();
 
         $rq = Transxn::whereNotNull('refunded_at')
             ->whereBetween('refunded_at', [$start, $end]);
         if ($scopeQuery) { $scopeQuery($rq); }
-        $refunds = $rq
-            ->selectRaw("COUNT(*) AS cnt, COALESCE(SUM(
+        $refundRows = $rq
+            ->selectRaw("currency, COUNT(*) AS cnt, COALESCE(SUM(
                 CASE WHEN COALESCE(refunded_amount,0) <= 0 THEN total
                      ELSE refunded_amount END
             ),0) AS total")
-            ->first();
+            ->groupBy('currency')
+            ->get();
 
         return [
-            'completed'       => (float) ($totals->total ?? 0),
-            'completed_count' => (int) ($totals->cnt ?? 0),
-            'refunded'        => (float) ($refunds->total ?? 0),
-            'refunded_count'  => (int) ($refunds->cnt ?? 0),
+            'completed'       => $completedRows->sum(fn ($row) => $this->displayAmount($row->total, $row->currency, $displayCurrency)),
+            'completed_count' => $completedRows->sum('cnt'),
+            'refunded'        => $refundRows->sum(fn ($row) => $this->displayAmount($row->total, $row->currency, $displayCurrency)),
+            'refunded_count'  => $refundRows->sum('cnt'),
         ];
     }
 
@@ -60,19 +62,28 @@ class TransxnController extends Controller
     {
         $now = Carbon::now();
 
-        // Branch users (role 3) only see transactions of their own branch.
+        // Branch users (role 3) see transactions for their own branch and
+        // payments recorded by that branch cashier.
         $branchCurrency = 'ZMW';
         $userRole = auth()->check() ? (int) auth()->user()->role : 1;
-        $branchQuery = function ($q) use (&$branchCurrency) {
-            if ($this->isBranchUser()) {
-                $branch = \Modules\Cargo\Entities\Branch::where('user_id', auth()->id())->first();
-                if ($branch) {
-                    $branchId = $branch->id;
-                    $branchCurrency = $branch->default_currency ?? 'ZMW';
-                    $q->whereHas('shipment', function ($qs) use ($branchId) {
+        $viewerBranch = $this->isBranchUser()
+            ? \Modules\Cargo\Entities\Branch::where('user_id', auth()->id())->first()
+            : null;
+        if ($viewerBranch) {
+            $branchCurrency = $viewerBranch->default_currency ?? 'ZMW';
+        }
+
+        $branchQuery = function ($q) use ($viewerBranch) {
+            if ($viewerBranch) {
+                $branchId = $viewerBranch->id;
+                $branchUserId = $viewerBranch->user_id;
+                $q->where(function ($scoped) use ($branchId, $branchUserId) {
+                    $scoped->whereHas('shipment', function ($qs) use ($branchId) {
                         $qs->where('branch_id', $branchId);
+                    })->orWhereHas('nwcReceipt', function ($qr) use ($branchUserId) {
+                        $qr->where('user_id', $branchUserId);
                     });
-                }
+                });
             }
         };
 
@@ -87,7 +98,7 @@ class TransxnController extends Controller
         $totals = [];
         $refundedTotals = [];
         foreach ($periods as $key => [$start, $end]) {
-            $p = $this->periodTotals($start, $end, $branchQuery);
+            $p = $this->periodTotals($start, $end, $branchQuery, $branchCurrency);
             $totals[$key] = $p['completed'];
             $refundedTotals[$key] = $p['refunded'];
         }
@@ -97,28 +108,26 @@ class TransxnController extends Controller
         $listingQuery = Transxn::with(['shipment.client', 'shipment'])
             ->orderBy('created_at', 'desc')
             ->limit(500);
-        if ($this->isBranchUser()) {
-            $branch = \Modules\Cargo\Entities\Branch::where('user_id', auth()->id())->first();
-            if ($branch) {
-                $listingQuery->whereHas('shipment', function ($qs) use ($branch) {
-                    $qs->where('branch_id', $branch->id);
+        if ($viewerBranch) {
+            $listingQuery->where(function ($scoped) use ($viewerBranch) {
+                $scoped->whereHas('shipment', function ($qs) use ($viewerBranch) {
+                    $qs->where('branch_id', $viewerBranch->id);
+                })->orWhereHas('nwcReceipt', function ($qr) use ($viewerBranch) {
+                    $qr->where('user_id', $viewerBranch->user_id);
                 });
-                if (empty($branchCurrency)) {
-                    $branchCurrency = $branch->default_currency ?? 'ZMW';
-                }
-            }
+            });
         }
         $transactions = $listingQuery->get();
 
-        // Display amounts in the viewing branch's currency (ZMW stored; converted here).
-        $conv = function ($amount) use ($branchCurrency) {
-            return convert_amount_to_branch_currency($amount, $branchCurrency);
-        };
-        $totals        = array_map($conv, $totals);
-        $refundedTotals = array_map($conv, $refundedTotals);
         foreach ($transactions as $t) {
-            $t->display_total = $conv($t->total);
-            $t->display_refunded_amount = $conv($t->refunded_amount ?? 0);
+            $displayCurrency = $t->currency ?: $branchCurrency;
+            $t->display_currency = $displayCurrency;
+            $t->display_total = $t->currency
+                ? (float) $t->total
+                : $this->displayAmount($t->total, null, $displayCurrency);
+            $t->display_refunded_amount = $t->currency
+                ? (float) ($t->refunded_amount ?? 0)
+                : $this->displayAmount($t->refunded_amount ?? 0, null, $displayCurrency);
         }
         $branchCurrency = $branchCurrency; // keep for the view
 
@@ -133,5 +142,27 @@ class TransxnController extends Controller
     private function isBranchUser(): bool
     {
         return auth()->check() && (int) auth()->user()->role === 3;
+    }
+
+    private function displayAmount($amount, ?string $storedCurrency, string $displayCurrency): float
+    {
+        $from = strtoupper($storedCurrency ?: 'ZMW');
+        $to = strtoupper($displayCurrency ?: 'ZMW');
+        $amount = (float) $amount;
+
+        if ($from === $to) {
+            return $amount;
+        }
+
+        if ($from === 'ZMW') {
+            return convert_amount_to_branch_currency($amount, $to);
+        }
+
+        $zmwAmount = convert_currency($amount, strtolower($from), 'zmw');
+        if ($to === 'ZMW') {
+            return (float) $zmwAmount;
+        }
+
+        return convert_amount_to_branch_currency($zmwAmount, $to);
     }
 }

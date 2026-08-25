@@ -17,6 +17,7 @@ class NwcReceipt extends Model
         'rate',
         'bill_usd',
         'bill_kwacha',
+        'payment_currency',
         'method_of_payment',
         'discount_type',
         'discount_value',
@@ -28,6 +29,7 @@ class NwcReceipt extends Model
         'rate'           => 'float',
         'bill_usd'       => 'float',
         'bill_kwacha'    => 'float',
+        'payment_currency' => 'string',
         'discount_value' => 'float',
     ];
 

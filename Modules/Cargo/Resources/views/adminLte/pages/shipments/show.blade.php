@@ -2,6 +2,7 @@
     use \Milon\Barcode\DNS1D;
     use Carbon\Carbon;
     use Illuminate\Support\Str;
+    use Illuminate\Support\HtmlString;
     use App\Models\GeneralSettings;
     $d = new DNS1D();
     $user_role = auth()->user()->role;
@@ -17,6 +18,34 @@
         || ($user_role != 4 && (auth()->user()->can('confirm-shipment-payment') || auth()->user()->hasRole(['cashier', 'cashiers'])))
     );
     $pendingRefundRequest = $pendingRefundRequest ?? null;
+    $viewerBranch = $user_role == 3
+        ? \Modules\Cargo\Entities\Branch::where('user_id', auth()->id())->first()
+        : null;
+    $viewerCurrency = strtoupper($viewerBranch?->default_currency ?: ($shipment->branch?->default_currency ?: 'ZMW'));
+    $viewerSymbol = currency_symbol_for($viewerCurrency);
+    $viewerAmountFromUsd = function ($usdAmount) use ($viewerCurrency) {
+        $usdAmount = (float) ($usdAmount ?? 0);
+        if ($viewerCurrency === 'USD') {
+            return round($usdAmount, 2);
+        }
+        if ($viewerCurrency === 'ZMW') {
+            return round((float) convert_currency($usdAmount, 'usd', 'zmw'), 2);
+        }
+        $rate = \App\Models\CurrencyExchangeRate::where('from_currency', 'USD')
+            ->where('to_currency', $viewerCurrency)
+            ->value('exchange_rate');
+        return $rate && $rate > 0 ? round($usdAmount * (float) $rate, 2) : round($usdAmount, 2);
+    };
+    $formatViewerAmount = function ($usdAmount, string $primaryClass = '', string $secondaryClass = 'text-muted text-sm') use ($viewerCurrency, $viewerSymbol, $viewerAmountFromUsd) {
+        $usdAmount = (float) ($usdAmount ?? 0);
+        $displayAmount = $viewerAmountFromUsd($usdAmount);
+        $primary = trim($primaryClass) !== '' ? ' class="' . e($primaryClass) . '"' : '';
+        $html = '<span' . $primary . '>' . e($viewerSymbol) . number_format($displayAmount, 2) . ($viewerCurrency === 'USD' ? '' : ' ' . e($viewerCurrency)) . '</span>';
+        if ($viewerCurrency !== 'USD') {
+            $html .= '<span class="' . e($secondaryClass) . '"> ($' . number_format($usdAmount, 2) . ' USD)</span>';
+        }
+        return new HtmlString($html);
+    };
 @endphp
 
 @extends('cargo::adminLte.layouts.master')
@@ -93,7 +122,7 @@
                         </div>
                         <div class="text-right">
                             <span class="text-3xl font-bold text-blue-600">
-                                K{{ number_format(convert_currency($shipment->amount_to_be_collected, 'usd', 'zmw'), 2) }}
+                                {!! $formatViewerAmount($shipment->amount_to_be_collected) !!}
                             </span>
                         </div>
 
@@ -219,7 +248,10 @@
 
             <!-- Modal for Confirm Payment -->
             @php
-                $totalAmount = convert_currency($shipment->amount_to_be_collected, 'usd', 'zmw');
+                $baseUsdAmount = (float) ($shipment->amount_to_be_collected ?? 0);
+                $paymentCurrency = $viewerCurrency;
+                $paymentSymbol = $viewerSymbol;
+                $totalAmount = $viewerAmountFromUsd($baseUsdAmount);
                 $receipt = $shipment->nwcReceipt;
                 $paymentMethodOptions = [
                     'cash_payment' => 'Cash Payment',
@@ -330,7 +362,7 @@
                                     <h6 class="mb-3 text-uppercase" style="color: #0a2463; font-size: 0.85rem; letter-spacing: 0.5px;">
                                         Extra Charges
                                     </h6>
-                                    <small class="text-muted d-block mb-3">Optional named fees (e.g. Delivery, Handling) added to the final total.</small>
+                                    <small class="text-muted d-block mb-3">Optional named fees (e.g. Delivery, Handling) added to the final total in {{ $paymentCurrency }}.</small>
 
                                     <div id="charge-rows" class="flex flex-col gap-3">
                                         <!-- charge rows are added dynamically -->
@@ -344,7 +376,7 @@
                                                 placeholder="Charge name (e.g. Delivery)" maxlength="255" />
                                             <input type="number" name="charge_amount[]"
                                                 class="form-control border border-slate-200 bg-slate-50 rounded-md h-12 text-[0.95rem] w-32"
-                                                placeholder="0.00" min="0" step="0.01" />
+                                                placeholder="{{ $paymentSymbol }}0.00" min="0" step="0.01" />
                                             <button type="button"
                                                 class="btn btn-sm btn-outline-danger remove-charge rounded-md border border-red-500 text-red-600 font-bold hover:bg-red-50 p-2">&times;</button>
                                         </div>
@@ -463,20 +495,26 @@
 
                                 <!-- Summary card with yellow accent -->
                                 <div class="card border-0 shadow-sm rounded-3 p-4 mt-4" style="background-color: white;">
+                                    @if ($paymentCurrency !== 'USD')
+                                        <div class="d-flex justify-content-between mb-2">
+                                            <span class="text-muted">USD Price Before Conversion:</span>
+                                            <span class="fw-medium">${{ number_format($baseUsdAmount, 2) }}</span>
+                                        </div>
+                                    @endif
                                     <div class="d-flex justify-content-between mb-3">
-                                        <span class="text-muted">Original Total:</span>
+                                        <span class="text-muted">{{ $paymentCurrency === 'USD' ? 'Original Total' : 'Converted Total' }} ({{ $paymentCurrency }}):</span>
                                         <span id="originalTotal"
-                                            class="fw-medium">{{ number_format($totalAmount, 2) }}</span>
+                                            class="fw-medium">{{ $paymentSymbol }}{{ number_format($totalAmount, 2) }}</span>
                                     </div>
                                     <div id="chargesTotalRow" class="d-flex justify-content-between mb-2 d-none">
-                                        <span class="text-muted">Extra Charges:</span>
-                                        <span id="chargesTotal" class="fw-medium">0.00</span>
+                                        <span class="text-muted">Extra Charges ({{ $paymentCurrency }}):</span>
+                                        <span id="chargesTotal" class="fw-medium">{{ $paymentSymbol }}0.00</span>
                                     </div>
                                     <hr style="opacity: 0.1;">
                                     <div class="d-flex justify-content-between mt-2">
-                                        <span class="fw-bold" style="color: #0a2463;">Final Total:</span>
+                                        <span class="fw-bold" style="color: #0a2463;">Final Total ({{ $paymentCurrency }}):</span>
                                         <span id="finalTotal" class="fw-bold fs-5"
-                                            style="color: #0a2463;">{{ number_format($totalAmount, 2) }}</span>
+                                            style="color: #0a2463;">{{ $paymentSymbol }}{{ number_format($totalAmount, 2) }}</span>
                                     </div>
                                 </div>
                             </form>
@@ -809,11 +847,12 @@
                 
                 // Always define originalTotal using window to make it globally accessible
                 if (typeof window.originalTotal === 'undefined') {
-                    window.originalTotal = parseFloat({{ $totalAmount }});
+                    window.originalTotal = parseFloat({{ (float) $totalAmount }});
                 } else {
                     // Update if it already exists (in case of page re-rendering)
-                    window.originalTotal = parseFloat({{ $totalAmount }});
+                    window.originalTotal = parseFloat({{ (float) $totalAmount }});
                 }
+                window.paymentCurrencySymbol = @json($paymentSymbol);
                 
                 function openMarkPaidModal(shipmentId) {
                     window.selectedShipmentId = shipmentId;
@@ -829,7 +868,7 @@
                         discountValueEl.value = 0;
                     }
                     if (finalTotalEl) {
-                        finalTotalEl.textContent = window.originalTotal.toFixed(2);
+                        finalTotalEl.textContent = `${window.paymentCurrencySymbol || ''}${window.originalTotal.toFixed(2)}`;
                     }
                     $('#markPaidModal').modal('show');
                 }
@@ -854,7 +893,7 @@
 
                     if (finalTotal < 0) finalTotal = 0;
 
-                    finalTotalEl.textContent = finalTotal.toFixed(2);
+                    finalTotalEl.textContent = `${window.paymentCurrencySymbol || ''}${finalTotal.toFixed(2)}`;
                 }
                 
                 const auditBtn = document.getElementById("auditTrailBtn");
@@ -929,7 +968,8 @@
                     }
 
                     // Parse numeric original total safe from Blade-rendered text (strip commas)
-                    const rawOriginal = originalTotalEl.textContent.trim().replace(/,/g, '');
+                    const currencySymbol = @json($paymentSymbol);
+                    const rawOriginal = originalTotalEl.textContent.trim().replace(/,/g, '').replace(/[^0-9.\-]/g, '');
                     const originalTotal = parseFloat(rawOriginal) || 0;
 
                     // Create/insert paymentsTotal + remaining + status elements into the summary card near finalTotal
@@ -947,15 +987,15 @@
                             // payments total row
                             const paymentsRow = document.createElement('div');
                             paymentsRow.className = 'd-flex justify-content-between mt-2';
-                            paymentsRow.innerHTML = `<span class="fw-medium text-muted">Payments Total:</span>
-                                   <span id="paymentsTotal" class="fw-medium">0.00</span>`;
+                            paymentsRow.innerHTML = `<span class="fw-medium text-muted">Payments Total ({{ $paymentCurrency }}):</span>
+                                   <span id="paymentsTotal" class="fw-medium">${currencySymbol}0.00</span>`;
                             summaryCard.appendChild(paymentsRow);
 
                             // remaining row
                             const remainingRow = document.createElement('div');
                             remainingRow.className = 'd-flex justify-content-between mt-1';
-                            remainingRow.innerHTML = `<span class="fw-medium text-muted">Remaining:</span>
-                                    <span id="remainingTotal" class="fw-bold">0.00</span>`;
+                            remainingRow.innerHTML = `<span class="fw-medium text-muted">Remaining ({{ $paymentCurrency }}):</span>
+                                    <span id="remainingTotal" class="fw-bold">${currencySymbol}0.00</span>`;
                             summaryCard.appendChild(remainingRow);
 
                             // status message (for validation)
@@ -967,7 +1007,7 @@
                             const helperRow = document.createElement('div');
                             helperRow.className = 'd-flex justify-content-between align-items-center mt-2 gap-2 flex-wrap';
                             helperRow.innerHTML = `
-                                <small class="text-muted">Outstanding due: <strong id="remainingHint">0.00</strong></small>
+                                <small class="text-muted">Outstanding due: <strong id="remainingHint">${currencySymbol}0.00</strong></small>
                                 <button type="button" id="fillRemainingBtn" class="btn btn-sm btn-outline-primary px-3 py-1">
                                     Auto-fill Remaining
                                 </button>
@@ -989,7 +1029,11 @@
 
                     // Utility: format currency to 2 decimals
                     function fmt(v) {
-                        return Number(v || 0).toFixed(2);
+                        return `${currencySymbol}${Number(v || 0).toFixed(2)}`;
+                    }
+
+                    function numericText(text) {
+                        return parseFloat(String(text || '').replace(/,/g, '').replace(/[^0-9.\-]/g, '')) || 0;
                     }
 
                     // Update final total based on discount inputs
@@ -1247,7 +1291,7 @@
                         // Prepare the data for AJAX call
                         const discountType = discountTypeEl ? discountTypeEl.value : '';
                         const discountValue = discountValueEl ? parseFloat(discountValueEl.value) || 0 : 0;
-                        const finalTotal = finalTotalEl ? parseFloat(finalTotalEl.textContent) : window.originalTotal;
+                        const finalTotal = finalTotalEl ? numericText(finalTotalEl.textContent) : window.originalTotal;
                         
                         // Collect named extra charge lines
                         const chargeDescriptions = [];
@@ -1321,10 +1365,13 @@
                         }
                         
                         // Make AJAX call
-                        fetch('{{ route('api.mark-as-paid') }}', {
+                        fetch('{{ route('shipments.mark-as-paid') }}', {
                             method: 'POST',
+                            credentials: 'same-origin',
                             headers: {
                                 'Content-Type': 'application/json',
+                                'Accept': 'application/json',
+                                'X-Requested-With': 'XMLHttpRequest',
                                 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') || '{{ csrf_token() }}',
                             },
                             body: JSON.stringify({

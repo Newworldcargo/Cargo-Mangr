@@ -5,9 +5,18 @@
 </button>
 @php
     $nwcReceipt = $shipment->nwcReceipt;
-    $latestPaymentReceipt = ($shipment->paymentReceipts ?? collect())->sortByDesc('created_at')->first();
+    $paymentReceipts = $shipment->paymentReceipts ?? collect();
+    $latestPaymentReceipt = $paymentReceipts->sortByDesc('created_at')->first();
     $chargeLines = $shipment->chargeLines ?? \App\Models\ShipmentChargeLine::where('shipment_id', $shipment->id)->orderBy('sort_order')->get();
     $chargeLinesTotal = $chargeLines->sum('amount');
+    $receiptCurrency = strtoupper($latestPaymentReceipt?->currency ?? $nwcReceipt?->payment_currency ?? $shipment?->receipt?->currency ?? 'ZMW');
+    $receiptSymbol = currency_symbol_for($receiptCurrency);
+    $receiptNumber = $shipment?->receipt?->receipt_number ?? $nwcReceipt?->receipt_number ?? '-';
+    $receiptTotal = $paymentReceipts->isNotEmpty()
+        ? $paymentReceipts->sum('amount')
+        : ($shipment?->receipt?->total ?? (strtoupper($nwcReceipt?->payment_currency ?? '') === 'USD'
+            ? $nwcReceipt?->bill_usd
+            : $nwcReceipt?->bill_kwacha));
     $receiptUser = $latestPaymentReceipt?->cashier_name
         ?? $nwcReceipt?->cashier_name
         ?? optional($latestPaymentReceipt?->user)->name
@@ -32,7 +41,7 @@
         <p>Shipment ID: {{ $shipment->code }}</p>
         <p>Customer: {{ $shipment->client->name ?? '-' }}</p>
         <p>Cashier: {{ $receiptUser }}</p>
-        <p>Receipt No.: {{ $shipment?->receipt?->receipt_number ?? '-' }}</p>
+        <p>Receipt No.: {{ $receiptNumber }}</p>
 
         <hr />
         <p><strong>Description:</strong></p>
@@ -63,11 +72,23 @@
             @foreach ($chargeLines as $cl)
                 <p style="display:flex; justify-content:space-between;">
                     <span>{{ $cl->description }}</span>
-                    <span>{{ number_format($cl->amount, 2) }}</span>
+                    <span>{{ currency_symbol_for($cl->currency ?? $receiptCurrency) }}{{ number_format($cl->amount, 2) }} {{ strtoupper($cl->currency ?? $receiptCurrency) }}</span>
                 </p>
             @endforeach
         @endif
-        <p>Total: <strong>{{ number_format(($shipment?->receipt?->total ?? 0) + $chargeLinesTotal, 2) }}</strong></p>
+        @if ($paymentReceipts->count() > 1)
+            <p><strong>Payments:</strong></p>
+            @foreach ($paymentReceipts as $paymentReceipt)
+                @php
+                    $paymentCurrency = strtoupper($paymentReceipt->currency ?? $receiptCurrency);
+                @endphp
+                <p style="display:flex; justify-content:space-between;">
+                    <span>{{ ucwords(str_replace('_', ' ', $paymentReceipt->method_of_payment)) }}</span>
+                    <span>{{ currency_symbol_for($paymentCurrency) }}{{ number_format((float) $paymentReceipt->amount, 2) }} {{ $paymentCurrency }}</span>
+                </p>
+            @endforeach
+        @endif
+        <p>Total: <strong>{{ $receiptSymbol }}{{ number_format((float) $receiptTotal, 2) }} {{ $receiptCurrency }}</strong></p>
 
         <p style="text-align:center;">Thank you!</p>
     </div>

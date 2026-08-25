@@ -59,7 +59,9 @@ Route::get('/consignments/latest', [App\Http\Controllers\Api\ConsignmentControll
 Route::post('/parcels/unsynced', [App\Http\Controllers\Api\ShipmentController::class, 'getUnsyncedParcels']);
 
 // Payment APIs
-Route::post('/mark-as-paid', [\Modules\Cargo\Http\Controllers\ShipmentController::class, 'markAsPaid'])->name('api.mark-as-paid');
+Route::post('/mark-as-paid', [\Modules\Cargo\Http\Controllers\ShipmentController::class, 'markAsPaid'])
+    ->middleware(['web', 'auth'])
+    ->name('api.mark-as-paid');
 Route::post('/refund-payment', [\Modules\Cargo\Http\Controllers\ShipmentController::class, 'refundPayment'])
     ->middleware(['web', 'auth'])
     ->name('api.refund-payment');

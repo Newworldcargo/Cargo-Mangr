@@ -75,6 +75,7 @@ Route::get('/fraud-awareness', 'FraudAwarenessController@index')->name('fraud');
 Route::post('contact', 'Api\ContactUsController@sendContact')->name('contact.store');
 
 Route::middleware(['auth'])->group(function () {
+    Route::post('/shipment-mark-as-paid', [ShipmentController::class, 'markAsPaid'])->name('shipments.mark-as-paid');
     Route::get('/consignment', 'ConsignmentController@index')->name('consignment.index');
     Route::get('/create-consignment', 'ConsignmentController@create')->name('consignment.create');
     Route::post('/consignment', 'ConsignmentController@store')->name('consignment.store');

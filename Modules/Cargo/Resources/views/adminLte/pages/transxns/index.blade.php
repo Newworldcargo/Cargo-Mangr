@@ -122,7 +122,7 @@ $client = 4;
                     <td class="px-4 py-2 font-medium text-gray-800">{{ $txn->shipment?->code }}</td>
                     <td class="px-4 py-2">{{ $txn?->shipment?->client?->name ?? 'N/A' }}</td>
                     <td class="px-4 py-2">{{ $txn?->shipment?->client_phone ?? 'Not placed' }}</td>
-                    <td class="px-4 py-2 text-green-600 font-semibold">{{ currency_symbol_for($branchCurrency ?? 'ZMW') }}{{ number_format($txn->display_total, 2) }}</td>
+                    <td class="px-4 py-2 text-green-600 font-semibold">{{ currency_symbol_for($txn->display_currency ?? $branchCurrency ?? 'ZMW') }}{{ number_format($txn->display_total, 2) }} {{ $txn->display_currency ?? $branchCurrency ?? 'ZMW' }}</td>
                     <td class="px-4 py-2">
                         @if($txn->isRefunded())
                             <span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700">Refunded</span>

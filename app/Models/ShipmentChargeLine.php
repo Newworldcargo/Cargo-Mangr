@@ -12,6 +12,7 @@ class ShipmentChargeLine extends Model
         'shipment_id',
         'description',
         'amount',
+        'currency',
         'sort_order',
     ];
 
