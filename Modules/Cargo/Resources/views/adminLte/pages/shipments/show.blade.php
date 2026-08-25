@@ -1049,6 +1049,10 @@
                         return `${currencySymbol}${Number(v || 0).toFixed(2)}`;
                     }
 
+                    function inputAmount(v) {
+                        return Number(v || 0).toFixed(2);
+                    }
+
                     function numericText(text) {
                         return parseFloat(String(text || '').replace(/,/g, '').replace(/[^0-9.\-]/g, '')) || 0;
                     }
@@ -1153,7 +1157,7 @@
                         // Delta adjustment when the final total changed (charges/discount edited)
                         if (lastFinalTotal !== null && lastFinalTotal !== final) {
                             if (!isNaN(cur) && isFinite(cur)) {
-                                lastInput.value = fmt(Math.max(0, cur + (final - lastFinalTotal)));
+                                lastInput.value = inputAmount(Math.max(0, cur + (final - lastFinalTotal)));
                                 lastFinalTotal = final;
                                 updateRemainingAndValidation();
                                 return;
@@ -1163,7 +1167,7 @@
 
                         // Fill empty/zero last amount with the remaining final total
                         if (isNaN(cur) || !isFinite(cur) || Math.abs(cur) < 0.005) {
-                            lastInput.value = fmt(Math.max(0, remaining));
+                            lastInput.value = inputAmount(Math.max(0, remaining));
                         }
                     }
 
@@ -1462,7 +1466,7 @@
                             }) || amountInputs[0];
 
                             const current = parseFloat(target.value) || 0;
-                            target.value = (current + remaining).toFixed(2);
+                            target.value = inputAmount(current + remaining);
                             target.dispatchEvent(new Event('input', { bubbles: true }));
                             target.focus();
                         });
@@ -1472,7 +1476,7 @@
                     ensureAtLeastOneRow();
                     const firstAmountInput = paymentsContainer.querySelector('input[name="payment_amount[]"]');
                     if (firstAmountInput && existingPaidTotal > 0) {
-                        firstAmountInput.value = Math.max(0, updateFinalTotal() - existingPaidTotal).toFixed(2);
+                        firstAmountInput.value = inputAmount(Math.max(0, updateFinalTotal() - existingPaidTotal));
                     }
                     // Small debounce guard to allow DOM to settle (in case Blade rendered values)
                     setTimeout(updateRemainingAndValidation, 30);
