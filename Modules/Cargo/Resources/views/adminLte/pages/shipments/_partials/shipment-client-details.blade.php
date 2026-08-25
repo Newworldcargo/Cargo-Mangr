@@ -74,6 +74,56 @@
                 'currency' => $nwcReceipt->payment_currency ?? $receipt?->currency,
                 'receipt_number' => $nwcReceipt->receipt_number,
             ]] : []);
+
+        $paymentCurrency = strtoupper($receipt?->currency ?? $latestPaymentReceipt?->currency ?? $nwcReceipt?->payment_currency ?? 'ZMW');
+        $paymentSymbol = currency_symbol_for($paymentCurrency);
+        $convertUsdToPaymentCurrency = function ($amount) use ($paymentCurrency) {
+            $amount = (float) $amount;
+            if ($paymentCurrency === 'USD') {
+                return round($amount, 2);
+            }
+
+            if ($paymentCurrency === 'ZMW') {
+                $converted = convert_currency($amount, 'usd', 'zmw');
+            } else {
+                $rate = \App\Models\CurrencyExchangeRate::where('from_currency', 'USD')
+                    ->where('to_currency', $paymentCurrency)
+                    ->value('exchange_rate');
+                $converted = $rate ? $amount * (float) $rate : $amount;
+            }
+
+            if (!is_numeric($converted)) {
+                $converted = preg_replace('/[^0-9.\-]/', '', (string) $converted);
+            }
+
+            return round((float) $converted, 2);
+        };
+        $initialTotal = $convertUsdToPaymentCurrency($shipment->amount_to_be_collected ?? 0);
+        $extraChargesTotal = round((float) $chargeLines->sum('amount'), 2);
+        $subtotalBeforeDiscount = round($initialTotal + $extraChargesTotal, 2);
+        $discountType = $receipt?->discount_type ?? $nwcReceipt?->discount_type ?? null;
+        if ($discountType === 'percentage') {
+            $discountType = 'percent';
+        }
+        $discountValue = (float) ($receipt?->discount_value ?? $nwcReceipt?->discount_value ?? 0);
+        $discountAmount = 0.0;
+        if ($discountType && $discountValue > 0) {
+            $discountAmount = $discountType === 'percent'
+                ? ($subtotalBeforeDiscount * $discountValue) / 100
+                : $discountValue;
+            $discountAmount = min(round($discountAmount, 2), $subtotalBeforeDiscount);
+        }
+        $finalBillTotal = round((float) ($receipt?->total ?? max(0, $subtotalBeforeDiscount - $discountAmount)), 2);
+        $totalPaid = round((float) $paymentRows->sum(function ($paymentRow) {
+            return (float) (is_array($paymentRow) ? ($paymentRow['amount'] ?? 0) : ($paymentRow->amount ?? 0));
+        }), 2);
+        if ($finalBillTotal <= 0 && $totalPaid > 0) {
+            $finalBillTotal = $totalPaid;
+        }
+        $remainingBill = max(0, round($finalBillTotal - $totalPaid, 2));
+        $isPartialPayment = $totalPaid > 0 && $remainingBill > 0.01;
+        $showPaymentDetails = $shipment->paid || $paymentRows->isNotEmpty();
+
         if ($receipt) {
             if ($receipt->isRefundRequested()) {
                 $paymentStatusLabel = 'Refund Request Processing';
@@ -89,6 +139,10 @@
                 $paymentStatusTone = 'bg-green-100 text-green-800';
             }
         }
+        if ($isPartialPayment && (!$receipt || $receipt->status === 'completed')) {
+            $paymentStatusLabel = 'Partially Paid';
+            $paymentStatusTone = 'bg-yellow-100 text-yellow-800';
+        }
     @endphp
 
     <div class="w-full md:w-1/3 px-4 mb-6">
@@ -102,7 +156,7 @@
                     {{ $paymentStatusLabel }}
                 </span>
             </div>
-            @if ($shipment->paid)
+            @if ($showPaymentDetails)
                 <div class="mt-4 space-y-2 text-sm text-gray-700">
                     <div class="flex justify-between gap-4">
                         <span class="text-gray-500">Date Paid</span>
@@ -154,6 +208,52 @@
                                             @endforeach
                                         </div>
                                     @endif
+                                    <div class="pt-2 mt-2 border-t border-gray-100">
+                                        <div class="text-gray-500 mb-1">Billing Breakdown</div>
+                                        <div class="flex justify-between gap-4">
+                                            <span>Initial Total</span>
+                                            <span class="font-semibold text-gray-900 text-right">
+                                                {{ $paymentSymbol }}{{ number_format($initialTotal, 2) }} {{ $paymentCurrency }}
+                                            </span>
+                                        </div>
+                                        <div class="flex justify-between gap-4">
+                                            <span>Extra Charges</span>
+                                            <span class="font-semibold text-gray-900 text-right">
+                                                {{ $paymentSymbol }}{{ number_format($extraChargesTotal, 2) }} {{ $paymentCurrency }}
+                                            </span>
+                                        </div>
+                                        <div class="flex justify-between gap-4">
+                                            <span>
+                                                Discount
+                                                @if ($discountType === 'percent' && $discountValue > 0)
+                                                    ({{ number_format($discountValue, 2) }}%)
+                                                @endif
+                                            </span>
+                                            <span class="font-semibold text-gray-900 text-right">
+                                                -{{ $paymentSymbol }}{{ number_format($discountAmount, 2) }} {{ $paymentCurrency }}
+                                            </span>
+                                        </div>
+                                        <div class="flex justify-between gap-4">
+                                            <span>Final Bill</span>
+                                            <span class="font-semibold text-gray-900 text-right">
+                                                {{ $paymentSymbol }}{{ number_format($finalBillTotal, 2) }} {{ $paymentCurrency }}
+                                            </span>
+                                        </div>
+                                        <div class="flex justify-between gap-4">
+                                            <span>Total Paid</span>
+                                            <span class="font-semibold text-gray-900 text-right">
+                                                {{ $paymentSymbol }}{{ number_format($totalPaid, 2) }} {{ $paymentCurrency }}
+                                            </span>
+                                        </div>
+                                        @if ($isPartialPayment)
+                                            <div class="flex justify-between gap-4">
+                                                <span>Remaining Bill</span>
+                                                <span class="font-semibold text-red-700 text-right">
+                                                    {{ $paymentSymbol }}{{ number_format($remainingBill, 2) }} {{ $paymentCurrency }}
+                                                </span>
+                                            </div>
+                                        @endif
+                                    </div>
 	                            </div>
 	                        </div>
 	                    @endif
