@@ -1237,7 +1237,16 @@
                     // Recalculate when amount inputs change or when discount changes
                     paymentsContainer.addEventListener('input', function (ev) {
                         if (ev.target && ev.target.matches('input[name="payment_amount[]"]')) {
+                            delete ev.target.dataset.autofilled;
                             updateRemainingAndValidation();
+                        }
+                    });
+
+                    // Keep an auto-filled amount ready to be replaced when a cashier clicks into it.
+                    paymentsContainer.addEventListener('focusin', function (ev) {
+                        if (ev.target && ev.target.matches('input[name="payment_amount[]"]') &&
+                            ev.target.dataset.autofilled === 'true') {
+                            ev.target.select();
                         }
                     });
 
@@ -1434,6 +1443,7 @@
                             const current = parseFloat(target.value) || 0;
                             target.value = inputAmount(current + remaining);
                             target.dispatchEvent(new Event('input', { bubbles: true }));
+                            target.dataset.autofilled = 'true';
                             target.focus();
                             target.select();
                         });
