@@ -180,6 +180,7 @@
                                         $rowCurrency = $rowCurrency ?: 'ZMW';
                                         $rowSymbol = currency_symbol_for($rowCurrency);
                                         $receiptNumber = is_array($paymentRow) ? ($paymentRow['receipt_number'] ?? null) : $paymentRow->receipt_number;
+                                        $paymentDate = is_array($paymentRow) ? ($paymentRow['created_at'] ?? null) : $paymentRow->created_at;
                                     @endphp
                                     <div class="flex justify-between gap-4">
                                         <span>{{ $method ? ucwords(str_replace('_', ' ', $method)) : 'Payment' }}</span>
@@ -187,8 +188,15 @@
                                             {{ $rowSymbol }}{{ number_format((float) $amount, 2) }} {{ $rowCurrency }}
                                         </span>
                                     </div>
-                                    @if ($receiptNumber)
-                                        <div class="text-xs text-gray-500 text-right">{{ $receiptNumber }}</div>
+                                    @if ($receiptNumber || $paymentDate)
+                                        <div class="text-xs text-gray-500 text-right">
+                                            @if ($receiptNumber)
+                                                {{ $receiptNumber }}
+                                            @endif
+                                            @if ($paymentDate)
+                                                <span>{{ $receiptNumber ? ' - ' : '' }}{{ $paymentDate instanceof \Carbon\Carbon ? $paymentDate->format('Y-m-d H:i') : $paymentDate }}</span>
+                                            @endif
+                                        </div>
                                     @endif
 	                                @endforeach
                                     @if ($chargeLines->isNotEmpty())
