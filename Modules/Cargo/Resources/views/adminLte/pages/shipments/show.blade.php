@@ -1435,6 +1435,7 @@
                             target.value = inputAmount(current + remaining);
                             target.dispatchEvent(new Event('input', { bubbles: true }));
                             target.focus();
+                            target.select();
                         });
                     }
 
