@@ -49,6 +49,14 @@
                 || empty($paymentReceipt->receipt_number)
                 || str_starts_with($paymentReceipt->receipt_number, $currentReceiptNumber . '-');
         });
+        $chargeLines = ($shipment->chargeLines ?? \App\Models\ShipmentChargeLine::where('shipment_id', $shipment->id)->orderBy('sort_order')->get())
+            ->filter(function ($chargeLine) use ($receipt) {
+                if (!$receipt?->created_at || !$chargeLine->created_at) {
+                    return true;
+                }
+
+                return $chargeLine->created_at->greaterThanOrEqualTo($receipt->created_at->copy()->subSeconds(5));
+            });
         $latestPaymentReceipt = $paymentReceipts->sortByDesc('created_at')->first();
         $paidAt = $latestPaymentReceipt?->created_at ?? $nwcReceipt?->created_at ?? $receipt?->created_at;
         $cashierName = $latestPaymentReceipt?->cashier_name
@@ -128,10 +136,27 @@
                                     @if ($receiptNumber)
                                         <div class="text-xs text-gray-500 text-right">{{ $receiptNumber }}</div>
                                     @endif
-                                @endforeach
-                            </div>
-                        </div>
-                    @endif
+	                                @endforeach
+                                    @if ($chargeLines->isNotEmpty())
+                                        <div class="pt-2 mt-2 border-t border-gray-100">
+                                            <div class="text-gray-500 mb-1">Extra Charges</div>
+                                            @foreach ($chargeLines as $chargeLine)
+                                                @php
+                                                    $chargeCurrency = strtoupper($chargeLine->currency ?? $receipt?->currency ?? 'ZMW');
+                                                    $chargeSymbol = currency_symbol_for($chargeCurrency);
+                                                @endphp
+                                                <div class="flex justify-between gap-4">
+                                                    <span>{{ $chargeLine->description }}</span>
+                                                    <span class="font-semibold text-gray-900 text-right">
+                                                        {{ $chargeSymbol }}{{ number_format((float) $chargeLine->amount, 2) }} {{ $chargeCurrency }}
+                                                    </span>
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                    @endif
+	                            </div>
+	                        </div>
+	                    @endif
                 </div>
             @endif
         </div>
