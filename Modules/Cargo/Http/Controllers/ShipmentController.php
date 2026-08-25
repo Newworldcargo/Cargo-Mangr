@@ -1974,14 +1974,11 @@ class ShipmentController extends Controller
             ], 400);
         }
 
-        // Calculate total payment amount
-        $totalPayment = array_sum($request->payment_amount);
-        $finalTotal = (float) $request->final_total;
-
-        if (abs($totalPayment - $finalTotal) > 0.01) {
+        $totalPayment = (float) array_sum($request->payment_amount);
+        if ($totalPayment <= 0) {
             return response()->json([
                 'error'   => 'Payment mismatch.',
-                'message' => 'The sum of payment amounts does not match the final total.'
+                'message' => 'Please enter at least one payment amount.'
             ], 400);
         }
 
@@ -2037,6 +2034,18 @@ class ShipmentController extends Controller
                 $discountType = null;
                 $discountValue = 0.0;
             }
+
+            $openTransaction = Transxn::where('shipment_id', $shipment->id)
+                ->where('status', 'partially_paid')
+                ->latest()
+                ->first();
+            if ($openTransaction) {
+                $calculatedFinalTotal = round((float) $openTransaction->total, 2);
+                $paymentCurrency = strtoupper($openTransaction->currency ?? $paymentCurrency);
+                $discountType = $openTransaction->discount_type;
+                $discountValue = (float) ($openTransaction->discount_value ?? 0);
+            }
+
             if (abs($calculatedFinalTotal - (float) $request->final_total) > 0.01) {
                 // If the client submitted a final_total, verify it matches the server
                 // recalculation (shipment ZMW + charges) instead of trusting either value.
@@ -2049,31 +2058,69 @@ class ShipmentController extends Controller
                         number_format($clientTotal, 2)
                     ));
                 }
-            }            $shipment->paid = 1;
+            }
+
+            $previousPaymentTotal = 0.0;
+            if ($openTransaction) {
+                $previousPaymentTotal = (float) ShipmentPaymentReceipt::where('shipment_id', $shipment->id)
+                    ->where(function ($query) use ($openTransaction) {
+                        $query->where('receipt_number', $openTransaction->receipt_number)
+                            ->orWhere('receipt_number', 'like', $openTransaction->receipt_number . '-%');
+                    })
+                    ->sum('amount');
+            }
+
+            $cumulativePaymentTotal = round($previousPaymentTotal + $totalPayment, 2);
+            if ($cumulativePaymentTotal - $calculatedFinalTotal > 0.01) {
+                return response()->json([
+                    'error'   => 'Payment mismatch.',
+                    'message' => 'Payment amount exceeds the remaining balance.'
+                ], 400);
+            }
+
+            $isFullyPaid = abs($cumulativePaymentTotal - $calculatedFinalTotal) <= 0.01;
+            $paymentStatus = $isFullyPaid ? 'completed' : 'partially_paid';
+
+            $shipment->paid = $isFullyPaid ? 1 : 0;
             $shipment->save();
 
-            $lastTransaction = Transxn::orderByDesc('id')->first();
-            $lastId = $lastTransaction ? (int) $lastTransaction->id : 0;
-            $nextReceiptNumber = 'REC-' . str_pad((string) ($lastId + 1), 6, '0', STR_PAD_LEFT);
+            if ($openTransaction) {
+                $transaction = $openTransaction;
+                $nextReceiptNumber = $openTransaction->receipt_number;
+                $transaction->update([
+                    'discount_type'  => $discountType,
+                    'discount_value' => $discountValue,
+                    'total'          => $calculatedFinalTotal,
+                    'currency'       => $paymentCurrency,
+                    'status'         => $paymentStatus,
+                ]);
+            } else {
+                $lastTransaction = Transxn::orderByDesc('id')->first();
+                $lastId = $lastTransaction ? (int) $lastTransaction->id : 0;
+                $nextReceiptNumber = 'REC-' . str_pad((string) ($lastId + 1), 6, '0', STR_PAD_LEFT);
 
-            $transaction = Transxn::create([
-                'shipment_id'    => $shipment->id,
-                'receipt_number' => $nextReceiptNumber,
-                'discount_type'  => $discountType,
-                'discount_value' => $discountValue,
-                'total'          => $calculatedFinalTotal,
-                'currency'       => $paymentCurrency,
-                'status'         => 'completed',
-            ]);
+                $transaction = Transxn::create([
+                    'shipment_id'    => $shipment->id,
+                    'receipt_number' => $nextReceiptNumber,
+                    'discount_type'  => $discountType,
+                    'discount_value' => $discountValue,
+                    'total'          => $calculatedFinalTotal,
+                    'currency'       => $paymentCurrency,
+                    'status'         => $paymentStatus,
+                ]);
+            }
 
             // Create multiple payment receipt records
             $paymentReceipts = [];
             $user = Auth::user();
             $cashierName = $request->current_user ?: ($user?->name ?? 'System');
+            $existingReceiptLineCount = ShipmentPaymentReceipt::where('shipment_id', $shipment->id)
+                ->where('receipt_number', 'like', $nextReceiptNumber . '-%')
+                ->count();
             
             foreach ($request->method_of_payment as $index => $method) {
                 if (!empty($method) && isset($request->payment_amount[$index]) && $request->payment_amount[$index] > 0) {
-                    $receiptNumber = $nextReceiptNumber . '-' . ($index + 1); // Create unique receipt numbers for each payment
+                    $receiptNumber = $nextReceiptNumber . '-' . ($existingReceiptLineCount + $index + 1);
                     
                     $paymentReceipt = ShipmentPaymentReceipt::create([
                         'shipment_id' => $shipment->id,
@@ -2162,7 +2209,9 @@ class ShipmentController extends Controller
                 null,
                 $oldValues,
                 $shipment->only(['paid']),
-                'Shipment marked as paid by ' . $cashierName
+                $isFullyPaid
+                    ? 'Shipment marked as paid by ' . $cashierName
+                    : 'Partial payment recorded by ' . $cashierName
             );
 
             // Persist charge lines
@@ -2196,11 +2245,12 @@ class ShipmentController extends Controller
             DB::commit();
 
             return response()->json([
-                'message'         => 'Payment recorded successfully.',
+                'message'         => $isFullyPaid ? 'Payment recorded successfully.' : 'Partial payment recorded successfully.',
                 'transaction'     => $transaction,
                 'receipt'         => $receipt->only($receiptAttributeKeys),
                 'payment_receipts' => $paymentReceipts,
-                'charge_lines'   => $chargeLineModels
+                'charge_lines'   => $chargeLineModels,
+                'remaining'      => max(0, round($calculatedFinalTotal - $cumulativePaymentTotal, 2)),
             ], 200);
         } catch (\Throwable $th) {
             DB::rollBack();

@@ -134,12 +134,15 @@
             } elseif ($receipt->isRefunded()) {
                 $paymentStatusLabel = 'Refunded';
                 $paymentStatusTone = 'bg-red-100 text-red-800';
+            } elseif ($receipt->status === 'partially_paid') {
+                $paymentStatusLabel = 'Partially Paid';
+                $paymentStatusTone = 'bg-yellow-100 text-yellow-800';
             } elseif ($receipt->status === 'completed') {
                 $paymentStatusLabel = __('cargo::view.paid');
                 $paymentStatusTone = 'bg-green-100 text-green-800';
             }
         }
-        if ($isPartialPayment && (!$receipt || $receipt->status === 'completed')) {
+        if ($isPartialPayment && (!$receipt || in_array($receipt->status, ['completed', 'partially_paid'], true))) {
             $paymentStatusLabel = 'Partially Paid';
             $paymentStatusTone = 'bg-yellow-100 text-yellow-800';
         }

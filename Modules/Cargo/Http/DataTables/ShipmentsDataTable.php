@@ -75,6 +75,9 @@ class ShipmentsDataTable extends DataTable
                     if ($receipt->isRefunded()) {
                         return 'Refunded';
                     }
+                    if ($receipt->status === 'partially_paid') {
+                        return 'Partially Paid';
+                    }
                     if ($receipt->status === 'completed') {
                         return __('cargo::view.paid');
                     }

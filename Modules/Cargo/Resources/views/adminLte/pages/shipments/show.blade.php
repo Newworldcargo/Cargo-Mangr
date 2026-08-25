@@ -253,6 +253,22 @@
                 $paymentSymbol = $viewerSymbol;
                 $totalAmount = $viewerAmountFromUsd($baseUsdAmount);
                 $receipt = $shipment->nwcReceipt;
+                $transactionReceipt = $shipment->receipt;
+                $activeReceiptNumber = $transactionReceipt?->receipt_number ?? $receipt?->receipt_number;
+                $existingPaidTotal = 0.0;
+                if ($activeReceiptNumber) {
+                    $existingPaidTotal = (float) ($shipment->paymentReceipts ?? collect())
+                        ->filter(function ($paymentReceipt) use ($activeReceiptNumber) {
+                            return $paymentReceipt->receipt_number === $activeReceiptNumber
+                                || str_starts_with((string) $paymentReceipt->receipt_number, $activeReceiptNumber . '-');
+                        })
+                        ->sum('amount');
+                }
+                if ($transactionReceipt && $transactionReceipt->status === 'partially_paid') {
+                    $totalAmount = (float) $transactionReceipt->total;
+                    $paymentCurrency = strtoupper($transactionReceipt->currency ?? $paymentCurrency);
+                    $paymentSymbol = currency_symbol_for($paymentCurrency);
+                }
                 $paymentMethodOptions = [
                     'cash_payment' => 'Cash Payment',
                     'invoice_payment' => 'Invoice Payment',
@@ -969,6 +985,7 @@
 
                     // Parse numeric original total safe from Blade-rendered text (strip commas)
                     const currencySymbol = @json($paymentSymbol);
+                    const existingPaidTotal = Number(@json($existingPaidTotal)) || 0;
                     const rawOriginal = originalTotalEl.textContent.trim().replace(/,/g, '').replace(/[^0-9.\-]/g, '');
                     const originalTotal = parseFloat(rawOriginal) || 0;
 
@@ -1112,6 +1129,7 @@
                             const v = parseFloat(inp.value);
                             if (!isNaN(v) && isFinite(v)) total += v;
                         });
+                        total += existingPaidTotal;
                         if (paymentsTotalEl) paymentsTotalEl.textContent = fmt(total);
                         return total;
                     }
@@ -1168,8 +1186,8 @@
                             remainingHintEl.textContent = fmt(Math.max(remaining, 0));
                         }
 
-                        // Validation: payments must equal final exactly (within tolerance) to enable confirm
-                        const valid = Math.abs(remaining) < 0.005;
+                        // Validation: payments may be partial, but they cannot overpay the bill.
+                        const valid = paymentsTotal > 0 && remaining >= -0.005;
                         if (confirmBtn) {
                             confirmBtn.disabled = !valid;
                             if (!valid) {
@@ -1184,10 +1202,12 @@
                         // Status message
                         if (statusEl) {
                             if (valid) {
-                                statusEl.textContent = 'Payments match the final total. You can confirm the payment.';
+                                statusEl.textContent = Math.abs(remaining) < 0.005
+                                    ? 'Payments match the final total. You can confirm the payment.'
+                                    : `Partial payment. Remaining after this payment: ${fmt(remaining)}.`;
                                 statusEl.style.color = '#16a34a';
                             } else if (remaining > 0) {
-                                statusEl.textContent = `Remaining ${fmt(remaining)} — please add payments to fully cover the final total.`;
+                                statusEl.textContent = 'Please add at least one payment amount.';
                                 statusEl.style.color = 'crimson';
                             } else {
                                 // remaining < 0 => overpaid
@@ -1262,7 +1282,7 @@
                     // Auto-fill payment amount with final total (incl. charges) when modal opens
                     autofillPaymentAmount();
 
-                    // Prevent form submission unless payments exactly match final total
+                    // Prevent form submission only when there is no payment or the payment exceeds the bill.
                     form.addEventListener('submit', function (ev) {
                         const { valid } = updateRemainingAndValidation();
                         if (!valid) {
@@ -1450,6 +1470,10 @@
 
                     // Initialize
                     ensureAtLeastOneRow();
+                    const firstAmountInput = paymentsContainer.querySelector('input[name="payment_amount[]"]');
+                    if (firstAmountInput && existingPaidTotal > 0) {
+                        firstAmountInput.value = Math.max(0, updateFinalTotal() - existingPaidTotal).toFixed(2);
+                    }
                     // Small debounce guard to allow DOM to settle (in case Blade rendered values)
                     setTimeout(updateRemainingAndValidation, 30);
                 });
