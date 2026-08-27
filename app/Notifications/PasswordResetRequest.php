@@ -43,7 +43,8 @@ class PasswordResetRequest extends Notification
      */
     public function toMail($notifiable)
     {
-        $url = env('APP_URL') . '/password/reset/' . $this->token;
+        $frontendUrl = rtrim(env('CUSTOMER_APP_URL', 'https://app.newworldcargo.com'), '/');
+        $url = $frontendUrl . '/reset-password?token=' . urlencode($this->token) . '&email=' . urlencode($notifiable->getEmailForPasswordReset());
         return (new MailMessage)
             ->line('You are receiving this email because we received a password reset request for your account.')
             ->action('Reset Password', $url)
