@@ -14,6 +14,15 @@ use Modules\CustomerPortalApi\Services\Portal\PortalBffService;
 
 class AuthController extends PortalController
 {
+    public function csrf(Request $request)
+    {
+        if (!$request->session()->token()) {
+            $request->session()->regenerateToken();
+        }
+
+        return $this->success($request, null);
+    }
+
     public function login(Request $request)
     {
         $validator = Validator::make($request->all(), [

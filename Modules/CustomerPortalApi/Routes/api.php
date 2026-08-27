@@ -26,6 +26,8 @@ Route::get('healthz', [HealthController::class, 'health']);
 Route::get('readyz', [HealthController::class, 'ready']);
 Route::get('reference-data', [ReferenceDataController::class, 'show'])
     ->middleware('throttle:customer-portal');
+Route::get('auth/csrf', [AuthController::class, 'csrf'])
+    ->middleware('throttle:customer-portal');
 
 Route::post('auth/login', [AuthController::class, 'login'])
     ->middleware('throttle:customer-portal');
