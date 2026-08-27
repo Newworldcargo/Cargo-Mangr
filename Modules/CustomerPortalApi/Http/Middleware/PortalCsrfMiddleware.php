@@ -38,6 +38,7 @@ class PortalCsrfMiddleware
         }
 
         $response = $next($request);
+        $response->headers->set(config('customerportalapi.csrf_header', 'X-CSRF-Token'), $token);
         $response->headers->setCookie(Cookie::make(
             config('customerportalapi.csrf_cookie', 'nwc_csrf'),
             $token,
