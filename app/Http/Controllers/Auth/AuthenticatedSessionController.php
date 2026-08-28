@@ -7,7 +7,6 @@ use App\Http\Requests\Auth\LoginRequest;
 use App\Providers\RouteServiceProvider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use DB;
 use Illuminate\Support\Facades\Session;
 
 class AuthenticatedSessionController extends Controller
@@ -50,18 +49,9 @@ class AuthenticatedSessionController extends Controller
      */
     public function main()
     {
-        $current_version = \app\Models\Settings::where('name','current_version')->first();
-        if(!$current_version){
-            // Run sql modifications
-            $sql_current_version_path = base_path('database/set_current_version.sql');
-            if (file_exists($sql_current_version_path)) {
-                DB::unprepared(file_get_contents($sql_current_version_path));
-            }
-            DB::commit();
-        }
-
-        $adminTheme = env('ADMIN_THEME', 'adminLte');
-        return view($adminTheme.'.auth.customer-login');
+        // The admin subdomain has a single browser sign-in entry point. Customer
+        // authentication is handled by the customer portal JSON API, not Blade.
+        return redirect()->route('login');
     }
 
     /**
