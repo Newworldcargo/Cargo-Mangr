@@ -24,9 +24,9 @@
                                 Tracking {{ $logs->total() }} {{ Str::plural('event', $logs->total()) }} from newest to oldest.
                             </small>
                         </div>
-                        <form method="GET" class="d-flex flex-wrap align-items-center justify-content-end gap-2">
+                        <form method="GET" class="d-flex flex-wrap align-items-center justify-content-end gap-2" style="max-width: 100%;">
                             @if($scopeOptions['can_filter_branch'])
-                                <select name="branch_id" class="form-select form-select-sm" onchange="this.form.submit()" aria-label="Filter by branch">
+                                <select name="branch_id" class="form-select form-select-sm" style="width: 13rem; max-width: 100%;" onchange="this.form.submit()" aria-label="Filter by branch">
                                     <option value="">All permitted branches</option>
                                     @foreach($scopeOptions['branches'] as $branch)
                                         <option value="{{ $branch->id }}" @selected($selectedScope['selectedBranchId'] === $branch->id)>{{ $branch->name }}</option>
@@ -34,10 +34,10 @@
                                 </select>
                             @endif
                             @if($scopeOptions['can_filter_user'])
-                                <select name="user_id" class="form-select form-select-sm" onchange="this.form.submit()" aria-label="Filter by user">
+                                <select name="user_id" class="form-select form-select-sm" style="width: 15rem; max-width: 100%;" onchange="this.form.submit()" aria-label="Filter by user">
                                     <option value="">All permitted users</option>
                                     @foreach($scopeOptions['users'] as $user)
-                                        <option value="{{ $user->id }}" @selected($selectedScope['selectedUserId'] === $user->id && request('scope') !== 'self')>{{ $user->name }} — {{ $user->email }}</option>
+                                        <option value="{{ $user->id }}" @selected($selectedScope['selectedUserId'] === $user->id && request('scope') !== 'self')>{{ $user->name }}</option>
                                     @endforeach
                                 </select>
                             @endif

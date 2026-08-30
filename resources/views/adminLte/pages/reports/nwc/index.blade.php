@@ -165,7 +165,7 @@
                             @if($scopeOptions['can_filter_branch'])
                                 <div class="col-lg-2 col-md-3 col-sm-6">
                                     <label for="branch_id" class="form-label fw-semibold text-muted small">Overall Branch</label>
-                                    <select id="branch_id" name="branch_id" class="form-select form-select-sm border-0 bg-light">
+                                    <select id="branch_id" name="branch_id" class="form-select form-select-sm border-0 bg-light" style="max-width: 100%;">
                                         <option value="">All permitted branches</option>
                                         @foreach($scopeOptions['branches'] as $scopeBranch)
                                             <option value="{{ $scopeBranch->id }}" @selected($selectedScope['selectedBranchId'] === $scopeBranch->id)>{{ $scopeBranch->name }}</option>
@@ -176,7 +176,7 @@
                             @if($scopeOptions['can_filter_user'])
                                 <div class="col-lg-2 col-md-3 col-sm-6">
                                     <label for="user_id" class="form-label fw-semibold text-muted small">Overall User</label>
-                                    <select id="user_id" name="user_id" class="form-select form-select-sm border-0 bg-light">
+                                    <select id="user_id" name="user_id" class="form-select form-select-sm border-0 bg-light" style="max-width: 100%;">
                                         <option value="">All permitted users</option>
                                         @foreach($scopeOptions['users'] as $scopeUser)
                                             <option value="{{ $scopeUser->id }}" @selected($selectedScope['selectedUserId'] === $scopeUser->id && request('scope') !== 'self')>{{ $scopeUser->name }}</option>
