@@ -20,6 +20,7 @@ class SearchController extends Controller
         if (!auth()->check()) {
             return redirect()->route('signin');
         }
+        abort_unless((int) auth()->user()->role === User::ADMIN, 403);
         
         $query = $request->get('q', '');
         $userId = $request->get('user_id', null);
@@ -38,6 +39,7 @@ class SearchController extends Controller
     public function liveSearch(Request $request): JsonResponse
     {
         try {
+            abort_unless(auth()->check() && (int) auth()->user()->role === User::ADMIN, 403);
             $query = trim($request->get('q', ''));
 
             if (strlen($query) < 2) {
@@ -324,4 +326,4 @@ class SearchController extends Controller
         })
         ->toArray();
     }
-} 
+}

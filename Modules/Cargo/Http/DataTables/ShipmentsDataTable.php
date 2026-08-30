@@ -111,7 +111,7 @@ class ShipmentsDataTable extends DataTable
      */
     public function query(Shipment $model, Request $request)
     {
-        $query = $model->getShipments($model,$request)->newQuery();
+        $query = $model->getShipments($model, $request);
 
         // class filter for user only
         $shipment_filter = new ShipmentFilter($query, $request);

@@ -93,7 +93,7 @@ class MissionsDataTable extends DataTable
      */
     public function query(Mission $model, Request $request)
     {
-        $query = $model->getMissions($model,$request)->newQuery();
+        $query = $model->getMissions($model, $request);
 
         // class filter for user only
         $client_filter = new MissionFilter($query, $request);

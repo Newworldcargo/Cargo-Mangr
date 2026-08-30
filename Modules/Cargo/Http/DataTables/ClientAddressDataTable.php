@@ -75,7 +75,7 @@ class ClientAddressDataTable extends DataTable
      */
     public function query(ClientAddress $model, Request $request)
     {
-        $query = $model->getClientAddresses($model,$request)->newQuery();
+        $query = $model->getClientAddresses($model, $request);
 
         // class filter for user only
         $client_filter = new ClientAddressFilter($query, $request);

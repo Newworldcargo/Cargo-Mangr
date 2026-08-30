@@ -82,7 +82,7 @@ class DriversDataTable extends DataTable
      */
     public function query(Driver $model, Request $request)
     {
-        $query = $model->getDeivers($model)->newQuery();
+        $query = $model->getDeivers($model);
 
         // class filter for user only
         $driver_filter = new DriverFilter($query, $request);

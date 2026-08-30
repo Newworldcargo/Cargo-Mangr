@@ -71,7 +71,7 @@ class StaffsDataTable extends DataTable
      */
     public function query(Staff $model, Request $request)
     {
-        $query = $model->getStaff($model)->newQuery();
+        $query = $model->getStaff($model);
 
         // class filter for user only
         $staff_filter = new StaffFilter($query, $request);

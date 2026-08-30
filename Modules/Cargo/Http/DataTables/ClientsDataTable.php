@@ -81,7 +81,7 @@ class ClientsDataTable extends DataTable
      */
     public function query(Client $model, Request $request)
     {
-        $query = $model->getClients($model)->newQuery();
+        $query = $model->getClients($model);
 
         // class filter for user only
         $client_filter = new ClientFilter($query, $request);

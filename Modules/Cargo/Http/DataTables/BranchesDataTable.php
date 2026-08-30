@@ -78,7 +78,7 @@ class BranchesDataTable extends DataTable
      */
     public function query(Branch $model, Request $request)
     {
-        $query = $model->getBranches($model)->newQuery();
+        $query = $model->getBranches($model);
 
         // class filter for user only
         $branch_filter = new BranchFilter($query, $request);
