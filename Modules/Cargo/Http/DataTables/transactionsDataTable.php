@@ -12,6 +12,7 @@ use Modules\Cargo\Entities\Mission;
 use Illuminate\Http\Request;
 use Modules\Cargo\Http\Filter\TransactionFilter;
 use App\Models\User;
+use Modules\Cargo\Services\TransactionScopeService;
 
 class transactionsDataTable extends DataTable
 {
@@ -103,9 +104,9 @@ class transactionsDataTable extends DataTable
      *
      * @return Transaction
      */
-    public function query(Transaction $model, Request $request)
+    public function query(Transaction $model, Request $request, TransactionScopeService $transactionScope)
     {
-        $query = $model->getTransactions($model,$request)->newQuery();
+        $query = $transactionScope->apply($model->newQuery(), $request->user(), $request);
 
         // class filter for user only
         $client_filter = new TransactionFilter($query, $request);

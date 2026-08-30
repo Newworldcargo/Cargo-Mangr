@@ -8,6 +8,7 @@ use Modules\Cargo\Entities\Client;
 use Modules\Cargo\Entities\Branch;
 use Modules\Cargo\Entities\Staff;
 use Modules\Cargo\Entities\Driver;
+use Modules\Cargo\Services\TransactionScopeService;
 
 class Transaction extends Model
 {
@@ -50,62 +51,9 @@ class Transaction extends Model
     }
 
     static public function getTransactions($query , $request = null){
+        $builder = $query instanceof self ? $query->newQuery() : $query;
 
-        $transactions = $query;
-        $user_role = auth()->user()->role;
-        if(isset($user_role))
-        {
-            if($user_role == 3){
-                $user = Branch::where('user_id',auth()->user()->id)->pluck('id')->first();
-                $transactions = $transactions->where('branch_id', $user)->orWhere('branch_owner_id', $user);
-            }elseif($user_role == 4){
-                $user = Client::where('user_id',auth()->user()->id)->pluck('id')->first();
-                $transactions = $transactions->where('client_id', $user);
-            }elseif($user_role == 5){
-                $user = Driver::where('user_id',auth()->user()->id)->pluck('id')->first();
-                $transactions = $transactions->where('captain_id', $user);
-            }elseif($user_role == 2){
-                $user = Staff::where('user_id',auth()->user()->id)->first();
-                if (!$user || !$user->branch_id) {
-                    return $transactions->whereRaw('1 = 0');
-                }
-
-                $transactions = $transactions->where(function ($query) use ($user) {
-                    $query->where('branch_id', $user->branch_id)
-                        ->orWhere('branch_owner_id', $user->branch_id);
-                })->where(function($query) {
-                    if(auth()->user()->can('manage-drivers')){
-                        $query->Where('captain_id','!=' , null);
-                    }
-                    if(auth()->user()->can('manage-branches')){
-                        $query->orWhere('branch_id','!=' , null);
-                    }
-                    if(auth()->user()->can('manage-customers')){
-                        $query->orWhere('client_id','!=' , null);
-                    }
-                });
-            }
-
-        }
-
-        if (isset($request) && !empty($request)) {
-
-            if (isset($request->captain_id) && !empty($request->captain_id)) {
-                $transactions = $transactions->where('captain_id', $request->captain_id);
-            }
-
-            if (isset($request->branch_id) && !empty($request->branch_id)) {
-                $transactions = $transactions->where('branch_id', $request->branch_id);
-            }
-
-            if (isset($request->client_id) && !empty($request->client_id)) {
-                $transactions = $transactions->where('client_id', $request->client_id);
-            }
-
-        }
-        
-
-        return $transactions;
+        return app(TransactionScopeService::class)->apply($builder, auth()->user(), $request);
 
     }
 }
