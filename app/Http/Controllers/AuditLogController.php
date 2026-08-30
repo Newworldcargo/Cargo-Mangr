@@ -17,6 +17,9 @@ class AuditLogController extends Controller
 
     public function index(Request $request)
     {
+        $user = $request->user();
+        abort_unless($user && ((int) $user->role === \App\Models\User::ADMIN || $user->can('view-audit-logs')), 403);
+
         $perPage = (int) $request->query('per_page', 20);
         $perPage = $perPage > 0 ? $perPage : 20;
 

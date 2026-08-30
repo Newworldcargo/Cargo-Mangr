@@ -150,9 +150,21 @@
                         <div class="text-muted small">
                             Showing {{ $logs->firstItem() ?? 0 }} to {{ $logs->lastItem() ?? 0 }} of {{ $logs->total() }} entries
                         </div>
-                        <div>
-                            {{ $logs->withQueryString()->links() }}
-                        </div>
+                        @if ($logs->hasPages())
+                            <nav aria-label="Audit log pagination" class="d-flex gap-2">
+                                @if ($logs->onFirstPage())
+                                    <span class="btn btn-sm btn-outline-secondary disabled">Previous</span>
+                                @else
+                                    <a class="btn btn-sm btn-outline-secondary" href="{{ $logs->previousPageUrl() }}">Previous</a>
+                                @endif
+                                <span class="btn btn-sm btn-light disabled">Page {{ $logs->currentPage() }} / {{ $logs->lastPage() }}</span>
+                                @if ($logs->hasMorePages())
+                                    <a class="btn btn-sm btn-outline-secondary" href="{{ $logs->nextPageUrl() }}">Next</a>
+                                @else
+                                    <span class="btn btn-sm btn-outline-secondary disabled">Next</span>
+                                @endif
+                            </nav>
+                        @endif
                     </div>
                 </div>
             </div>

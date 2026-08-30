@@ -183,6 +183,10 @@ class AuditLogService
                             });
                     });
                 });
+            } else {
+                // Audit history is sensitive. Users without an assigned branch
+                // never fall through to the global log stream.
+                $query->whereRaw('1 = 0');
             }
         }
 
