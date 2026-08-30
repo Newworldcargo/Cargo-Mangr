@@ -374,7 +374,7 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    // 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
                 },
                 body: JSON.stringify({ shipment_ids: shipmentIds, consignment_id: consignmentId })
             })
@@ -401,7 +401,7 @@
             fetch(`../api/consignments/${consignmentId}/remove-shipment/${shipmentId}`, {
                 method: 'POST',
                 headers: {
-                    // 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
                 }
             })
             .then(response => response.json())

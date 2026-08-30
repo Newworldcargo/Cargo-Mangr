@@ -4,11 +4,17 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Consignment;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Modules\Cargo\Entities\Shipment;
 
 class ConsignmentController extends Controller
 {
+    private function authorizeConsignmentMutation(): void
+    {
+        abort_unless(auth()->check() && (int) auth()->user()->role === User::ADMIN, 403);
+    }
+
     /**
      * Get latest consignments paginated and filtered by branch_id
      * GET /api/consignments/latest?per_page=10&page=1&branch_id=1
@@ -75,6 +81,7 @@ class ConsignmentController extends Controller
      */
     public function addShipmentsToConsignment(Request $request)
     {
+        $this->authorizeConsignmentMutation();
         $shipmentIds = $request->input('shipment_ids');
         $consignmentId = $request->input('consignment_id');
         $consignment = Consignment::findOrFail($consignmentId);
@@ -105,6 +112,7 @@ class ConsignmentController extends Controller
      */
     public function removeShipmentFromConsignment($consignmentId, $shipmentId)
     {
+        $this->authorizeConsignmentMutation();
         try {
             // Find the shipment and remove it from the consignment
             $shipment = Shipment::where('id', $shipmentId)
