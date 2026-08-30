@@ -56,7 +56,9 @@
 
 <!-- Right navbar links -->
 <ul class="navbar-nav ml-auto">
-    @php($impersonator = app(\Modules\Users\Services\ImpersonationService::class)->impersonator())
+    @php
+        $impersonator = app(\Modules\Users\Services\ImpersonationService::class)->impersonator();
+    @endphp
     @if ($impersonator)
         <li class="nav-item d-flex align-items-center mr-2">
             <span class="badge badge-warning px-3 py-2">
