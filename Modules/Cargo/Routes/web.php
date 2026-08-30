@@ -275,6 +275,9 @@ if (\Illuminate\Support\Facades\Schema::hasTable('translations') && check_module
                 Route::resource('transactions','TransactionController');
             });
 
+            Route::get('branch-monitoring', 'BranchMonitoringController@index')->name('branch-monitoring.index');
+            Route::get('branch-monitoring/users/{user}/preview', 'BranchMonitoringController@preview')->name('branch-monitoring.preview');
+
             // Delivery Times Routes
             Route::delete('/deliveryTime-multi-destroy', 'DeliveryTimeController@multiDestroy')->name('deliveryTimes.multi-destroy');
             Route::resource('deliveryTime','DeliveryTimeController');
@@ -582,6 +585,9 @@ if (\Illuminate\Support\Facades\Schema::hasTable('translations') && check_module
             Route::post('transactions/transactions-report/results','TransactionController@transactionsReport')->name('admin.transactions.export');
             Route::resource('transactions','TransactionController');
         });
+
+        Route::get('branch-monitoring', 'BranchMonitoringController@index')->name('branch-monitoring.index');
+        Route::get('branch-monitoring/users/{user}/preview', 'BranchMonitoringController@preview')->name('branch-monitoring.preview');
 
         // Delivery Times Routes
         Route::delete('/deliveryTime-multi-destroy', 'DeliveryTimeController@multiDestroy')->name('deliveryTimes.multi-destroy');

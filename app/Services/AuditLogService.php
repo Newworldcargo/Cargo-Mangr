@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use Modules\Cargo\Services\BranchAccessService;
 use Illuminate\Support\Facades\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 
 class AuditLogService
 {
@@ -34,18 +35,32 @@ class AuditLogService
         $user = Auth::user();
         $branchId = $this->branchIdForAuditable($auditable) ?: $this->branchAccess->branchIdFor($user);
 
-        return AuditLog::create([
+        $attributes = [
             'user_id'        => $user?->id,
             'event'          => $event,
             'auditable_type' => $auditableType ?? (is_object($auditable) ? get_class($auditable) : null),
             'auditable_id'   => is_object($auditable) ? $auditable->id : $auditable,
-            'branch_id'      => $branchId,
             'description'    => $description,
             'old_values'     => $oldValues,
             'new_values'     => $newValues,
             'ip_address'     => Request::ip(),
             'user_agent'     => Request::header('User-Agent'),
-        ]);
+        ];
+
+        // This guard permits a rolling deployment: application code can be
+        // released before the additive audit_logs.branch_id migration runs.
+        if ($this->supportsBranchScope()) {
+            $attributes['branch_id'] = $branchId;
+        }
+
+        return AuditLog::create($attributes);
+    }
+
+    public function supportsBranchScope(): bool
+    {
+        static $supported;
+
+        return $supported ??= Schema::hasColumn('audit_logs', 'branch_id');
     }
 
     private function branchIdForAuditable($auditable): ?int
@@ -112,7 +127,9 @@ class AuditLogService
                     // New audit events carry their branch at write time. Keep the
                     // legacy relationship lookups below while historical rows are
                     // backfilled in a separate, reviewable operation.
-                    $q->orWhere('branch_id', $branchId);
+                    if ($this->supportsBranchScope()) {
+                        $q->orWhere('branch_id', $branchId);
+                    }
                     // Shipment audit entries (Modules\Cargo\Entities\Shipment)
                     $q->orWhere(function ($sub) use ($branchId) {
                         $sub->where('auditable_type', 'Modules\\Cargo\\Entities\\Shipment')

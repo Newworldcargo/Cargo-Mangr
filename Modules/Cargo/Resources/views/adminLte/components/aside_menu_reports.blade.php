@@ -50,6 +50,16 @@
     </li>
 @endif
 
+@if ($user_role === $admin)
+    <li class="nav-item {{ areActiveRoutes(['branch-monitoring.index'], 'menu-is-opening menu-open active') }}">
+        <a href="{{ fr_route('branch-monitoring.index') }}"
+            class="nav-link {{ areActiveRoutes(['branch-monitoring.index'], 'menu-is-opening menu-open active') }}">
+            <i style="color:#fff" class="fas fa-binoculars fa-fw"></i>
+            <p style="color:#fff">{{ __('Branch monitoring') }}</p>
+        </a>
+    </li>
+@endif
+
 @if (auth()->user()->can('clients-report') || in_array($user_role, [$admin, $branch]) )
     <li class="nav-item  {{ areActiveRoutes(['clients.report'], 'menu-is-opening menu-open active') }}">
         <a href="{{ fr_route('clients.report') }}"
