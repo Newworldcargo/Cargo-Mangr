@@ -21,6 +21,16 @@ use Illuminate\Support\Str;
 class ConsignmentController extends Controller
 {
     use Twilio;
+
+    /**
+     * A consignment is shared across the company and can contain shipments
+     * from more than one branch. Until it has a branch-safe ownership model,
+     * only a top admin may alter it or import/delete its linked records.
+     */
+    private function authorizeConsignmentMutation(): void
+    {
+        abort_unless(auth()->check() && (int) auth()->user()->role === User::ADMIN, 403);
+    }
     /**
      * Display a listing of the resource.
      *
@@ -39,6 +49,7 @@ class ConsignmentController extends Controller
 
     public function import(Request $request)
     {
+        $this->authorizeConsignmentMutation();
         // dd('here');
         try {
             switch ($request->shipment_type) {
@@ -996,6 +1007,8 @@ class ConsignmentController extends Controller
 
     public function export(Request $request)
     {
+        $this->authorizeConsignmentMutation();
+
         return Excel::download(
             new ShipmentExport($request),
             'shipments_export_' . now()->format('Ymd_His') . '.xlsx'
@@ -1008,6 +1021,8 @@ class ConsignmentController extends Controller
      */
     public function create()
     {
+        $this->authorizeConsignmentMutation();
+
         $adminTheme = env('ADMIN_THEME', 'adminLte');
         return view('cargo::' . $adminTheme . '.pages.consignments.create');
     }
@@ -1020,6 +1035,7 @@ class ConsignmentController extends Controller
      */
     public function store(Request $request)
     {
+        $this->authorizeConsignmentMutation();
         try {
 
             $request->validate([
@@ -1065,6 +1081,7 @@ class ConsignmentController extends Controller
      */
     public function edit(Consignment $cons, $id)
     {
+        $this->authorizeConsignmentMutation();
         $adminTheme = env('ADMIN_THEME', 'adminLte');
         $consignment = $cons::where('id', $id)->first();
         return view('cargo::' . $adminTheme . '.pages.consignments.edit', compact('consignment'));
@@ -1079,6 +1096,7 @@ class ConsignmentController extends Controller
      */
     public function update(Request $request, Consignment $consignment)
     {
+        $this->authorizeConsignmentMutation();
         try {
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
@@ -1105,12 +1123,14 @@ class ConsignmentController extends Controller
 
     public function editTracker($id)
     {
+        $this->authorizeConsignmentMutation();
         $consignment = Consignment::findOrFail($id);
         return response()->json($consignment);
     }
 
     public function updateTracker(Request $request, $id)
     {
+        $this->authorizeConsignmentMutation();
 
         // dd($request);
         try {
@@ -1180,6 +1200,7 @@ class ConsignmentController extends Controller
      */
     public function destroy(Consignment $consignment, $id)
     {
+        $this->authorizeConsignmentMutation();
         try {
             $c = $consignment->where('id', $id)->first();
             if (!$c) {
@@ -1212,6 +1233,7 @@ class ConsignmentController extends Controller
     }
     public function bulkDelete(Request $request)
     {
+        $this->authorizeConsignmentMutation();
         try {
             $consignments = Consignment::whereIn('id', $request->ids)->get();
 

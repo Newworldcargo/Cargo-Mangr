@@ -59,6 +59,7 @@ use Illuminate\Support\Facades\DB as FDB;
 use Modules\Cargo\Entities\Payment;
 use Modules\Cargo\Entities\ShipmentLog;
 use App\Services\AuditLogService;
+use Modules\Cargo\Services\ShipmentOperationAccessService;
 
 class ShipmentController extends Controller
 {
@@ -133,6 +134,11 @@ class ShipmentController extends Controller
      */
     public function store(Request $request)
     {
+        abort_unless(
+            app(ShipmentOperationAccessService::class)->canCreateAtBranch(auth()->user(), (int) $request->input('Shipment.branch_id')),
+            403
+        );
+
         $order_id_validation = 'nullable|unique:shipments,order_id';
         $request->validate([
             'Shipment.type'            => 'required',
@@ -443,8 +449,10 @@ class ShipmentController extends Controller
                 'name' => __('cargo::view.shipment') . ' | ' . $shipment->code,
             ],
         ]);
-        $auditLogService = app(AuditLogService::class);
-        $auditLogs = $auditLogService->getLogsFor($shipment);
+        $operations = app(ShipmentOperationAccessService::class);
+        $auditLogs = $operations->canViewAuditTrail(auth()->user(), $shipment)
+            ? app(AuditLogService::class)->getLogsFor($shipment)
+            : collect();
         $pendingRefundRequest = RefundRequest::where('shipment_id', $shipment->id)
             ->where('status', RefundRequest::STATUS_PENDING)
             ->latest()
@@ -474,6 +482,7 @@ class ShipmentController extends Controller
             ],
         ]);
         $item = Shipment::findOrFail($id);
+        abort_unless(app(ShipmentOperationAccessService::class)->canOperate(auth()->user(), $item, 'edit-shipments'), 403);
         $adminTheme = env('ADMIN_THEME', 'adminLte');
         return view('cargo::' . $adminTheme . '.pages.shipments.edit')->with(['model' => $item]);
     }
@@ -515,9 +524,12 @@ class ShipmentController extends Controller
         // dd('here');
 
         // dd($request);
+        $shipmentToUpdate = Shipment::findOrFail($id);
+        abort_unless(app(ShipmentOperationAccessService::class)->canOperate(auth()->user(), $shipmentToUpdate, 'edit-shipments'), 403);
+
         try {
             DB::beginTransaction();
-            $model = Shipment::find($id);
+            $model = $shipmentToUpdate;
             $model->fill($request->Shipment);
 
             $costs = $this->applyShipmentCost($model, $_POST['Package']);
@@ -775,10 +787,19 @@ class ShipmentController extends Controller
     public function change(Request $request, $to)
     {
         if (isset($request->ids)) {
+            $ids = array_values(array_filter((array) $request->ids));
+            abort_if(empty($ids), 422, 'No shipments selected');
+            $shipments = Shipment::whereIn('id', $ids)->get();
+            abort_if($shipments->count() !== count(array_unique($ids)), 404, 'Shipment not found');
+            $permission = app(ShipmentOperationAccessService::class)->statusPermission((int) $to);
+            abort_unless($permission, 422, 'Invalid shipment status');
+            foreach ($shipments as $shipment) {
+                abort_unless(app(ShipmentOperationAccessService::class)->canOperate(auth()->user(), $shipment, $permission), 403);
+            }
             $action = new StatusManagerHelper();
-            $response = $action->change_shipment_status($request->ids, $to);
+            $response = $action->change_shipment_status($ids, $to);
             if ($response['success']) {
-                event(new ShipmentAction($to, $request->ids));
+                event(new ShipmentAction($to, $ids));
                 return back()->with(['message_alert' => __('cargo::messages.saved')]);
             }
         } else {
@@ -788,12 +809,20 @@ class ShipmentController extends Controller
 
     public function createPickupMission(Request $request, $type)
     {
+        if (!is_array($request->checked_ids)) {
+            $request->checked_ids = json_decode($request->checked_ids, true);
+        }
+
+        $shipmentIds = array_values(array_filter((array) $request->checked_ids));
+        abort_if(empty($shipmentIds), 422, 'No shipments selected');
+        $shipments = Shipment::whereIn('id', $shipmentIds)->get();
+        abort_if($shipments->count() !== count(array_unique($shipmentIds)), 404, 'Shipment not found');
+        foreach ($shipments as $shipment) {
+            abort_unless(app(ShipmentOperationAccessService::class)->canOperate(auth()->user(), $shipment, 'create-pickup-mission'), 403);
+            abort_unless(app(ShipmentOperationAccessService::class)->canOperate(auth()->user(), $shipment, 'requested-shipments'), 403);
+        }
+
         try {
-
-            if (!is_array($request->checked_ids)) {
-                $request->checked_ids = json_decode($request->checked_ids, true);
-            }
-
             DB::beginTransaction();
             $model = new Mission();
             $model->fill($request['Mission']);
@@ -1796,6 +1825,8 @@ class ShipmentController extends Controller
             return response()->json(['success' => false, 'message' => 'Shipment not found'], 404);
         }
 
+        abort_unless(app(ShipmentOperationAccessService::class)->canOperate(auth()->user(), $shipment, 'confirm-shipment-payment'), 403);
+
         $shipment->update([
             'payment_method_id' => $request->input('payment_method')
         ]);
@@ -1859,6 +1890,7 @@ class ShipmentController extends Controller
         }
 
         $shipment = Shipment::with(['paymentReceipts', 'receipt'])->findOrFail($request->shipment_id);
+        abort_unless(app(ShipmentOperationAccessService::class)->canOperate($user, $shipment, 'approve-refund-requests'), 403);
 
         if (!$shipment->paid) {
             return response()->json([
@@ -1982,10 +2014,15 @@ class ShipmentController extends Controller
             ], 400);
         }
 
+        $shipment = Shipment::with(['nwcReceipt', 'branch'])->findOrFail($request->shipment_id);
+        abort_unless(
+            app(ShipmentOperationAccessService::class)->canOperate(auth()->user(), $shipment, 'confirm-shipment-payment'),
+            403
+        );
+
         DB::beginTransaction();
 
         try {
-            $shipment = Shipment::with(['nwcReceipt', 'branch'])->findOrFail($request->shipment_id);
             $oldValues = $shipment->only(['paid']);
 
             $discountType = $request->filled('discount_type') ? $request->discount_type : null;

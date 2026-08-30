@@ -29,7 +29,10 @@ class BranchAccessService
             return Branch::where('user_id', $user->id)->value('id');
         }
 
-        if ((int) $user->role === 2) {
+        // Historical installs use both 0 and 2 for staff accounts. Treating
+        // only one as staff silently removed the branch boundary for the
+        // other in audit and operational checks.
+        if (in_array((int) $user->role, [User::STAFF, 2], true)) {
             return Staff::where('user_id', $user->id)->value('branch_id');
         }
 

@@ -11,6 +11,7 @@ use Modules\Cargo\Entities\Transaction;
 use Modules\Cargo\Entities\Client;
 use DB;
 use App\Models\User;
+use Modules\Cargo\Services\ShipmentOperationAccessService;
 
 class StatusManagerHelper{
 
@@ -23,10 +24,21 @@ class StatusManagerHelper{
 			DB::beginTransaction();
             
             $transaction = new TransactionHelper();
+            $permission = app(ShipmentOperationAccessService::class)->statusPermission((int) $to);
+            if (!$permission) {
+                throw new \Exception('Invalid shipment status');
+            }
+
             foreach($shipments as $shipment_id)
             {
                 
                 $shipment = Shipment::find($shipment_id);
+                if (!$shipment) {
+                    throw new \Exception('There is no shipment with this ID');
+                }
+                if (!app(ShipmentOperationAccessService::class)->canOperate(auth()->user(), $shipment, $permission)) {
+                    throw new \Exception('You are not authorized to change this shipment');
+                }
                 $client   = Client::where('id',$shipment->client_id)->pluck('user_id')->first();
                 $user     = User::where('id',$client)->pluck('id')->first(); 
                 // if($shipment->status_id == $to)
