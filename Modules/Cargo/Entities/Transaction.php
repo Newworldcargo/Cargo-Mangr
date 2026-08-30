@@ -66,10 +66,14 @@ class Transaction extends Model
                 $transactions = $transactions->where('captain_id', $user);
             }elseif($user_role == 2){
                 $user = Staff::where('user_id',auth()->user()->id)->first();
-                $transactions = $transactions->where('branch_id', $user);
+                if (!$user || !$user->branch_id) {
+                    return $transactions->whereRaw('1 = 0');
+                }
 
-                $transactions = $transactions->where('branch_owner_id',$user->branch_id)
-                ->where(function($query) use($staff_permission) {
+                $transactions = $transactions->where(function ($query) use ($user) {
+                    $query->where('branch_id', $user->branch_id)
+                        ->orWhere('branch_owner_id', $user->branch_id);
+                })->where(function($query) {
                     if(auth()->user()->can('manage-drivers')){
                         $query->Where('captain_id','!=' , null);
                     }

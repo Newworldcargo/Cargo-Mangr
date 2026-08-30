@@ -12,6 +12,8 @@ class AuditLog extends Model
         'user_id',
         'shipment_id',
         'consignment_id',
+        'branch_id',
+        'branch_id',
         'event',
         'auditable_type',
         'auditable_id',

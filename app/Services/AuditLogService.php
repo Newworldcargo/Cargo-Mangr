@@ -3,11 +3,15 @@
 namespace App\Services;
 
 use App\Models\AuditLog;
+use Modules\Cargo\Services\BranchAccessService;
 use Illuminate\Support\Facades\Request;
 use Illuminate\Support\Facades\Auth;
 
 class AuditLogService
 {
+    public function __construct(private readonly BranchAccessService $branchAccess)
+    {
+    }
     /**
      * Create an audit log entry.
      *
@@ -28,18 +32,33 @@ class AuditLogService
         ?string $description = null
     ): AuditLog {
         $user = Auth::user();
+        $branchId = $this->branchIdForAuditable($auditable) ?: $this->branchAccess->branchIdFor($user);
 
         return AuditLog::create([
             'user_id'        => $user?->id,
             'event'          => $event,
             'auditable_type' => $auditableType ?? (is_object($auditable) ? get_class($auditable) : null),
             'auditable_id'   => is_object($auditable) ? $auditable->id : $auditable,
+            'branch_id'      => $branchId,
             'description'    => $description,
             'old_values'     => $oldValues,
             'new_values'     => $newValues,
             'ip_address'     => Request::ip(),
             'user_agent'     => Request::header('User-Agent'),
         ]);
+    }
+
+    private function branchIdForAuditable($auditable): ?int
+    {
+        if (is_object($auditable) && !empty($auditable->branch_id)) {
+            return (int) $auditable->branch_id;
+        }
+
+        if (is_object($auditable) && isset($auditable->shipment) && !empty($auditable->shipment?->branch_id)) {
+            return (int) $auditable->shipment->branch_id;
+        }
+
+        return null;
     }
 
     /**
@@ -86,11 +105,14 @@ class AuditLogService
         //  - receipt audit entries via shipments.branch_id
         //  - logs performed by users of the same branch
         $user = auth()->user();
-        if ($user && (int) $user->role === 3) {
-            $branch = \Modules\Cargo\Entities\Branch::where('user_id', $user->id)->first();
-            if ($branch) {
-                $branchId = $branch->id;
+        if ($user && !$this->branchAccess->isTopAdmin($user)) {
+            $branchId = $this->branchAccess->branchIdFor($user);
+            if ($branchId) {
                 $query->where(function ($q) use ($branchId) {
+                    // New audit events carry their branch at write time. Keep the
+                    // legacy relationship lookups below while historical rows are
+                    // backfilled in a separate, reviewable operation.
+                    $q->orWhere('branch_id', $branchId);
                     // Shipment audit entries (Modules\Cargo\Entities\Shipment)
                     $q->orWhere(function ($sub) use ($branchId) {
                         $sub->where('auditable_type', 'Modules\\Cargo\\Entities\\Shipment')
