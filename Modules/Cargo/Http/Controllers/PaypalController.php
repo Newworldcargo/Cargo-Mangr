@@ -17,6 +17,7 @@ use Modules\Currency\Entities\Currency;
 
 class PaypalController
 {
+    private $gateway;
 
     public function __construct()
     {
