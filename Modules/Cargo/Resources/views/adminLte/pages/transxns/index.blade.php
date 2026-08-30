@@ -43,7 +43,7 @@ $client = 4;
             <select name="user_id" class="form-select form-select-sm mt-1" style="width: 15rem; max-width: 100%;" onchange="this.form.submit()">
                 <option value="">All permitted users</option>
                 @foreach($scopeOptions['users'] as $scopeUser)
-                    <option value="{{ $scopeUser->id }}" @selected($selectedScope['selectedUserId'] === $scopeUser->id && request('scope') !== 'self')>{{ $scopeUser->name }}</option>
+                    <option value="{{ $scopeUser->id }}" @selected($selectedScope['selectedUserId'] === $scopeUser->id && request('scope') !== 'self')>{{ $scopeUser->name }} — {{ $scopeUser->email }}</option>
                 @endforeach
             </select>
         </label>

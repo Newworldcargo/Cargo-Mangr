@@ -37,7 +37,7 @@
                                 <select name="user_id" class="form-select form-select-sm" style="width: 15rem; max-width: 100%;" onchange="this.form.submit()" aria-label="Filter by user">
                                     <option value="">All permitted users</option>
                                     @foreach($scopeOptions['users'] as $user)
-                                        <option value="{{ $user->id }}" @selected($selectedScope['selectedUserId'] === $user->id && request('scope') !== 'self')>{{ $user->name }}</option>
+                                        <option value="{{ $user->id }}" @selected($selectedScope['selectedUserId'] === $user->id && request('scope') !== 'self')>{{ $user->name }} — {{ $user->email }}</option>
                                     @endforeach
                                 </select>
                             @endif

@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Models\AuditLog;
+use App\Models\Transxn;
 use Modules\Cargo\Entities\Branch;
 use Modules\Cargo\Entities\Driver;
 use Modules\Cargo\Entities\Staff;
@@ -28,15 +30,16 @@ class OperationalScopeFilterService
             ? Branch::orderBy('name')->get(['id', 'name'])
             : ($canFilterBranch ? Branch::whereKey($branchId)->get(['id', 'name']) : collect());
 
-        $permittedUserIds = $isTopAdmin
-            ? User::query()->pluck('id')
-            : $this->branchUserIds($branchId, $viewer->id);
+        $users = $isTopAdmin
+            ? $this->activeOperationalUsers($viewer->id)
+            : User::whereIn('id', $this->branchUserIds($branchId, $viewer->id))->orderBy('name')->get(['id', 'name', 'email']);
 
         return [
             'can_filter_branch' => (bool) $canFilterBranch,
             'can_filter_user' => $isTopAdmin || (bool) $canFilterBranch,
+            'is_top_admin' => $isTopAdmin,
             'branches' => $branchOptions,
-            'users' => User::whereIn('id', $permittedUserIds)->orderBy('name')->get(['id', 'name', 'email']),
+            'users' => $users,
         ];
     }
 
@@ -48,7 +51,9 @@ class OperationalScopeFilterService
         }
 
         $selectedUserId = null;
-        if ($userId && ($userId === $viewer->id || ($options['can_filter_user'] && $options['users']->contains('id', $userId)))) {
+        if ($userId && ($userId === $viewer->id
+            || (($options['is_top_admin'] ?? false) && User::whereKey($userId)->exists())
+            || ($options['can_filter_user'] && $options['users']->contains('id', $userId)))) {
             $selectedUserId = $userId;
         }
 
@@ -68,5 +73,17 @@ class OperationalScopeFilterService
             ->filter()
             ->unique()
             ->values();
+    }
+
+    private function activeOperationalUsers(int $viewerId)
+    {
+        return User::query()
+            ->where(function ($query) use ($viewerId) {
+                $query->whereKey($viewerId)
+                    ->orWhereIn('id', Transxn::query()->whereNotNull('cashier_user_id')->select('cashier_user_id'))
+                    ->orWhereIn('id', AuditLog::query()->whereNotNull('user_id')->select('user_id'));
+            })
+            ->orderBy('name')
+            ->get(['id', 'name', 'email']);
     }
 }
