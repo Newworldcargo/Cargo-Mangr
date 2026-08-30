@@ -12,18 +12,11 @@
 
                 <div class="card mb-5">
                     <div class="card-body">
-                        <div class="message  message--warning">
+                        <div class="message message--info">
                             <p style="font-family: 'Poppins', sans-serif !important;">
-                                {{__('cargo::view.support_codecanuon_1')}} <a target="_blank" href="https://support.spotlayer.com"  style="color:#007bff;">{{__('cargo::view.click_here')}}</a> {{__('cargo::view.support_codecanuon_2')}} 
-                                    <br><br><br>{{__('cargo::view.support_codecanuon_attention')}} 
-                            </p>
-                        </div>
-                       
-                        <div class="message  message--warning">
-                            <p style="font-family: 'Poppins', sans-serif !important;">
-                                {{__('cargo::view.send_email_support_1')}}
-                                <a style="color:#007bff;" href="mailto:envato.spotlayer@gmail.com">envato.spotlayer@gmail.com</a>
-                                {{__('cargo::view.send_email_support_2')}}
+                                <strong>GreenWebb System Support</strong><br>
+                                This system is supported by GreenWebb. For technical assistance, product guidance, and service updates, visit
+                                <a target="_blank" rel="noopener noreferrer" href="https://greenweeb.tech" style="color:#007bff;">greenweeb.tech</a>.
                             </p>
                         </div>
                     </div>
