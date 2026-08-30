@@ -26,33 +26,11 @@ $client = 4;
     </ol>
 </nav>
 <div class="d-flex justify-content-end mb-4">
-<form method="GET" class="d-flex flex-wrap justify-content-end items-end gap-3 overflow-hidden">
-    <div class="text-sm font-semibold text-gray-700 mr-2">Overall scope</div>
-    @if($scopeOptions['can_filter_branch'])
-        <label class="text-sm text-gray-600">Branch
-            <select name="branch_id" class="form-select form-select-sm mt-1" style="width: 13rem; max-width: 100%;" onchange="this.form.submit()">
-                <option value="">All permitted branches</option>
-                @foreach($scopeOptions['branches'] as $scopeBranch)
-                    <option value="{{ $scopeBranch->id }}" @selected($selectedScope['selectedBranchId'] === $scopeBranch->id)>{{ $scopeBranch->name }}</option>
-                @endforeach
-            </select>
-        </label>
-    @endif
-    @if($scopeOptions['can_filter_user'])
-        <label class="text-sm text-gray-600">User
-            <select name="user_id" class="form-select form-select-sm mt-1" style="width: 15rem; max-width: 100%;" onchange="this.form.submit()">
-                <option value="">All permitted users</option>
-                @foreach($scopeOptions['users'] as $scopeUser)
-                    <option value="{{ $scopeUser->id }}" @selected($selectedScope['selectedUserId'] === $scopeUser->id && request('scope') !== 'self')>{{ $scopeUser->name }} — {{ $scopeUser->email }}</option>
-                @endforeach
-            </select>
-        </label>
-    @endif
-    <button name="scope" value="self" class="btn btn-sm {{ request('scope') === 'self' ? 'btn-primary' : 'btn-outline-secondary' }}">My transactions</button>
-    @if(request()->hasAny(['branch_id', 'user_id', 'scope']))
-        <a href="{{ route('transxn.index') }}" class="btn btn-sm btn-light">Clear</a>
-    @endif
-</form>
+    @include('adminLte.components.operational-scope-filter', [
+        'scopeFilterAction' => route('transxn.index'),
+        'scopeFilterClearUrl' => route('transxn.index'),
+        'scopeFilterSelfLabel' => 'Only my transactions',
+    ])
 </div>
 <!-- Transaction Summary Cards -->
 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4 mb-6">

@@ -62,35 +62,13 @@
         @endif
 
         <div class="d-flex justify-content-end mb-3">
-            <form method="GET" action="{{ route('reports.nwc.index') }}" class="d-flex flex-wrap justify-content-end align-items-end gap-2">
-                @foreach(['start_date', 'end_date', 'cashier', 'method', 'cargo_type', 'hawb_number', 'date', 'bill_order'] as $scopeField)
-                    <input type="hidden" name="{{ $scopeField }}" value="{{ $filters[$scopeField] }}">
-                @endforeach
-                @if($scopeOptions['can_filter_branch'])
-                    <label class="small text-muted">Overall branch
-                        <select name="branch_id" class="form-select form-select-sm" style="width: 13rem; max-width: 100%;" onchange="this.form.submit()">
-                            <option value="">All permitted branches</option>
-                            @foreach($scopeOptions['branches'] as $scopeBranch)
-                                <option value="{{ $scopeBranch->id }}" @selected($selectedScope['selectedBranchId'] === $scopeBranch->id)>{{ $scopeBranch->name }}</option>
-                            @endforeach
-                        </select>
-                    </label>
-                @endif
-                @if($scopeOptions['can_filter_user'])
-                    <label class="small text-muted">Overall user
-                        <select name="user_id" class="form-select form-select-sm" style="width: 15rem; max-width: 100%;" onchange="this.form.submit()">
-                            <option value="">All permitted users</option>
-                            @foreach($scopeOptions['users'] as $scopeUser)
-                                <option value="{{ $scopeUser->id }}" @selected($selectedScope['selectedUserId'] === $scopeUser->id && request('scope') !== 'self')>{{ $scopeUser->name }} — {{ $scopeUser->email }}</option>
-                            @endforeach
-                        </select>
-                    </label>
-                @endif
-                <button name="scope" value="self" class="btn btn-sm {{ request('scope') === 'self' ? 'btn-primary' : 'btn-outline-secondary' }}">My transactions</button>
-                @if(request()->hasAny(['branch_id', 'user_id', 'scope']))
-                    <a href="{{ route('reports.nwc.index', request()->except(['branch_id', 'user_id', 'scope'])) }}" class="btn btn-sm btn-light">Clear</a>
-                @endif
-            </form>
+            @include('adminLte.components.operational-scope-filter', [
+                'scopeFilterAction' => route('reports.nwc.index'),
+                'scopeFilterClearUrl' => route('reports.nwc.index', request()->except(['branch_id', 'user_id', 'scope'])),
+                'scopeFilterSelfLabel' => 'Only my transactions',
+                'scopeFilterHidden' => collect(['start_date', 'end_date', 'cashier', 'method', 'cargo_type', 'hawb_number', 'date', 'bill_order'])
+                    ->mapWithKeys(fn ($field) => [$field => $filters[$field]])->all(),
+            ])
         </div>
 
         <div class="row g-3 mb-4">
