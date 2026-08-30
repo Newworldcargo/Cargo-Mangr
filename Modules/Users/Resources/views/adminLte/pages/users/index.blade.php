@@ -108,6 +108,9 @@
                                 <x-table-filter :table_id="$table_id" :filters="$filters">
                                     {{-- Start Custom Filters --}}
                                     @include('users::adminLte.pages.users.table.filters.role', ['table_id' => $table_id, 'filters' => $filters])
+                                    @if ((int) auth()->user()->role === \App\Models\User::ADMIN)
+                                        @include('users::adminLte.pages.users.table.filters.branch', ['table_id' => $table_id, 'filters' => $filters])
+                                    @endif
                                     @include('users::adminLte.pages.users.table.filters.name', ['table_id' => $table_id, 'filters' => $filters])
                                     {{-- End Custom Filters --}}
                                 </x-table-filter>

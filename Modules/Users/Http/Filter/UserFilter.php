@@ -61,6 +61,29 @@ class UserFilter
                     }
                 }
 
+                if ($key == 'branch_id' && !empty($filter['branch_id'])) {
+                    $branchId = (int) $filter['branch_id'];
+                    $query->where(function ($scope) use ($branchId) {
+                        $scope->whereExists(function ($sub) use ($branchId) {
+                            $sub->selectRaw('1')->from('branches')
+                                ->whereColumn('branches.user_id', 'users.id')
+                                ->where('branches.id', $branchId);
+                        })->orWhereExists(function ($sub) use ($branchId) {
+                            $sub->selectRaw('1')->from('staffs')
+                                ->whereColumn('staffs.user_id', 'users.id')
+                                ->where('staffs.branch_id', $branchId);
+                        })->orWhereExists(function ($sub) use ($branchId) {
+                            $sub->selectRaw('1')->from('clients')
+                                ->whereColumn('clients.user_id', 'users.id')
+                                ->where('clients.branch_id', $branchId);
+                        })->orWhereExists(function ($sub) use ($branchId) {
+                            $sub->selectRaw('1')->from('drivers')
+                                ->whereColumn('drivers.user_id', 'users.id')
+                                ->where('drivers.branch_id', $branchId);
+                        });
+                    });
+                }
+
 
                 // check on created_at | filter table
                 require app_path('Helpers/globalFilter/created_at.php');

@@ -21,7 +21,7 @@ class UsersDataTable extends DataTable
         'print',
         'pdf'
     ];
-    public $filters = ['branch', 'created_at' , 'name' , 'role'];
+    public $filters = ['branch_id', 'created_at' , 'name' , 'role'];
     /**
      * Build DataTable class.
      *
