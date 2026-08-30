@@ -13,7 +13,18 @@
         .operational-scope-filter .scope-filter-field select { width: 13.5rem; max-width: 100%; font-size: .82rem; }
         .operational-scope-filter .scope-filter-actions { display: flex; gap: .4rem; align-items: center; }
         .operational-scope-filter .scope-filter-toggle { display: inline-flex; align-items: center; gap: .45rem; margin: 0; color: #374151; font-size: .8rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
-        .operational-scope-filter .scope-filter-toggle .form-check-input { width: 2.2rem; margin: 0; cursor: pointer; }
+        .operational-scope-filter .scope-filter-toggle .form-check-input {
+            appearance: none; -webkit-appearance: none; position: relative; width: 2.5rem; height: 1.35rem;
+            margin: 0; border: 0; border-radius: 999px; background: #cbd5e1; cursor: pointer;
+            transition: background .18s ease; outline: none; box-shadow: inset 0 0 0 1px rgba(15,23,42,.08);
+        }
+        .operational-scope-filter .scope-filter-toggle .form-check-input::after {
+            content: ''; position: absolute; top: .18rem; left: .18rem; width: .99rem; height: .99rem;
+            border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.3); transition: transform .18s ease;
+        }
+        .operational-scope-filter .scope-filter-toggle .form-check-input:checked { background: #0d6efd; }
+        .operational-scope-filter .scope-filter-toggle .form-check-input:checked::after { transform: translateX(1.15rem); }
+        .operational-scope-filter .scope-filter-toggle .form-check-input:focus-visible { box-shadow: 0 0 0 3px rgba(13,110,253,.25); }
         @media (max-width: 575.98px) {
             .operational-scope-filter .scope-filter-shell, .operational-scope-filter .scope-filter-card { width: 100%; }
             .operational-scope-filter .scope-filter-shell { align-items: stretch; flex-direction: column; gap: .5rem; }
