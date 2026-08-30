@@ -65,8 +65,8 @@ class TransxnController extends Controller
         $selectedScope = $this->scopeFilters->selected(
             $viewer,
             $scopeOptions,
-            $request->integer('branch_id') ?: null,
-            $request->input('scope') === 'self' ? $viewer->id : ($request->integer('user_id') ?: null),
+            (int) $request->input('branch_id') ?: null,
+            $request->input('scope') === 'self' ? $viewer->id : ((int) $request->input('user_id') ?: null),
         );
         $branchCurrency = 'ZMW';
         $viewerBranch = $this->viewerBranch($viewer);
