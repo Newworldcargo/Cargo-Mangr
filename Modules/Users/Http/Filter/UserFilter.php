@@ -63,6 +63,12 @@ class UserFilter
 
                 if ($key == 'branch_id' && !empty($filter['branch_id'])) {
                     $branchId = (int) $filter['branch_id'];
+                    if ((int) auth()->user()->role !== \App\Models\User::ADMIN) {
+                        $branchId = (int) \Modules\Cargo\Entities\Staff::where('user_id', auth()->id())->value('branch_id');
+                    }
+                    if (!$branchId) {
+                        continue;
+                    }
                     $query->where(function ($scope) use ($branchId) {
                         $scope->whereExists(function ($sub) use ($branchId) {
                             $sub->selectRaw('1')->from('branches')
@@ -82,6 +88,10 @@ class UserFilter
                                 ->where('drivers.branch_id', $branchId);
                         });
                     });
+                }
+
+                if ($key == 'user_id' && !empty($filter['user_id'])) {
+                    $query->where('users.id', (int) $filter['user_id']);
                 }
 
 

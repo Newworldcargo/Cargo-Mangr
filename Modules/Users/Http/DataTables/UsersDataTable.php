@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 
 use Modules\Users\Http\Filter\UserFilter;
+use Modules\Cargo\Entities\Staff;
 
 class UsersDataTable extends DataTable
 {
@@ -21,7 +22,7 @@ class UsersDataTable extends DataTable
         'print',
         'pdf'
     ];
-    public $filters = ['branch_id', 'created_at' , 'name' , 'role'];
+    public $filters = ['branch_id', 'user_id', 'created_at' , 'name' , 'role'];
     /**
      * Build DataTable class.
      *
@@ -86,12 +87,38 @@ class UsersDataTable extends DataTable
     {
         $query = $model->getUsersOnly($model)->newQuery();
 
+        $viewer = auth()->user();
+        if (!$viewer || (int) $viewer->role !== User::ADMIN) {
+            $branchId = $viewer ? Staff::where('user_id', $viewer->id)->value('branch_id') : null;
+            if ($branchId) {
+                $this->applyBranchScope($query, (int) $branchId, $viewer->id);
+            } else {
+                $query->whereKey($viewer?->id ?: 0);
+            }
+        }
+
         // class filter for user only
         $user_filter = new UserFilter($query, $request);
 
         $query = $user_filter->filterBy($this->filters);
 
         return $query;
+    }
+
+    private function applyBranchScope($query, int $branchId, int $viewerId): void
+    {
+        $query->where(function ($scope) use ($branchId, $viewerId) {
+            $scope->where('users.id', $viewerId)
+                ->orWhereExists(function ($sub) use ($branchId) {
+                    $sub->selectRaw('1')->from('branches')->whereColumn('branches.user_id', 'users.id')->where('branches.id', $branchId);
+                })->orWhereExists(function ($sub) use ($branchId) {
+                    $sub->selectRaw('1')->from('staffs')->whereColumn('staffs.user_id', 'users.id')->where('staffs.branch_id', $branchId);
+                })->orWhereExists(function ($sub) use ($branchId) {
+                    $sub->selectRaw('1')->from('clients')->whereColumn('clients.user_id', 'users.id')->where('clients.branch_id', $branchId);
+                })->orWhereExists(function ($sub) use ($branchId) {
+                    $sub->selectRaw('1')->from('drivers')->whereColumn('drivers.user_id', 'users.id')->where('drivers.branch_id', $branchId);
+                });
+        });
     }
 
     /**

@@ -1,18 +1,22 @@
 @once
     <style>
-        .operational-scope-filter { max-width: 100%; }
+        .operational-scope-filter { width: 100%; max-width: 100%; }
+        .operational-scope-filter .scope-filter-shell { display: flex; align-items: center; justify-content: space-between; gap: 1rem; width: 100%; }
         .operational-scope-filter .scope-filter-card {
             display: flex; flex-wrap: wrap; align-items: end; justify-content: flex-end;
-            gap: .65rem; padding: .75rem 1rem; border: 1px solid #e5e7eb;
+            gap: .65rem; padding: .65rem .8rem; border: 1px solid #e5e7eb;
             border-radius: .65rem; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.04);
         }
-        .operational-scope-filter .scope-filter-title { color: #374151; font-size: .84rem; font-weight: 700; white-space: nowrap; }
+        .operational-scope-filter .scope-filter-title { color: #374151; font-size: .9rem; font-weight: 700; white-space: nowrap; }
         .operational-scope-filter .scope-filter-field { margin: 0; min-width: 0; }
         .operational-scope-filter .scope-filter-field span { display: block; margin-bottom: .2rem; color: #6b7280; font-size: .72rem; font-weight: 600; }
         .operational-scope-filter .scope-filter-field select { width: 13.5rem; max-width: 100%; font-size: .82rem; }
         .operational-scope-filter .scope-filter-actions { display: flex; gap: .4rem; align-items: center; }
+        .operational-scope-filter .scope-filter-toggle { display: inline-flex; align-items: center; gap: .45rem; margin: 0; color: #374151; font-size: .8rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
+        .operational-scope-filter .scope-filter-toggle .form-check-input { width: 2.2rem; margin: 0; cursor: pointer; }
         @media (max-width: 575.98px) {
-            .operational-scope-filter, .operational-scope-filter .scope-filter-card { width: 100%; }
+            .operational-scope-filter .scope-filter-shell, .operational-scope-filter .scope-filter-card { width: 100%; }
+            .operational-scope-filter .scope-filter-shell { align-items: stretch; flex-direction: column; gap: .5rem; }
             .operational-scope-filter .scope-filter-card { justify-content: stretch; }
             .operational-scope-filter .scope-filter-field, .operational-scope-filter .scope-filter-field select, .operational-scope-filter .scope-filter-actions { width: 100%; }
             .operational-scope-filter .scope-filter-actions .btn { flex: 1; }
@@ -26,8 +30,9 @@
             <input type="hidden" name="{{ $name }}" value="{{ $value }}">
         @endif
     @endforeach
-    <div class="scope-filter-card">
+    <div class="scope-filter-shell">
         <div class="scope-filter-title">Show records for</div>
+        <div class="scope-filter-card">
         @if($scopeOptions['can_filter_branch'])
             <label class="scope-filter-field">
                 <span>Branch</span>
@@ -51,10 +56,14 @@
             </label>
         @endif
         <div class="scope-filter-actions">
-            <button name="scope" value="self" class="btn btn-sm {{ request('scope') === 'self' ? 'btn-primary' : 'btn-outline-primary' }}">{{ $scopeFilterSelfLabel ?? 'Only my work' }}</button>
+            <label class="scope-filter-toggle" title="Turn this on to see only records you created or processed">
+                <input class="form-check-input" type="checkbox" role="switch" name="scope" value="self" @checked(request('scope') === 'self') onchange="this.form.submit()">
+                <span>{{ $scopeFilterSelfLabel ?? 'Only my records' }}</span>
+            </label>
             @if(request()->hasAny(['branch_id', 'user_id', 'scope']))
                 <a href="{{ $scopeFilterClearUrl }}" class="btn btn-sm btn-light">Reset</a>
             @endif
+        </div>
         </div>
     </div>
 </form>

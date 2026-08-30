@@ -67,6 +67,30 @@
                 <!--end::Header content-->
             </div>
 
+            <div class="px-6 pb-5">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+                    <div class="text-sm font-bold text-gray-700">Show users for</div>
+                    <div class="d-flex flex-wrap align-items-end justify-content-end gap-3">
+                        @if($scopeBranches->isNotEmpty())
+                            <label class="mb-0">
+                                <span class="d-block mb-1 text-xs font-semibold text-gray-500">Branch</span>
+                                <select id="{{ $table_id }}_scope_branch" class="form-select form-select-sm" style="width: 14rem; max-width: 100%;">
+                                    <option value="">All branches I can access</option>
+                                    @foreach($scopeBranches as $scopeBranch)
+                                        <option value="{{ $scopeBranch->id }}">{{ $scopeBranch->name }}</option>
+                                    @endforeach
+                                </select>
+                            </label>
+                        @endif
+                        <label class="d-inline-flex align-items-center gap-2 mb-1 cursor-pointer text-sm font-semibold text-gray-700" title="Turn this on to see only your user record">
+                            <input id="{{ $table_id }}_scope_self" class="form-check-input m-0" type="checkbox" role="switch">
+                            <span>Only my record</span>
+                        </label>
+                        <button id="{{ $table_id }}_scope_reset" type="button" class="btn btn-sm btn-light">Reset</button>
+                    </div>
+                </div>
+            </div>
+
             <!--begin::Enhanced Toolbar-->
             <div class="px-6 pb-6">
                 <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
@@ -247,6 +271,38 @@
     {{ $dataTable->scripts() }}
     
     <script>
+        $(function () {
+            const tableId = '{{ $table_id }}';
+            const table = $('#' + tableId).DataTable();
+            const branchSelect = $('#' + tableId + '_scope_branch');
+            const selfToggle = $('#' + tableId + '_scope_self');
+            const storageKey = 'nwc-user-scope-{{ auth()->id() }}';
+            const viewerId = {{ (int) auth()->id() }};
+            let scope = { branch_id: '', self: false };
+
+            try { scope = { ...scope, ...JSON.parse(localStorage.getItem(storageKey) || '{}') }; } catch (e) {}
+            branchSelect.val(scope.branch_id || '');
+            selfToggle.prop('checked', !!scope.self);
+
+            table.on('preXhr.dt', function (event, settings, data) {
+                data.filter = data.filter || {};
+                data.filter.branch_id = scope.branch_id || '';
+                data.filter.user_id = scope.self ? viewerId : '';
+            });
+
+            const refreshScope = function () {
+                localStorage.setItem(storageKey, JSON.stringify(scope));
+                table.ajax.reload();
+            };
+            branchSelect.on('change', function () { scope.branch_id = this.value; refreshScope(); });
+            selfToggle.on('change', function () { scope.self = this.checked; refreshScope(); });
+            $('#' + tableId + '_scope_reset').on('click', function () {
+                scope = { branch_id: '', self: false };
+                branchSelect.val(''); selfToggle.prop('checked', false); refreshScope();
+            });
+            if (scope.branch_id || scope.self) { table.ajax.reload(); }
+        });
+
         // Enhanced UX interactions
         document.addEventListener('DOMContentLoaded', function() {
             // Add loading states to buttons

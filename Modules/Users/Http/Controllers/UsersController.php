@@ -15,6 +15,7 @@ use Modules\Users\Http\Requests\UserRequest;
 use Modules\Users\Http\Requests\AssignPermissionToUserRequest;
 use App\Models\User;
 use Illuminate\Support\Facades\Storage;
+use Modules\Cargo\Entities\Branch;
 
 class UsersController extends Controller
 {
@@ -46,7 +47,11 @@ class UsersController extends Controller
                 'name' => __('users::view.users'),
             ],
         ]);
-        $data_with = [];
+        $data_with = [
+            'scopeBranches' => (int) auth()->user()->role === User::ADMIN
+                ? Branch::where('is_archived', 0)->orderBy('name')->get(['id', 'name'])
+                : collect(),
+        ];
         $share_data = array_merge(get_class_vars(UsersDataTable::class), $data_with);
         $adminTheme = env('ADMIN_THEME', 'adminLte');
         return $dataTable->render('users::'.$adminTheme.'.pages.users.index', $share_data);
