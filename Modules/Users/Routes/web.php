@@ -26,6 +26,8 @@ if (\Illuminate\Support\Facades\Schema::hasTable('translations') && check_module
             Route::delete('/users-multi-destroy', 'UsersController@multiDestroy')->name('users.multi-destroy');
             Route::get('/users/{id}/manage-access', 'UsersController@assignPermissionToUserView')->name('users.view-manage-access');
             Route::post('/users/{id}/manage-access', 'UsersController@assignPermissionToUser')->name('users.manage-access');
+            Route::post('/users/{id}/impersonate', 'ImpersonationController@start')->name('users.impersonate');
+            Route::post('/impersonation/leave', 'ImpersonationController@leave')->name('users.impersonation.leave');
         });
     });
 }else{
@@ -34,5 +36,7 @@ if (\Illuminate\Support\Facades\Schema::hasTable('translations') && check_module
         Route::delete('/users-multi-destroy', 'UsersController@multiDestroy')->name('users.multi-destroy');
         Route::get('/users/{id}/manage-access', 'UsersController@assignPermissionToUserView')->name('users.view-manage-access');
         Route::post('/users/{id}/manage-access', 'UsersController@assignPermissionToUser')->name('users.manage-access');
+        Route::post('/users/{id}/impersonate', 'ImpersonationController@start')->name('users.impersonate');
+        Route::post('/impersonation/leave', 'ImpersonationController@leave')->name('users.impersonation.leave');
     });
 }

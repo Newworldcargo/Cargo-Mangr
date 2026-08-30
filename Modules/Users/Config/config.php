@@ -16,6 +16,7 @@ return [
             'edit-users',
             'delete-users',
             'export-table-users',
+            'impersonate-users',
         ],
 
         // others group ...

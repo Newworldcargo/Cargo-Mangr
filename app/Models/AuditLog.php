@@ -10,6 +10,7 @@ class AuditLog extends Model
     use HasFactory;
     protected $fillable = [
         'user_id',
+        'impersonator_id',
         'shipment_id',
         'consignment_id',
         'branch_id',

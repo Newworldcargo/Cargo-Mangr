@@ -56,6 +56,18 @@
 
 <!-- Right navbar links -->
 <ul class="navbar-nav ml-auto">
+    @php($impersonator = app(\Modules\Users\Services\ImpersonationService::class)->impersonator())
+    @if ($impersonator)
+        <li class="nav-item d-flex align-items-center mr-2">
+            <span class="badge badge-warning px-3 py-2">
+                {{ __('Logged in as emulated') }} {{ auth()->user()->name }}
+            </span>
+            <form method="POST" action="{{ fr_route('users.impersonation.leave') }}" class="ml-2">
+                @csrf
+                <button type="submit" class="btn btn-sm btn-outline-danger">{{ __('Exit emulation') }}</button>
+            </form>
+        </li>
+    @endif
     <!-- Currency Conversion Button -->
 
     @if ($defcurrency->code == 'ZMW')
@@ -492,4 +504,3 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
-

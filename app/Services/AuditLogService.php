@@ -7,10 +7,14 @@ use Modules\Cargo\Services\BranchAccessService;
 use Illuminate\Support\Facades\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
+use Modules\Users\Services\ImpersonationService;
 
 class AuditLogService
 {
-    public function __construct(private readonly BranchAccessService $branchAccess)
+    public function __construct(
+        private readonly BranchAccessService $branchAccess,
+        private readonly ImpersonationService $impersonation,
+    )
     {
     }
     /**
@@ -53,6 +57,10 @@ class AuditLogService
             $attributes['branch_id'] = $branchId;
         }
 
+        if ($this->supportsImpersonatorAttribution()) {
+            $attributes['impersonator_id'] = $this->impersonation->impersonator()?->id;
+        }
+
         return AuditLog::create($attributes);
     }
 
@@ -61,6 +69,13 @@ class AuditLogService
         static $supported;
 
         return $supported ??= Schema::hasColumn('audit_logs', 'branch_id');
+    }
+
+    public function supportsImpersonatorAttribution(): bool
+    {
+        static $supported;
+
+        return $supported ??= Schema::hasColumn('audit_logs', 'impersonator_id');
     }
 
     private function branchIdForAuditable($auditable): ?int

@@ -50,6 +50,14 @@
                         <!--end::Info-->
                     </div>
                     <!--end::User-->
+                    @if (app(\Modules\Users\Services\ImpersonationService::class)->canImpersonate(auth()->user(), $model))
+                        <form method="POST" action="{{ fr_route('users.impersonate', ['id' => $model->id]) }}" onsubmit="return confirm('{{ __('Start a session as this user? You can exit from the top navigation.') }}');">
+                            @csrf
+                            <button type="submit" class="btn btn-sm btn-outline-warning">
+                                <i class="fas fa-user-secret mr-1"></i>{{ __('Impersonate') }}
+                            </button>
+                        </form>
+                    @endif
                 </div>
                 <!--end::Title-->
                 <!--begin::Stats-->
