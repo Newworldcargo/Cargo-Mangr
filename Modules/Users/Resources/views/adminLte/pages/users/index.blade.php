@@ -68,13 +68,14 @@
             </div>
 
             <div class="px-6 pb-5">
-                <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-                    <div class="text-sm font-bold text-gray-700">Show users for</div>
-                    <div class="d-flex flex-wrap align-items-end justify-content-end gap-3">
+                <div class="user-scope-filter">
+                    <div class="user-scope-filter__shell">
+                        <div class="user-scope-filter__title">Show users for</div>
+                        <div class="user-scope-filter__card">
                         @if($scopeBranches->isNotEmpty())
-                            <label class="mb-0">
-                                <span class="d-block mb-1 text-xs font-semibold text-gray-500">Branch</span>
-                                <select id="{{ $table_id }}_scope_branch" class="form-select form-select-sm" style="width: 14rem; max-width: 100%;">
+                            <label class="user-scope-filter__field">
+                                <span>Branch</span>
+                                <select id="{{ $table_id }}_scope_branch" class="form-select form-select-sm" aria-label="Filter users by branch">
                                     <option value="">All branches I can access</option>
                                     @foreach($scopeBranches as $scopeBranch)
                                         <option value="{{ $scopeBranch->id }}">{{ $scopeBranch->name }}</option>
@@ -82,11 +83,12 @@
                                 </select>
                             </label>
                         @endif
-                        <label class="d-inline-flex align-items-center gap-2 mb-1 cursor-pointer text-sm font-semibold text-gray-700" title="Turn this on to see only your user record">
-                            <input id="{{ $table_id }}_scope_self" class="form-check-input m-0" type="checkbox" role="switch">
-                            <span>Only my record</span>
+                        <label class="user-scope-filter__toggle" title="Turn this on to see only your user record">
+                            <input id="{{ $table_id }}_scope_self" type="checkbox" role="switch">
+                            <span>Only my user record</span>
                         </label>
                         <button id="{{ $table_id }}_scope_reset" type="button" class="btn btn-sm btn-light">Reset</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -262,6 +264,38 @@
         .loading-pulse {
             animation: pulse-subtle 2s infinite;
         }
+
+        /* Branch scope controls: mirrors the operational report filters. */
+        .user-scope-filter { width: 100%; }
+        .user-scope-filter__shell { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+        .user-scope-filter__title { color: #374151; font-size: .9rem; font-weight: 700; white-space: nowrap; }
+        .user-scope-filter__card {
+            display: flex; flex-wrap: wrap; align-items: end; justify-content: flex-end; gap: .65rem;
+            padding: .65rem .8rem; border: 1px solid #e5e7eb; border-radius: .65rem;
+            background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.04);
+        }
+        .user-scope-filter__field { margin: 0; min-width: 0; }
+        .user-scope-filter__field > span { display: block; margin-bottom: .2rem; color: #6b7280; font-size: .72rem; font-weight: 600; }
+        .user-scope-filter__field select { width: 13.5rem; max-width: 100%; font-size: .82rem; }
+        .user-scope-filter__toggle { display: inline-flex; align-items: center; gap: .45rem; margin: 0; color: #374151; font-size: .8rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
+        .user-scope-filter__toggle input {
+            appearance: none; -webkit-appearance: none; position: relative; width: 2.5rem; height: 1.35rem;
+            margin: 0; border: 0; border-radius: 999px; background: #cbd5e1; cursor: pointer;
+            transition: background .18s ease; outline: none; box-shadow: inset 0 0 0 1px rgba(15,23,42,.08);
+        }
+        .user-scope-filter__toggle input::after {
+            content: ''; position: absolute; top: .18rem; left: .18rem; width: .99rem; height: .99rem;
+            border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.3); transition: transform .18s ease;
+        }
+        .user-scope-filter__toggle input:checked { background: #0d6efd; }
+        .user-scope-filter__toggle input:checked::after { transform: translateX(1.15rem); }
+        .user-scope-filter__toggle input:focus-visible { box-shadow: 0 0 0 3px rgba(13,110,253,.25); }
+        @media (max-width: 575.98px) {
+            .user-scope-filter__shell { align-items: stretch; flex-direction: column; gap: .5rem; }
+            .user-scope-filter__card, .user-scope-filter__field, .user-scope-filter__field select { width: 100%; }
+            .user-scope-filter__card { justify-content: stretch; }
+            .user-scope-filter__card .btn { flex: 1; }
+        }
     </style>
 @endsection
 
@@ -281,6 +315,11 @@
             let scope = { branch_id: '', self: false };
 
             try { scope = { ...scope, ...JSON.parse(localStorage.getItem(storageKey) || '{}') }; } catch (e) {}
+            if (branchSelect.length && scope.branch_id && !branchSelect.find('option').filter(function () {
+                return this.value === String(scope.branch_id);
+            }).length) {
+                scope.branch_id = '';
+            }
             branchSelect.val(scope.branch_id || '');
             selfToggle.prop('checked', !!scope.self);
 
