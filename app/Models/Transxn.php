@@ -12,6 +12,7 @@ class Transxn extends Model
     use HasFactory;
     protected $fillable = [
         'shipment_id',
+        'cashier_user_id',
         'receipt_number',
         'discount_type',
         'discount_value',
@@ -36,6 +37,11 @@ class Transxn extends Model
     public function nwcReceipt()
     {
         return $this->hasOne(NwcReceipt::class, 'shipment_id', 'shipment_id');
+    }
+
+    public function cashier()
+    {
+        return $this->belongsTo(User::class, 'cashier_user_id');
     }
 
     public function isRefunded()

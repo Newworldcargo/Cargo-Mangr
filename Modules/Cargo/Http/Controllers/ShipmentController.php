@@ -2101,6 +2101,7 @@ class ShipmentController extends Controller
 
                 $transaction = Transxn::create([
                     'shipment_id'    => $shipment->id,
+                    'cashier_user_id' => Auth::id(),
                     'receipt_number' => $nextReceiptNumber,
                     'discount_type'  => $discountType,
                     'discount_value' => $discountValue,
