@@ -137,7 +137,7 @@ class AuditLogService
         $user = auth()->user();
         if ($user && !$this->branchAccess->isTopAdmin($user)) {
             $branchId = $this->branchAccess->branchIdFor($user);
-            if ($branchId) {
+            if ($user->can('view-audit-logs') && $branchId) {
                 $query->where(function ($q) use ($branchId) {
                     // New audit events carry their branch at write time. Keep the
                     // legacy relationship lookups below while historical rows are
@@ -184,9 +184,10 @@ class AuditLogService
                     });
                 });
             } else {
-                // Audit history is sensitive. Users without an assigned branch
-                // never fall through to the global log stream.
-                $query->whereRaw('1 = 0');
+                // Every authenticated user may review their own activity. This
+                // also makes an impersonated session show only the emulated
+                // user's history unless it has the audit-view privilege.
+                $query->where('user_id', $user->id);
             }
         }
 
