@@ -1,4 +1,4 @@
-@extends('adminLte.layouts.master')
+@extends('cargo::adminLte.layouts.master')
 
 @section('content')
     <div class="container-fluid">
