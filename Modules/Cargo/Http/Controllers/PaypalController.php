@@ -24,18 +24,18 @@ class PaypalController
 
 
         $paymentSettings = resolve(\Modules\Payments\Entities\PaymentSetting::class)->toArray();
-        $paypal_payment = json_decode($paymentSettings['paypal_payment'], true);
+        $paypal_payment = json_decode($paymentSettings['paypal_payment'] ?? '', true) ?: [];
 
         $PAYPAL_SANDBOX_CLIENT_ID     = $paypal_payment['PAYPAL_SANDBOX_CLIENT_ID'] ?? '';
         $PAYPAL_SANDBOX_CLIENT_SECRET = $paypal_payment['PAYPAL_SANDBOX_CLIENT_SECRET'] ?? '';
         $PAYPAL_LIVE_CLIENT_ID        = $paypal_payment['PAYPAL_LIVE_CLIENT_ID'] ?? '';
         $PAYPAL_LIVE_CLIENT_SECRET    = $paypal_payment['PAYPAL_LIVE_CLIENT_SECRET'] ?? '';
-        $PAYPAL_MODE                  = $paypal_payment['PAYPAL_MODE'] == 1 ? 'sandbox' : 'live';
+        $isSandbox                    = (string) ($paypal_payment['PAYPAL_MODE'] ?? '1') === '1';
 
 
-        $this->gateway->setClientId($PAYPAL_SANDBOX_CLIENT_ID);
-        $this->gateway->setSecret($PAYPAL_SANDBOX_CLIENT_SECRET);
-        $this->gateway->setTestMode(true);
+        $this->gateway->setClientId($isSandbox ? $PAYPAL_SANDBOX_CLIENT_ID : $PAYPAL_LIVE_CLIENT_ID);
+        $this->gateway->setSecret($isSandbox ? $PAYPAL_SANDBOX_CLIENT_SECRET : $PAYPAL_LIVE_CLIENT_SECRET);
+        $this->gateway->setTestMode($isSandbox);
 
     }
 

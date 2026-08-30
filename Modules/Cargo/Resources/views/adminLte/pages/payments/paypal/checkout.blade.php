@@ -3,13 +3,13 @@
 @php 
 // Creating an environment
 $paymentSettings = resolve(\Modules\Payments\Entities\PaymentSetting::class)->toArray();
-$paypal_payment = json_decode($paymentSettings['paypal_payment'], true);
+$paypal_payment = json_decode($paymentSettings['paypal_payment'] ?? '', true) ?: [];
 
 $PAYPAL_SANDBOX_CLIENT_ID     = $paypal_payment['PAYPAL_SANDBOX_CLIENT_ID'] ?? '';
 $PAYPAL_SANDBOX_CLIENT_SECRET = $paypal_payment['PAYPAL_SANDBOX_CLIENT_SECRET'] ?? '';
 $PAYPAL_LIVE_CLIENT_ID        = $paypal_payment['PAYPAL_LIVE_CLIENT_ID'] ?? '';
 $PAYPAL_LIVE_CLIENT_SECRET    = $paypal_payment['PAYPAL_LIVE_CLIENT_SECRET'] ?? '';
-$PAYPAL_MODE                  = $paypal_payment['PAYPAL_MODE'] == 1 ? 'sandbox' : 'live';
+$PAYPAL_MODE                  = (string) ($paypal_payment['PAYPAL_MODE'] ?? '1') === '1' ? 'sandbox' : 'live';
 
 if($PAYPAL_MODE == 'sandbox'){
     $client_id = $PAYPAL_SANDBOX_CLIENT_ID;
@@ -112,4 +112,3 @@ if(Modules\Currency\Entities\Currency::where('default',1)->first()->code){
 </body>
 
 </html>
-    
