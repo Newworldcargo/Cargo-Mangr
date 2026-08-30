@@ -4,6 +4,7 @@ namespace App\Services\Reports;
 
 use App\Models\Transxn;
 use App\Models\User;
+use App\Services\FinancialTransactionScopeService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
@@ -13,6 +14,9 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class NwcReportService
 {
+    public function __construct(private readonly FinancialTransactionScopeService $transactionScope)
+    {
+    }
     /**
      * Resolve a start and end date for the report, defaulting to the current day.
      */
@@ -31,7 +35,7 @@ class NwcReportService
     /**
      * Fetch report rows for the given filters.
      */
-    public function getReportData(array $filters = []): Collection
+    public function getReportData(array $filters = [], ?User $viewer = null): Collection
     {
         [$start, $end] = $this->resolveDateRange($filters['start_date'] ?? null, $filters['end_date'] ?? null);
 
@@ -52,7 +56,19 @@ class NwcReportService
                 $query->where('paid', 1);
             })
             ->orderByDesc('created_at')
-            ->get();
+            ;
+
+        if ($viewer) {
+            $this->transactionScope->apply($transactions, $viewer);
+        }
+        if (!empty($filters['branch_id'])) {
+            $transactions->whereHas('shipment', fn ($shipment) => $shipment->where('branch_id', $filters['branch_id']));
+        }
+        if (!empty($filters['user_id'])) {
+            $transactions->where('cashier_user_id', $filters['user_id']);
+        }
+
+        $transactions = $transactions->get();
 
         $results = collect();
 

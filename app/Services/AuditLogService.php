@@ -126,7 +126,7 @@ class AuditLogService
      * @param int $perPage
      * @return \Illuminate\Contracts\Pagination\LengthAwarePaginator
      */
-    public function getAllLogs(int $perPage = 20)
+    public function getAllLogs(int $perPage = 20, ?int $branchId = null, ?int $userId = null)
     {
         $query = AuditLog::with('user')->latest();
 
@@ -191,6 +191,14 @@ class AuditLogService
             }
         }
 
-        return $query->paginate($perPage);
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+        }
+
+        if ($userId) {
+            $query->where('user_id', $userId);
+        }
+
+        return $query->paginate($perPage)->withQueryString();
     }
 }

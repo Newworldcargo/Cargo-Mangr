@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Mail\NwcReportMail;
 use App\Services\Reports\NwcReportService;
+use App\Services\OperationalScopeFilterService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -13,12 +14,16 @@ use Twilio\Rest\Client as TwilioClient;
 
 class NwcReportController extends Controller
 {
-    public function __construct(private readonly NwcReportService $reportService)
+    public function __construct(
+        private readonly NwcReportService $reportService,
+        private readonly OperationalScopeFilterService $scopeFilters,
+    )
     {
     }
 
     public function index(Request $request)
     {
+        [$scopeOptions, $selectedScope] = $this->globalScope($request);
         [$start, $end] = $this->reportService->resolveDateRange(
             $request->input('start_date'),
             $request->input('end_date')
@@ -33,12 +38,16 @@ class NwcReportController extends Controller
             'hawb_number' => $request->filled('hawb_number') ? trim((string) $request->input('hawb_number')) : null,
             'date' => $request->filled('date') ? trim((string) $request->input('date')) : null,
             'bill_order' => $request->filled('bill_order') ? trim((string) $request->input('bill_order')) : null,
+            'branch_id' => $selectedScope['selectedBranchId'],
+            'user_id' => $selectedScope['selectedUserId'],
         ];
 
         $baseRows = $this->reportService->getReportData([
             'start_date' => $filters['start_date'],
             'end_date' => $filters['end_date'],
-        ]);
+            'branch_id' => $filters['branch_id'],
+            'user_id' => $filters['user_id'],
+        ], $request->user());
         $availableFilters = $this->reportService->availableFilterOptions($baseRows);
 
         if (!empty($filters['cashier']) && !in_array($filters['cashier'], $availableFilters['cashiers'], true)) {
@@ -76,11 +85,14 @@ class NwcReportController extends Controller
             'summary' => $summary,
             'filters' => $filters,
             'availableFilters' => $availableFilters,
+            'scopeOptions' => $scopeOptions,
+            'selectedScope' => $selectedScope,
         ]);
     }
 
     public function export(Request $request)
     {
+        [, $selectedScope] = $this->globalScope($request);
         [$start, $end] = $this->reportService->resolveDateRange(
             $request->input('start_date'),
             $request->input('end_date')
@@ -89,9 +101,11 @@ class NwcReportController extends Controller
         $filters = [
             'start_date' => $start->toDateString(),
             'end_date' => $end->toDateString(),
+            'branch_id' => $selectedScope['selectedBranchId'],
+            'user_id' => $selectedScope['selectedUserId'],
         ];
 
-        $rows = $this->reportService->getReportData($filters);
+        $rows = $this->reportService->getReportData($filters, $request->user());
         $rows = $this->reportService->applyFilters($rows, [
             'cashier' => $request->filled('cashier') ? trim((string) $request->input('cashier')) : null,
             'method' => $request->filled('method') ? Str::lower(trim((string) $request->input('method'))) : null,
@@ -116,6 +130,7 @@ class NwcReportController extends Controller
 
     public function shareEmail(Request $request)
     {
+        [, $selectedScope] = $this->globalScope($request);
         $request->validate([
             'email' => 'required|email',
             'start_date' => 'nullable|date',
@@ -130,9 +145,11 @@ class NwcReportController extends Controller
         $filters = [
             'start_date' => $start->toDateString(),
             'end_date' => $end->toDateString(),
+            'branch_id' => $selectedScope['selectedBranchId'],
+            'user_id' => $selectedScope['selectedUserId'],
         ];
 
-        $rows = $this->reportService->getReportData($filters);
+        $rows = $this->reportService->getReportData($filters, $request->user());
         $rows = $this->reportService->applyFilters($rows, [
             'cashier' => $request->filled('cashier') ? trim((string) $request->input('cashier')) : null,
             'method' => $request->filled('method') ? Str::lower(trim((string) $request->input('method'))) : null,
@@ -170,6 +187,7 @@ class NwcReportController extends Controller
 
     public function shareWhatsapp(Request $request)
     {
+        [, $selectedScope] = $this->globalScope($request);
         $request->validate([
             'phone' => 'required|string',
             'start_date' => 'nullable|date',
@@ -184,9 +202,11 @@ class NwcReportController extends Controller
         $filters = [
             'start_date' => $start->toDateString(),
             'end_date' => $end->toDateString(),
+            'branch_id' => $selectedScope['selectedBranchId'],
+            'user_id' => $selectedScope['selectedUserId'],
         ];
 
-        $rows = $this->reportService->getReportData($filters);
+        $rows = $this->reportService->getReportData($filters, $request->user());
         $rows = $this->reportService->applyFilters($rows, [
             'cashier' => $request->filled('cashier') ? trim((string) $request->input('cashier')) : null,
             'method' => $request->filled('method') ? Str::lower(trim((string) $request->input('method'))) : null,
@@ -263,5 +283,19 @@ class NwcReportController extends Controller
         return redirect()
             ->back()
             ->with('status', 'Report shared via WhatsApp successfully.');
+    }
+
+    private function globalScope(Request $request): array
+    {
+        $viewer = $request->user();
+        $options = $this->scopeFilters->options($viewer, $viewer->can('manage-transactions') || (int) $viewer->role === 3);
+        $selected = $this->scopeFilters->selected(
+            $viewer,
+            $options,
+            $request->integer('branch_id') ?: null,
+            $request->input('scope') === 'self' ? $viewer->id : ($request->integer('user_id') ?: null),
+        );
+
+        return [$options, $selected];
     }
 }

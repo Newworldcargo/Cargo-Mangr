@@ -5,11 +5,15 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Transxn;
 use App\Services\FinancialTransactionScopeService;
+use App\Services\OperationalScopeFilterService;
 use Carbon\Carbon;
 
 class TransxnController extends Controller
 {
-    public function __construct(private readonly FinancialTransactionScopeService $transactionScope)
+    public function __construct(
+        private readonly FinancialTransactionScopeService $transactionScope,
+        private readonly OperationalScopeFilterService $scopeFilters,
+    )
     {
         $this->middleware('auth')->only('index');
     }
@@ -52,18 +56,25 @@ class TransxnController extends Controller
         ];
     }
 
-    public function index()
+    public function index(Request $request)
     {
         $now = Carbon::now();
 
         $viewer = auth()->user();
+        $scopeOptions = $this->scopeFilters->options($viewer, $viewer->can('manage-transactions') || (int) $viewer->role === 3);
+        $selectedScope = $this->scopeFilters->selected(
+            $viewer,
+            $scopeOptions,
+            $request->integer('branch_id') ?: null,
+            $request->input('scope') === 'self' ? $viewer->id : ($request->integer('user_id') ?: null),
+        );
         $branchCurrency = 'ZMW';
         $viewerBranch = $this->viewerBranch($viewer);
         if ($viewerBranch) {
             $branchCurrency = $viewerBranch->default_currency ?? 'ZMW';
         }
 
-        $scopeQuery = fn ($query) => $this->transactionScope->apply($query, $viewer);
+        $scopeQuery = fn ($query) => $this->applyGlobalScope($this->transactionScope->apply($query, $viewer), $selectedScope);
 
         $periods = [
             'todate'     => [Carbon::parse('1970-01-01'), $now],
@@ -81,7 +92,7 @@ class TransxnController extends Controller
             $refundedTotals[$key] = $p['refunded'];
         }
 
-        $listingQuery = $this->transactionScope->apply(Transxn::with(['shipment.client', 'shipment']), $viewer)
+        $listingQuery = $this->applyGlobalScope($this->transactionScope->apply(Transxn::with(['shipment.client', 'shipment']), $viewer), $selectedScope)
             ->orderBy('created_at', 'desc')
             ->limit(500);
         $transactions = $listingQuery->get();
@@ -100,7 +111,20 @@ class TransxnController extends Controller
 
         $adminTheme = env('ADMIN_THEME', 'adminLte');
 
-        return view('cargo::' . $adminTheme . '.pages.transxns.index', compact('transactions', 'totals', 'refundedTotals', 'branchCurrency'));
+        return view('cargo::' . $adminTheme . '.pages.transxns.index', compact('transactions', 'totals', 'refundedTotals', 'branchCurrency', 'scopeOptions', 'selectedScope'));
+    }
+
+    private function applyGlobalScope($query, array $scope)
+    {
+        if ($scope['selectedBranchId']) {
+            $query->whereHas('shipment', fn ($shipment) => $shipment->where('branch_id', $scope['selectedBranchId']));
+        }
+
+        if ($scope['selectedUserId']) {
+            $query->where('cashier_user_id', $scope['selectedUserId']);
+        }
+
+        return $query;
     }
 
     private function viewerBranch($user)

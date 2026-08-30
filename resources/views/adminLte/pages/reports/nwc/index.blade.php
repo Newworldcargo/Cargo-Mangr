@@ -15,6 +15,8 @@
             'hawb_number' => null,
             'date' => null,
             'bill_order' => null,
+            'branch_id' => null,
+            'user_id' => null,
         ], $filters ?? []);
 
         $availableFilters = $availableFilters ?? [
@@ -33,6 +35,9 @@
             'hawb_number' => $filters['hawb_number'],
             'date' => $filters['date'],
             'bill_order' => $filters['bill_order'],
+            'branch_id' => $filters['branch_id'],
+            'user_id' => $filters['user_id'],
+            'scope' => request('scope'),
         ], fn ($value) => $value !== null && $value !== '');
     @endphp
     <div class="container-fluid">
@@ -157,6 +162,32 @@
                             <h6 class="card-title mb-0 fw-bold text-dark">Filter Reports</h6>
                         </div>
                         <form class="row g-3 align-items-end" method="GET" action="{{ route('reports.nwc.index') }}">
+                            @if($scopeOptions['can_filter_branch'])
+                                <div class="col-lg-2 col-md-3 col-sm-6">
+                                    <label for="branch_id" class="form-label fw-semibold text-muted small">Overall Branch</label>
+                                    <select id="branch_id" name="branch_id" class="form-select form-select-sm border-0 bg-light">
+                                        <option value="">All permitted branches</option>
+                                        @foreach($scopeOptions['branches'] as $scopeBranch)
+                                            <option value="{{ $scopeBranch->id }}" @selected($selectedScope['selectedBranchId'] === $scopeBranch->id)>{{ $scopeBranch->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            @endif
+                            @if($scopeOptions['can_filter_user'])
+                                <div class="col-lg-2 col-md-3 col-sm-6">
+                                    <label for="user_id" class="form-label fw-semibold text-muted small">Overall User</label>
+                                    <select id="user_id" name="user_id" class="form-select form-select-sm border-0 bg-light">
+                                        <option value="">All permitted users</option>
+                                        @foreach($scopeOptions['users'] as $scopeUser)
+                                            <option value="{{ $scopeUser->id }}" @selected($selectedScope['selectedUserId'] === $scopeUser->id && request('scope') !== 'self')>{{ $scopeUser->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            @endif
+                            <div class="col-lg-2 col-md-3 col-sm-6">
+                                <label class="form-label fw-semibold text-muted small">Overall Scope</label>
+                                <button name="scope" value="self" class="btn btn-sm w-100 {{ request('scope') === 'self' ? 'btn-primary' : 'btn-outline-secondary' }}">My transactions</button>
+                            </div>
                             <div class="col-lg-2 col-md-3 col-sm-6">
                                 <label for="start_date" class="form-label fw-semibold text-muted small">Start Date</label>
                                 <input type="date"
@@ -299,9 +330,10 @@
                     <div id="shareEmailForm" class="collapse mb-3">
                         <form class="row g-2 align-items-end" method="POST" action="{{ route('reports.nwc.share-email') }}">
                             @csrf
-                            @foreach(['start_date', 'end_date', 'cashier', 'method', 'cargo_type', 'hawb_number', 'date', 'bill_order'] as $hiddenField)
+                            @foreach(['start_date', 'end_date', 'cashier', 'method', 'cargo_type', 'hawb_number', 'date', 'bill_order', 'branch_id', 'user_id'] as $hiddenField)
                                 <input type="hidden" name="{{ $hiddenField }}" value="{{ $filters[$hiddenField] }}">
                             @endforeach
+                            @if(request('scope') === 'self')<input type="hidden" name="scope" value="self">@endif
                             <div class="col-md-4">
                                 <label for="email" class="form-label">Recipient Email</label>
                                 <input type="email" id="email" name="email" class="form-control" required placeholder="example@domain.com">
@@ -319,9 +351,10 @@
                     <div id="shareWhatsappForm" class="collapse mb-3">
                         <form class="row g-2 align-items-end" method="POST" action="{{ route('reports.nwc.share-whatsapp') }}">
                             @csrf
-                            @foreach(['start_date', 'end_date', 'cashier', 'method', 'hawb_number', 'date', 'bill_order'] as $hiddenField)
+                            @foreach(['start_date', 'end_date', 'cashier', 'method', 'cargo_type', 'hawb_number', 'date', 'bill_order', 'branch_id', 'user_id'] as $hiddenField)
                                 <input type="hidden" name="{{ $hiddenField }}" value="{{ $filters[$hiddenField] }}">
                             @endforeach
+                            @if(request('scope') === 'self')<input type="hidden" name="scope" value="self">@endif
                             <div class="col-md-4">
                                 <label for="phone" class="form-label">WhatsApp Number</label>
                                 <input type="text" id="phone" name="phone" class="form-control" required placeholder="+2607XXXXXXX">

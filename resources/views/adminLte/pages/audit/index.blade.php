@@ -24,7 +24,27 @@
                                 Tracking {{ $logs->total() }} {{ Str::plural('event', $logs->total()) }} from newest to oldest.
                             </small>
                         </div>
-                        <form method="GET" class="d-flex align-items-center gap-2">
+                        <form method="GET" class="d-flex flex-wrap align-items-center justify-content-end gap-2">
+                            @if($scopeOptions['can_filter_branch'])
+                                <select name="branch_id" class="form-select form-select-sm" onchange="this.form.submit()" aria-label="Filter by branch">
+                                    <option value="">All permitted branches</option>
+                                    @foreach($scopeOptions['branches'] as $branch)
+                                        <option value="{{ $branch->id }}" @selected($selectedScope['selectedBranchId'] === $branch->id)>{{ $branch->name }}</option>
+                                    @endforeach
+                                </select>
+                            @endif
+                            @if($scopeOptions['can_filter_user'])
+                                <select name="user_id" class="form-select form-select-sm" onchange="this.form.submit()" aria-label="Filter by user">
+                                    <option value="">All permitted users</option>
+                                    @foreach($scopeOptions['users'] as $user)
+                                        <option value="{{ $user->id }}" @selected($selectedScope['selectedUserId'] === $user->id && request('scope') !== 'self')>{{ $user->name }} — {{ $user->email }}</option>
+                                    @endforeach
+                                </select>
+                            @endif
+                            <button name="scope" value="self" class="btn btn-sm {{ request('scope') === 'self' ? 'btn-primary' : 'btn-outline-secondary' }}">My activity</button>
+                            @if(request()->hasAny(['branch_id', 'user_id', 'scope']))
+                                <a href="{{ route('audit-logs.index', ['per_page' => $perPage]) }}" class="btn btn-sm btn-light">Clear</a>
+                            @endif
                             <label for="per_page" class="text-muted small mb-0">Rows per page</label>
                             <select id="per_page"
                                     name="per_page"
