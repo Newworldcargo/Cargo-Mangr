@@ -203,10 +203,10 @@
                                 <label for="bill_order" class="form-label fw-semibold text-muted small">Bill Order</label>
                                 <select id="bill_order" name="bill_order" class="form-select form-select-sm border-0 bg-light">
                                     <option value="">Default</option>
-                                    <option value="bill_usd_asc" @selected($filters['bill_order'] === 'bill_usd_asc')>USD: Low to High</option>
-                                    <option value="bill_usd_desc" @selected($filters['bill_order'] === 'bill_usd_desc')>USD: High to Low</option>
-                                    <option value="bill_kwacha_asc" @selected($filters['bill_order'] === 'bill_kwacha_asc')>ZMW: Low to High</option>
-                                    <option value="bill_kwacha_desc" @selected($filters['bill_order'] === 'bill_kwacha_desc')>ZMW: High to Low</option>
+                                    <option value="bill_usd_asc" {{ $filters['bill_order'] === 'bill_usd_asc' ? 'selected' : '' }}>USD: Low to High</option>
+                                    <option value="bill_usd_desc" {{ $filters['bill_order'] === 'bill_usd_desc' ? 'selected' : '' }}>USD: High to Low</option>
+                                    <option value="bill_kwacha_asc" {{ $filters['bill_order'] === 'bill_kwacha_asc' ? 'selected' : '' }}>ZMW: Low to High</option>
+                                    <option value="bill_kwacha_desc" {{ $filters['bill_order'] === 'bill_kwacha_desc' ? 'selected' : '' }}>ZMW: High to Low</option>
                                 </select>
                             </div>
                             <div class="col-lg-2 col-md-3 col-sm-6">
@@ -214,7 +214,7 @@
                                 <select id="cashier" name="cashier" class="form-select form-select-sm border-0 bg-light">
                                     <option value="">All Cashiers</option>
                                     @foreach($availableFilters['cashiers'] as $cashier)
-                                        <option value="{{ $cashier }}" @selected($filters['cashier'] === $cashier)>{{ $cashier }}</option>
+                                        <option value="{{ $cashier }}" {{ $filters['cashier'] === $cashier ? 'selected' : '' }}>{{ $cashier }}</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -223,7 +223,7 @@
                                 <select id="method"  name="method" style="width: 100%;" class="form-select form-select-sm border-0 bg-light">
                                     <option value="">All Methods</option>
                                     @foreach($availableFilters['methods'] as $methodOption)
-                                        <option value="{{ $methodOption['value'] }}" @selected($filters['method'] === $methodOption['value'])>
+                                        <option value="{{ $methodOption['value'] }}" {{ $filters['method'] === $methodOption['value'] ? 'selected' : '' }}>
                                             {{ $methodOption['label'] }}
                                         </option>
                                     @endforeach
@@ -234,7 +234,7 @@
                                 <select id="cargo_type" name="cargo_type" class="form-select form-select-sm border-0 bg-light">
                                     <option value="">All Types</option>
                                     @foreach($availableFilters['cargo_types'] as $cargoType)
-                                        <option value="{{ $cargoType }}" @selected($filters['cargo_type'] === $cargoType)>
+                                        <option value="{{ $cargoType }}" {{ $filters['cargo_type'] === $cargoType ? 'selected' : '' }}>
                                             {{ ucfirst($cargoType) }}
                                         </option>
                                     @endforeach
@@ -446,6 +446,26 @@
                         @endif
                     </table>
                 </div>
+                @if($reportRows->hasPages())
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-3">
+                        <span class="small text-muted">
+                            Showing {{ $reportRows->firstItem() }}–{{ $reportRows->lastItem() }} of {{ number_format($reportRows->total()) }} records
+                        </span>
+                        <nav aria-label="NWC report pagination" class="d-flex gap-2">
+                            @if($reportRows->onFirstPage())
+                                <span class="btn btn-sm btn-outline-secondary disabled">Previous</span>
+                            @else
+                                <a class="btn btn-sm btn-outline-secondary" href="{{ $reportRows->appends(request()->except('page'))->previousPageUrl() }}">Previous</a>
+                            @endif
+                            <span class="btn btn-sm btn-light disabled">Page {{ $reportRows->currentPage() }} / {{ $reportRows->lastPage() }}</span>
+                            @if($reportRows->hasMorePages())
+                                <a class="btn btn-sm btn-outline-secondary" href="{{ $reportRows->appends(request()->except('page'))->nextPageUrl() }}">Next</a>
+                            @else
+                                <span class="btn btn-sm btn-outline-secondary disabled">Next</span>
+                            @endif
+                        </nav>
+                    </div>
+                @endif
             </div>
         </div>
     </div>

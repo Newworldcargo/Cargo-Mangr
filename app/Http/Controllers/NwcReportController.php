@@ -6,6 +6,7 @@ use App\Mail\NwcReportMail;
 use App\Services\Reports\NwcReportService;
 use App\Services\OperationalScopeFilterService;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -85,8 +86,20 @@ class NwcReportController extends Controller
         $rows = $this->reportService->applyFilters($baseRows, $filters);
         $summary = $this->reportService->summarize($rows, $start, $end);
 
+        $perPage = 50;
+        $totalRows = $rows->count();
+        $lastPage = max(1, (int) ceil($totalRows / $perPage));
+        $currentPage = min(max(1, (int) $request->query('page', 1)), $lastPage);
+        $reportRows = new LengthAwarePaginator(
+            $rows->forPage($currentPage, $perPage)->values(),
+            $totalRows,
+            $perPage,
+            $currentPage,
+            ['path' => $request->url(), 'pageName' => 'page'],
+        );
+
         return view('adminLte.pages.reports.nwc.index', [
-            'reportRows' => $rows,
+            'reportRows' => $reportRows,
             'summary' => $summary,
             'filters' => $filters,
             'availableFilters' => $availableFilters,
