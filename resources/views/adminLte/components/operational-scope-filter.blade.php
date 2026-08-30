@@ -50,7 +50,7 @@
                 <select name="branch_id" class="form-select form-select-sm" onchange="this.form.submit()">
                     <option value="">All branches I can access</option>
                     @foreach($scopeOptions['branches'] as $scopeBranch)
-                        <option value="{{ $scopeBranch->id }}" @selected($selectedScope['selectedBranchId'] === $scopeBranch->id)>{{ $scopeBranch->name }}</option>
+                        <option value="{{ $scopeBranch->id }}" {{ $selectedScope['selectedBranchId'] === $scopeBranch->id ? 'selected' : '' }}>{{ $scopeBranch->name }}</option>
                     @endforeach
                 </select>
             </label>
@@ -61,14 +61,14 @@
                 <select name="user_id" class="form-select form-select-sm" onchange="this.form.submit()">
                     <option value="">All team members I can access</option>
                     @foreach($scopeOptions['users'] as $scopeUser)
-                        <option value="{{ $scopeUser->id }}" @selected($selectedScope['selectedUserId'] === $scopeUser->id && request('scope') !== 'self')>{{ $scopeUser->name }} ({{ $scopeUser->email }})</option>
+                        <option value="{{ $scopeUser->id }}" {{ $selectedScope['selectedUserId'] === $scopeUser->id && request('scope') !== 'self' ? 'selected' : '' }}>{{ $scopeUser->name }} ({{ $scopeUser->email }})</option>
                     @endforeach
                 </select>
             </label>
         @endif
         <div class="scope-filter-actions">
             <label class="scope-filter-toggle" title="Turn this on to see only records you created or processed">
-                <input class="form-check-input" type="checkbox" role="switch" name="scope" value="self" @checked(request('scope') === 'self') onchange="this.form.submit()">
+                <input class="form-check-input" type="checkbox" role="switch" name="scope" value="self" {{ request('scope') === 'self' ? 'checked' : '' }} onchange="this.form.submit()">
                 <span>{{ $scopeFilterSelfLabel ?? 'Only my records' }}</span>
             </label>
             @if(request()->hasAny(['branch_id', 'user_id', 'scope']))
