@@ -35,7 +35,7 @@ class NwcReportService
     /**
      * Fetch report rows for the given filters.
      */
-    public function getReportData(array $filters = [], ?User $viewer = null): Collection
+    public function getReportData(array $filters = [], ?User $viewer = null, ?int $limit = null): Collection
     {
         [$start, $end] = $this->resolveDateRange($filters['start_date'] ?? null, $filters['end_date'] ?? null);
 
@@ -43,10 +43,9 @@ class NwcReportService
             ->with([
                 'shipment.client',
                 'shipment.consignment',
-                'shipment.nwcReceipt.auditLogs.user',
                 'shipment.nwcReceipt.user',
-                'nwcReceipt.auditLogs.user',
                 'nwcReceipt.user',
+                'cashier',
                 'shipment.paymentReceipts' // Include payment receipts for multiple payment support
             ])
             ->whereBetween('created_at', [$start, $end])
@@ -66,6 +65,9 @@ class NwcReportService
         }
         if (!empty($filters['user_id'])) {
             $transactions->where('cashier_user_id', $filters['user_id']);
+        }
+        if ($limit) {
+            $transactions->limit($limit);
         }
 
         $transactions = $transactions->get();
@@ -137,7 +139,9 @@ class NwcReportService
                     $rate = round($totalBillKwacha / $totalBillUsd, 6);
                 }
 
-                $cashierName = $multiplePaymentReceipts->first()?->cashier_name ?: $this->resolveCashierName($receipt);
+                $cashierName = $multiplePaymentReceipts->first()?->cashier_name
+                    ?: $transaction->cashier?->name
+                    ?: $this->resolveCashierName($receipt);
                 $cargoType = $consignment?->cargo_type ?? 'unknown';
 
                 $results->push([
@@ -203,7 +207,7 @@ class NwcReportService
                 $zamtel = $method === 'zamtel' ? (float) ($billKwacha ?? 0) : 0.0;
                 $otherPayment = in_array($method, ['other', 'others']) ? (float) ($billKwacha ?? 0) : 0.0;
 
-                $cashierName = $this->resolveCashierName($receipt);
+                $cashierName = $transaction->cashier?->name ?: $this->resolveCashierName($receipt);
                 $cargoType = $consignment?->cargo_type ?? 'unknown';
 
                 $results->push([

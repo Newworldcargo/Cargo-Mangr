@@ -276,6 +276,11 @@
         </div>
         <div class="card shadow-sm">
             <div class="card-body">
+                @if($reportTruncated ?? false)
+                    <div class="alert alert-info py-2 small">
+                        Showing the first 500 matching records to keep this page responsive. The summary and table below cover these records; narrow the date range for a complete on-screen report.
+                    </div>
+                @endif
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <div>
                         <h5 class="card-title mb-1">Report Details</h5>

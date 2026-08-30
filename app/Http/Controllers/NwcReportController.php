@@ -42,12 +42,17 @@ class NwcReportController extends Controller
             'user_id' => $selectedScope['selectedUserId'],
         ];
 
+        $pageRowLimit = 500;
         $baseRows = $this->reportService->getReportData([
             'start_date' => $filters['start_date'],
             'end_date' => $filters['end_date'],
             'branch_id' => $filters['branch_id'],
             'user_id' => $filters['user_id'],
-        ], $request->user());
+        ], $request->user(), $pageRowLimit + 1);
+        $reportTruncated = $baseRows->count() > $pageRowLimit;
+        if ($reportTruncated) {
+            $baseRows = $baseRows->take($pageRowLimit)->values();
+        }
         $availableFilters = $this->reportService->availableFilterOptions($baseRows);
 
         if (!empty($filters['cashier']) && !in_array($filters['cashier'], $availableFilters['cashiers'], true)) {
@@ -87,6 +92,7 @@ class NwcReportController extends Controller
             'availableFilters' => $availableFilters,
             'scopeOptions' => $scopeOptions,
             'selectedScope' => $selectedScope,
+            'reportTruncated' => $reportTruncated,
         ]);
     }
 
