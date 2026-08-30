@@ -25,7 +25,8 @@ $client = 4;
         <li class="text-gray-700 font-medium" aria-current="page">Transactions</li>
     </ol>
 </nav>
-<form method="GET" class="mb-4 bg-white border rounded-lg p-3 flex flex-wrap items-end gap-3 overflow-hidden">
+<div class="d-flex justify-content-end mb-4">
+<form method="GET" class="d-flex flex-wrap justify-content-end items-end gap-3 overflow-hidden">
     <div class="text-sm font-semibold text-gray-700 mr-2">Overall scope</div>
     @if($scopeOptions['can_filter_branch'])
         <label class="text-sm text-gray-600">Branch
@@ -52,6 +53,7 @@ $client = 4;
         <a href="{{ route('transxn.index') }}" class="btn btn-sm btn-light">Clear</a>
     @endif
 </form>
+</div>
 <!-- Transaction Summary Cards -->
 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4 mb-6">
     @can('view-total-to-date-transactions')

@@ -61,6 +61,38 @@
             </div>
         @endif
 
+        <div class="d-flex justify-content-end mb-3">
+            <form method="GET" action="{{ route('reports.nwc.index') }}" class="d-flex flex-wrap justify-content-end align-items-end gap-2">
+                @foreach(['start_date', 'end_date', 'cashier', 'method', 'cargo_type', 'hawb_number', 'date', 'bill_order'] as $scopeField)
+                    <input type="hidden" name="{{ $scopeField }}" value="{{ $filters[$scopeField] }}">
+                @endforeach
+                @if($scopeOptions['can_filter_branch'])
+                    <label class="small text-muted">Overall branch
+                        <select name="branch_id" class="form-select form-select-sm" style="width: 13rem; max-width: 100%;" onchange="this.form.submit()">
+                            <option value="">All permitted branches</option>
+                            @foreach($scopeOptions['branches'] as $scopeBranch)
+                                <option value="{{ $scopeBranch->id }}" @selected($selectedScope['selectedBranchId'] === $scopeBranch->id)>{{ $scopeBranch->name }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                @endif
+                @if($scopeOptions['can_filter_user'])
+                    <label class="small text-muted">Overall user
+                        <select name="user_id" class="form-select form-select-sm" style="width: 15rem; max-width: 100%;" onchange="this.form.submit()">
+                            <option value="">All permitted users</option>
+                            @foreach($scopeOptions['users'] as $scopeUser)
+                                <option value="{{ $scopeUser->id }}" @selected($selectedScope['selectedUserId'] === $scopeUser->id && request('scope') !== 'self')>{{ $scopeUser->name }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                @endif
+                <button name="scope" value="self" class="btn btn-sm {{ request('scope') === 'self' ? 'btn-primary' : 'btn-outline-secondary' }}">My transactions</button>
+                @if(request()->hasAny(['branch_id', 'user_id', 'scope']))
+                    <a href="{{ route('reports.nwc.index', request()->except(['branch_id', 'user_id', 'scope'])) }}" class="btn btn-sm btn-light">Clear</a>
+                @endif
+            </form>
+        </div>
+
         <div class="row g-3 mb-4">
             <div class="col-xl-2 col-lg-3 col-md-4 col-sm-6">
                 <div class="card border-0 shadow-sm h-100 rounded-2xl" style="border-radius: 1rem; background: linear-gradient(135deg, #f7c600 0%, #f7c600 100%);">
@@ -162,32 +194,9 @@
                             <h6 class="card-title mb-0 fw-bold text-dark">Filter Reports</h6>
                         </div>
                         <form class="row g-3 align-items-end" method="GET" action="{{ route('reports.nwc.index') }}">
-                            @if($scopeOptions['can_filter_branch'])
-                                <div class="col-lg-2 col-md-3 col-sm-6">
-                                    <label for="branch_id" class="form-label fw-semibold text-muted small">Overall Branch</label>
-                                    <select id="branch_id" name="branch_id" class="form-select form-select-sm border-0 bg-light" style="max-width: 100%;">
-                                        <option value="">All permitted branches</option>
-                                        @foreach($scopeOptions['branches'] as $scopeBranch)
-                                            <option value="{{ $scopeBranch->id }}" @selected($selectedScope['selectedBranchId'] === $scopeBranch->id)>{{ $scopeBranch->name }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-                            @endif
-                            @if($scopeOptions['can_filter_user'])
-                                <div class="col-lg-2 col-md-3 col-sm-6">
-                                    <label for="user_id" class="form-label fw-semibold text-muted small">Overall User</label>
-                                    <select id="user_id" name="user_id" class="form-select form-select-sm border-0 bg-light" style="max-width: 100%;">
-                                        <option value="">All permitted users</option>
-                                        @foreach($scopeOptions['users'] as $scopeUser)
-                                            <option value="{{ $scopeUser->id }}" @selected($selectedScope['selectedUserId'] === $scopeUser->id && request('scope') !== 'self')>{{ $scopeUser->name }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-                            @endif
-                            <div class="col-lg-2 col-md-3 col-sm-6">
-                                <label class="form-label fw-semibold text-muted small">Overall Scope</label>
-                                <button name="scope" value="self" class="btn btn-sm w-100 {{ request('scope') === 'self' ? 'btn-primary' : 'btn-outline-secondary' }}">My transactions</button>
-                            </div>
+                            @if($selectedScope['selectedBranchId'])<input type="hidden" name="branch_id" value="{{ $selectedScope['selectedBranchId'] }}">@endif
+                            @if($selectedScope['selectedUserId'])<input type="hidden" name="user_id" value="{{ $selectedScope['selectedUserId'] }}">@endif
+                            @if(request('scope') === 'self')<input type="hidden" name="scope" value="self">@endif
                             <div class="col-lg-2 col-md-3 col-sm-6">
                                 <label for="start_date" class="form-label fw-semibold text-muted small">Start Date</label>
                                 <input type="date"
