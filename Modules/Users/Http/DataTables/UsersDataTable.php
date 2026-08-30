@@ -85,7 +85,15 @@ class UsersDataTable extends DataTable
      */
     public function query(User $model, Request $request)
     {
-        $query = $model->getUsersOnly($model)->newQuery();
+        // The main list is intentionally limited to staff and administrators.
+        // When a branch is selected, include that branch's own login account too
+        // (branch accounts use role 3 and would otherwise be filtered out before
+        // the branch relationship scope can match them).
+        $roles = [0, 1];
+        if ($request->filled('filter.branch_id')) {
+            $roles[] = 3;
+        }
+        $query = $model->newQuery()->whereIn('role', $roles);
 
         $viewer = auth()->user();
         if (!$viewer || (int) $viewer->role !== User::ADMIN) {
