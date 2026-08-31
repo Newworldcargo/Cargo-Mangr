@@ -20,14 +20,14 @@ class SearchController extends Controller
         if (!auth()->check()) {
             return redirect()->route('signin');
         }
-        abort_unless((int) auth()->user()->role === User::ADMIN, 403);
+        abort_unless($this->canUseGlobalSearch(auth()->user()), 403);
         
         $query = $request->get('q', '');
         $userId = $request->get('user_id', null);
         $results = [];
         
         if ($query || $userId) {
-            $results = $this->performSearch($query, 50, $userId);
+            $results = $this->performSearch($query, 50, $userId, auth()->user());
         }
         
         return view('search.index', compact('results', 'query'));
@@ -38,39 +38,35 @@ class SearchController extends Controller
      */
     public function liveSearch(Request $request): JsonResponse
     {
-        try {
-            abort_unless(auth()->check() && (int) auth()->user()->role === User::ADMIN, 403);
-            $query = trim($request->get('q', ''));
+        abort_unless(auth()->check() && $this->canUseGlobalSearch(auth()->user()), 403);
+        $query = trim($request->get('q', ''));
 
-            if (strlen($query) < 2) {
-                return response()->json([
-                    'success' => true,
-                    'results' => [],
-                    'total' => 0
-                ]);
-            }
-            $results = $this->performSearch($query, 10);
+        if (strlen($query) < 2) {
             return response()->json([
                 'success' => true,
-                'results' => $results,
-                'total' => count($results),
-                'query' => $query
+                'results' => [],
+                'total' => 0
             ]);
-        } catch (\Throwable $th) {
-            dd($th);
         }
+        $results = $this->performSearch($query, 10, null, auth()->user());
+        return response()->json([
+            'success' => true,
+            'results' => $results,
+            'total' => count($results),
+            'query' => $query
+        ]);
     }
 
     /**
      * Perform comprehensive search across all models
      */
-    private function performSearch(string $query, int $limit = 50, $userId = null): array
+    private function performSearch(string $query, int $limit, $userId, User $viewer): array
     {
         $results = [];
         $searchTerms = $query ? explode(' ', $query) : [];
         
         // If userId is provided, only search shipments for that user
-        if ($userId) {
+        if ($userId && $viewer->can('view-shipments')) {
             $shipments = $this->searchShipmentsByUser($userId, $limit);
             if (!empty($shipments)) {
                 $results['shipments'] = [
@@ -84,8 +80,10 @@ class SearchController extends Controller
         }
         
         // Search Consignments
-        $consignments = $this->searchConsignments($searchTerms, $limit);
-        if (!empty($consignments)) {
+        $consignments = $viewer->can('view-consignments')
+            ? $this->searchConsignments($searchTerms, $limit)
+            : [];
+        if ($consignments) {
             $results['consignments'] = [
                 'title' => 'Consignments',
                 'icon' => 'fa fa-ship',
@@ -95,8 +93,10 @@ class SearchController extends Controller
         }
 
         // Search Shipments
-        $shipments = $this->searchShipments($searchTerms, $limit);
-        if (!empty($shipments)) {
+        $shipments = $viewer->can('view-shipments')
+            ? $this->searchShipments($searchTerms, $limit)
+            : [];
+        if ($shipments) {
             $results['shipments'] = [
                 'title' => 'Shipments',
                 'icon' => 'fa fa-box',
@@ -105,18 +105,17 @@ class SearchController extends Controller
             ];
         }
 
-        // Search Users
-        $users = $this->searchUsers($searchTerms, $limit);
-        if (!empty($users)) {
-            $results['users'] = [
-                'title' => 'Users',
-                'icon' => 'fa fa-users',
-                'color' => 'info',
-                'data' => $users
-            ];
-        }
-
         return $results;
+    }
+
+    /**
+     * Global search only covers company-shared operational records. User records
+     * remain in the branch-scoped User Management module.
+     */
+    private function canUseGlobalSearch(User $user): bool
+    {
+        return $user->can('use-global-search')
+            && ($user->can('view-consignments') || $user->can('view-shipments'));
     }
 
     /**

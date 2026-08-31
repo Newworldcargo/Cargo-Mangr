@@ -12,6 +12,7 @@ return [
         ],
         'system' => [ // this group is required if you want add any module setting, because the permissions are created under this group with the same name (setting)
             'update-system',
+            'use-global-search',
         ],
         'audit' => [
             'view-audit-logs',

@@ -15,6 +15,7 @@ use Modules\Cargo\Http\Helpers\UserRegistrationHelper;
 use Modules\Users\Events\UserCreatedEvent;
 use Modules\Users\Events\UserUpdatedEvent;
 use Modules\Acl\Repositories\AclRepository;
+use Spatie\Permission\Models\Permission;
 
 class BranchController extends Controller
 { 
@@ -109,6 +110,12 @@ class BranchController extends Controller
         $branch->code = $branch->id;
         if (!$branch->save()){
             throw new \Exception();
+        }
+        // Branch accounts need an explicit permission because they are not
+        // assigned an ACL role when they are created.
+        $branchUser = User::find($response['user']['id']);
+        if ($branchUser && Permission::where('name', 'use-global-search')->exists()) {
+            $branchUser->givePermissionTo('use-global-search');
         }
         // $branch->addFromMediaLibraryRequest($request->image)->toMediaCollection('avatar');
         if ($request->hasFile('image')) {
