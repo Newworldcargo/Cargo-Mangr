@@ -13,8 +13,9 @@ class PortalContractMiddleware
         $unsafe = in_array(strtoupper($request->method()), ['POST', 'PUT', 'PATCH', 'DELETE'], true);
         $contentType = strtolower((string) $request->header('Content-Type'));
         $hasBody = $request->getContent() !== '' || $request->all() !== [];
+        $isPortalFileContentUpload = $request->is('api/v1/files/*/content');
 
-        if ($unsafe && $hasBody && strpos($contentType, 'application/json') === false && $request->allFiles() === []) {
+        if ($unsafe && $hasBody && !$isPortalFileContentUpload && strpos($contentType, 'application/json') === false && $request->allFiles() === []) {
             return $this->problem($request, 'UNSUPPORTED_MEDIA_TYPE', 'Requests must use application/json.', 415);
         }
 
