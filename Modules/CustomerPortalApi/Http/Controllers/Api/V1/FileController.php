@@ -38,10 +38,6 @@ class FileController extends PortalController
         $key = 'customer-portal/' . $client->id . '/' . $fileId . '/' . basename($request->input('fileName'));
         $diskName = config('filesystems.portal_disk', config('filesystems.default', 'local'));
         $disk = Storage::disk($diskName);
-        if (!method_exists($disk, 'temporaryUploadUrl')) {
-            return $this->problem($request, 'DEPENDENCY_UNAVAILABLE', 'File upload storage is not configured for this environment.', 503, [], true);
-        }
-
         $file = PortalFile::create([
             'file_id' => $fileId,
             'client_id' => $client->id,
@@ -54,6 +50,19 @@ class FileController extends PortalController
             'expires_at' => now()->addMinutes(15),
             'revision' => 1,
         ]);
+
+        if (!method_exists($disk, 'temporaryUploadUrl')) {
+            return $this->success($request, [
+                'fileId' => $fileId,
+                'uploadUrl' => $request->getSchemeAndHttpHost() . '/api/v1/files/' . $fileId . '/content',
+                'headers' => array_filter([
+                    'Content-Type' => $file->content_type,
+                    'X-CSRF-Token' => $request->header('X-CSRF-Token'),
+                ]),
+                'requiresPortalAuth' => true,
+                'expiresAt' => $file->expires_at->toIso8601String(),
+            ], 201);
+        }
 
         try {
             $upload = $disk->temporaryUploadUrl($key, now()->addMinutes(15), [
@@ -68,8 +77,30 @@ class FileController extends PortalController
             'fileId' => $fileId,
             'uploadUrl' => is_array($upload) ? ($upload['url'] ?? null) : $upload,
             'headers' => is_array($upload) ? ($upload['headers'] ?? []) : ['Content-Type' => $file->content_type],
+            'requiresPortalAuth' => false,
             'expiresAt' => $file->expires_at->toIso8601String(),
         ], 201);
+    }
+
+    public function upload(Request $request, $fileId)
+    {
+        $file = PortalFile::where('file_id', $fileId)
+            ->where('client_id', $this->customerContext->requireClient()->id)
+            ->where('status', 'pending_upload')
+            ->first();
+        if (!$file) return $this->problem($request, 'NOT_FOUND', 'File upload was not found.', 404);
+        if ($file->expires_at->isPast()) return $this->problem($request, 'FILE_UPLOAD_EXPIRED', 'The upload intent has expired.', 409);
+        if (strtolower((string) $request->header('Content-Type')) !== $file->content_type) {
+            return $this->problem($request, 'UNSUPPORTED_MEDIA_TYPE', 'The file type does not match the upload intent.', 415);
+        }
+
+        $content = $request->getContent();
+        if ($content === '' || strlen($content) !== (int) $file->size_bytes) {
+            return $this->problem($request, 'VALIDATION_FAILED', 'The uploaded file does not match the upload intent.', 422);
+        }
+
+        Storage::disk(config('filesystems.portal_disk', config('filesystems.default', 'local')))->put($file->storage_key, $content);
+        return response()->noContent();
     }
 
     public function complete(Request $request, $fileId)
