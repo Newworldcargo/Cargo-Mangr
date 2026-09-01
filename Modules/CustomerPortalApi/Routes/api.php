@@ -21,6 +21,7 @@ use Modules\CustomerPortalApi\Http\Controllers\Api\V1\RecipientController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\SessionController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\WalletController;
 use Modules\CustomerPortalApi\Http\Middleware\PortalAuthenticate;
+use Modules\CustomerPortalApi\Http\Middleware\PortalCsrfMiddleware;
 
 Route::get('healthz', [HealthController::class, 'health']);
 Route::get('readyz', [HealthController::class, 'ready']);

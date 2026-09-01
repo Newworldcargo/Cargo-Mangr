@@ -42,6 +42,15 @@ class AuthUserResource extends JsonResource
             return $file?->authorizedUrl;
         }
 
-        return Storage::url($this->avatar);
+        try {
+            $mimeType = Storage::disk('public')->mimeType($this->avatar);
+            if (!in_array($mimeType, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+                return null;
+            }
+        } catch (\Throwable $exception) {
+            return null;
+        }
+
+        return Storage::disk('public')->url($this->avatar);
     }
 }
