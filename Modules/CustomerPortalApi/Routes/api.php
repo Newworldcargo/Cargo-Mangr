@@ -69,6 +69,7 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
     Route::post('files/upload-intents', [FileController::class, 'createIntent']);
     Route::put('files/{fileId}/content', [FileController::class, 'upload'])->whereUuid('fileId');
     Route::post('files/{fileId}/complete', [FileController::class, 'complete']);
+    Route::get('files/{fileId}/download', [FileController::class, 'download'])->whereUuid('fileId');
     Route::post('payments/intents', [PaymentController::class, 'createIntent']);
     Route::get('payments/intents/{intent}', [PaymentController::class, 'showIntent']);
 

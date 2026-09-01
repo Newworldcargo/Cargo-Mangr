@@ -127,4 +127,25 @@ class FileController extends PortalController
         $file->save();
         return $this->success($request, (new PortalFileResource($file))->resolve($request), 202);
     }
+
+    public function download(Request $request, $fileId)
+    {
+        $file = PortalFile::where('file_id', $fileId)
+            ->where('client_id', $this->customerContext->requireClient()->id)
+            ->where('status', 'scan_pending')
+            ->first();
+        if (!$file) return $this->problem($request, 'NOT_FOUND', 'File not found.', 404);
+
+        $disk = Storage::disk(config('filesystems.portal_disk', config('filesystems.default', 'local')));
+        if (!$disk->exists($file->storage_key)) {
+            return $this->problem($request, 'NOT_FOUND', 'File content was not found.', 404);
+        }
+
+        $filename = str_replace(["\r", "\n", '"'], '', $file->original_name);
+
+        return $disk->response($file->storage_key, $filename, [
+            'Content-Type' => $file->content_type,
+            'Content-Disposition' => 'inline; filename="' . $filename . '"',
+        ]);
+    }
 }

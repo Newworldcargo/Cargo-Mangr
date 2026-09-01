@@ -21,7 +21,7 @@ class PortalFile extends Model
             return Storage::disk(config('filesystems.portal_disk', 's3'))
                 ->temporaryUrl($this->storage_key, now()->addMinutes(10));
         } catch (\Throwable $exception) {
-            return null;
+            return url('/api/v1/files/' . $this->file_id . '/download');
         }
     }
 }
