@@ -15,6 +15,9 @@ return [
 
     'default' => env('FILESYSTEM_DRIVER', 'public'),
 
+    // Customer portal uploads require a disk capable of issuing temporary upload URLs.
+    'portal_disk' => env('PORTAL_FILESYSTEM_DISK', 's3'),
+
     /*
     |--------------------------------------------------------------------------
     | Filesystem Disks

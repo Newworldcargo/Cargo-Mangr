@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Modules\CustomerPortalApi\Http\Resources\AuthUserResource;
+use Modules\CustomerPortalApi\Models\PortalFile;
 
 class ProfileController extends PortalController
 {
@@ -29,6 +30,7 @@ class ProfileController extends PortalController
             'firstName' => ['sometimes', 'required', 'string', 'min:2', 'max:80'],
             'lastName' => ['sometimes', 'nullable', 'string', 'max:80'],
             'phone' => ['sometimes', 'required', 'string', 'max:30'],
+            'avatarFileId' => ['sometimes', 'nullable', 'uuid'],
         ]);
 
         if ($validator->fails()) {
@@ -37,12 +39,28 @@ class ProfileController extends PortalController
 
         $user = $this->customerContext->user();
         $client = $this->customerContext->requireClient();
+        $avatarFileId = $request->input('avatarFileId');
+        if ($request->has('avatarFileId') && $avatarFileId) {
+            $profilePhoto = PortalFile::where('file_id', $avatarFileId)
+                ->where('client_id', $client->id)
+                ->where('purpose', 'profile-photo')
+                ->where('status', 'scan_pending')
+                ->first();
+            if (!$profilePhoto) {
+                return $this->problem($request, 'VALIDATION_FAILED', 'Please correct the highlighted fields.', 422, [
+                    'avatarFileId' => ['The selected profile photo is unavailable.'],
+                ]);
+            }
+        }
         $name = trim(($request->has('firstName') ? $request->input('firstName') : $this->firstName($user)) . ' ' . ($request->has('lastName') ? $request->input('lastName') : $this->lastName($user)));
 
-        DB::transaction(function () use ($request, $user, $client, $name) {
+        DB::transaction(function () use ($request, $user, $client, $name, $avatarFileId) {
             $user->name = $name;
             if ($request->has('phone')) {
                 $user->responsible_mobile = trim($request->input('phone'));
+            }
+            if ($request->has('avatarFileId')) {
+                $user->avatar = $avatarFileId ? 'portal-file:' . $avatarFileId : null;
             }
             $user->save();
 

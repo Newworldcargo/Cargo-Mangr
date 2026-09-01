@@ -3,6 +3,7 @@
 namespace Modules\CustomerPortalApi\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
 
 class PortalFile extends Model
 {
@@ -13,4 +14,14 @@ class PortalFile extends Model
         'size_bytes' => 'integer',
         'expires_at' => 'datetime',
     ];
+
+    public function getAuthorizedUrlAttribute()
+    {
+        try {
+            return Storage::disk(config('filesystems.portal_disk', 's3'))
+                ->temporaryUrl($this->storage_key, now()->addMinutes(10));
+        } catch (\Throwable $exception) {
+            return null;
+        }
+    }
 }
