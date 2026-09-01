@@ -24,6 +24,7 @@ class ShipmentResource extends JsonResource
             'carrier' => optional($consignment)->shipping_line,
             'transportMode' => $mode,
             'packageName' => $this->packageName(),
+            'parcelOwner' => (string) ($this->reciver_name ?: ''),
             'origin' => optional($consignment)->source ?: $this->originAddress(),
             'destination' => optional($consignment)->destination ?: $this->getRawOriginal('reciver_address'),
             'etaAt' => $this->isoDate(optional($consignment)->eta),
