@@ -19,6 +19,7 @@ class ShipmentResource extends JsonResource
             'id' => (string) $this->id,
             'customerId' => (string) $this->client_id,
             'trackingNumber' => (string) $this->code,
+            'consignmentCode' => optional($consignment)->consignment_code,
             'carrier' => optional($consignment)->shipping_line,
             'transportMode' => $mode,
             'packageName' => $this->packageName(),
@@ -154,7 +155,13 @@ class ShipmentResource extends JsonResource
 
         $stageDescriptions = $consignment->getTrackingStages();
 
-        return $consignment->trackingHistory->sortBy('completed_at')->values()->map(function ($event) use ($stageDescriptions) {
+        $events = $consignment->trackingHistory
+            ->reject(fn ($event) => $event->notes === 'Stage completed automatically during stage skip')
+            ->sortBy('completed_at')
+            ->values();
+        $latestEventId = optional($events->last())->id;
+
+        return $events->map(function ($event) use ($stageDescriptions, $latestEventId) {
             $stageId = (int) $event->stage_id;
             $occurredAt = $event->completed_at ? $event->completed_at->toIso8601String() : null;
 
@@ -165,7 +172,7 @@ class ShipmentResource extends JsonResource
                 'occurredAt' => $occurredAt,
                 'displayTime' => $event->completed_at ? $event->completed_at->format('M j, Y g:i A') : 'Pending',
                 'complete' => $event->status === 'completed',
-                'current' => false,
+                'current' => (int) $event->id === (int) $latestEventId,
             ];
         })->all();
     }
