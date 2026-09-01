@@ -34,6 +34,10 @@ Route::post('auth/login', [AuthController::class, 'login'])
     ->middleware('throttle:customer-portal');
 Route::post('auth/register', [AuthController::class, 'register'])
     ->middleware('throttle:customer-portal');
+Route::post('auth/password/forgot', [AuthController::class, 'requestPasswordReset'])
+    ->middleware('throttle:customer-portal');
+Route::post('auth/password/reset', [AuthController::class, 'resetPassword'])
+    ->middleware('throttle:customer-portal');
 Route::post('auth/verify', [AuthController::class, 'verify'])
     ->middleware([PortalCsrfMiddleware::class, 'throttle:customer-portal']);
 Route::post('auth/verify/resend', [AuthController::class, 'resendVerification'])

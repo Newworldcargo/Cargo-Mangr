@@ -3,11 +3,15 @@
 namespace Modules\CustomerPortalApi\Http\Controllers\Api\V1;
 
 use App\Models\User;
+use App\Notifications\PasswordResetRequest;
+use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Modules\Cargo\Entities\Client;
 use Modules\CustomerPortalApi\Http\Resources\AuthUserResource;
 use Modules\CustomerPortalApi\Services\Portal\PortalBffService;
@@ -158,6 +162,38 @@ class AuthController extends PortalController
         $user->otp = random_int(100000, 999999);
         $user->otp_expires_at = now()->addMinutes(10);
         $user->save();
+        return $this->success($request, null);
+    }
+
+    public function requestPasswordReset(Request $request)
+    {
+        $validator = Validator::make($request->all(), ['email' => ['required', 'email', 'max:255']]);
+        if ($validator->fails()) return $this->problem($request, 'VALIDATION_FAILED', 'Enter a valid email address.', 422, $validator->errors()->toArray());
+
+        $user = User::where('email', strtolower(trim((string) $request->input('email'))))->first();
+        $client = $user ? app(\Modules\CustomerPortalApi\Services\Portal\PortalCustomerAccess::class)->clientFor($user) : null;
+        if ($user && $client) {
+            $user->notify(new PasswordResetRequest(Password::broker()->createToken($user)));
+        }
+
+        return $this->success($request, null);
+    }
+
+    public function resetPassword(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'token' => ['required', 'string'],
+            'email' => ['required', 'email', 'max:255'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+        if ($validator->fails()) return $this->problem($request, 'VALIDATION_FAILED', 'Please correct the password fields.', 422, $validator->errors()->toArray());
+
+        $status = Password::reset($request->only('email', 'token', 'password', 'password_confirmation'), function ($user, $password) {
+            $user->forceFill(['password' => Hash::make($password), 'remember_token' => Str::random(60)])->save();
+            event(new PasswordReset($user));
+        });
+
+        if ($status !== Password::PASSWORD_RESET) return $this->problem($request, 'PASSWORD_RESET_INVALID', 'This reset link is invalid or has expired. Request a new one.', 422);
         return $this->success($request, null);
     }
 
