@@ -14,6 +14,14 @@ class RecipientController extends PortalController
         $user = $this->customerContext->user();
         $recipients = Receiver::where('user_id', $user->id)
             ->where('is_archived', 0)
+            ->when($request->filled('q'), function ($query) use ($request) {
+                $term = trim((string) $request->input('q'));
+                $query->where(function ($recipientQuery) use ($term) {
+                    $recipientQuery->where('name', 'like', '%' . $term . '%')
+                        ->orWhere('receiver_mobile', 'like', '%' . $term . '%')
+                        ->orWhere('reciver_address', 'like', '%' . $term . '%');
+                });
+            })
             ->orderByDesc('updated_at')
             ->get();
 
