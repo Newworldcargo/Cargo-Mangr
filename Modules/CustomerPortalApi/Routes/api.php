@@ -40,7 +40,7 @@ Route::post('auth/verify/resend', [AuthController::class, 'resendVerification'])
     ->middleware([PortalCsrfMiddleware::class, 'throttle:customer-portal']);
 Route::get('public/tracking/{trackingNumber}', [ShipmentController::class, 'publicTracking'])
     ->middleware('throttle:customer-portal-public-tracking')
-    ->where('trackingNumber', '[A-Za-z0-9_-]+');
+    ->where('trackingNumber', '.*');
 
 Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->group(function () {
     Route::get('session', [SessionController::class, 'show']);
