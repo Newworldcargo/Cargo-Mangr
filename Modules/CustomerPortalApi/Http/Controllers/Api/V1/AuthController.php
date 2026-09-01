@@ -43,8 +43,8 @@ class AuthController extends PortalController
             return $this->problem($request, 'UNAUTHENTICATED', 'The supplied credentials are invalid.', 401);
         }
 
-        $client = Client::where('user_id', $user->id)->where('is_archived', 0)->first();
-        if ((int) $user->role !== 4 || !$client) {
+        $client = app(\Modules\CustomerPortalApi\Services\Portal\PortalCustomerAccess::class)->clientFor($user);
+        if (!$client) {
             return $this->problem($request, 'FORBIDDEN', 'This account is not enabled for the customer portal.', 403);
         }
 

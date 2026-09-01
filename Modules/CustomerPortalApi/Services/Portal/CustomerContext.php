@@ -4,10 +4,13 @@ namespace Modules\CustomerPortalApi\Services\Portal;
 
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Auth;
-use Modules\Cargo\Entities\Client;
 
 class CustomerContext
 {
+    public function __construct(private readonly PortalCustomerAccess $portalAccess)
+    {
+    }
+
     public function user()
     {
         return Auth::guard('web')->user();
@@ -17,11 +20,7 @@ class CustomerContext
     {
         $user = $this->user();
 
-        if (!$user || (int) $user->role !== 4) {
-            return null;
-        }
-
-        return Client::where('user_id', $user->id)->first();
+        return $this->portalAccess->clientFor($user);
     }
 
     public function requireClient()

@@ -66,7 +66,7 @@ class PortalBffService
 
         $session->forceFill(['last_used_at' => now()])->save();
         $user = $session->user_id ? $session->user : null;
-        if (!$user || (int) $user->role !== 4) {
+        if (!app(PortalCustomerAccess::class)->canAccess($user)) {
             return null;
         }
 
@@ -112,7 +112,7 @@ class PortalBffService
 
         $session->forceFill(['last_used_at' => now()])->save();
         $user = $session->user;
-        return $user && (int) $user->role === 4 ? $user : null;
+        return app(PortalCustomerAccess::class)->canAccess($user) ? $user : null;
     }
 
     public function revokeAssertion(Request $request)

@@ -12,7 +12,7 @@ class SessionController extends PortalController
         $user = $this->customerContext->user();
         $client = $this->customerContext->client();
 
-        if (!$user || !$client || (int) $user->role !== 4) {
+        if (!$user || !$client) {
             return $this->problem($request, 'UNAUTHENTICATED', 'No valid customer session was found.', 401);
         }
 
