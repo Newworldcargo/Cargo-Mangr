@@ -80,6 +80,11 @@ class ShipmentController extends PortalController
 
     public function publicTracking(Request $request, $trackingNumber)
     {
+        $trackingNumber = trim((string) $trackingNumber);
+        if ($trackingNumber === '') {
+            return $this->problem($request, 'TRACKING_NOT_FOUND', 'Tracking number not found.', 404);
+        }
+
         $shipment = Shipment::query()
             ->where('code', $trackingNumber)
             ->with(['consignment.trackingHistory', 'from_address', 'packages'])
