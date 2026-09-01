@@ -20,6 +20,10 @@ class Support extends Model
         'status'
     ];
 
+    protected $casts = [
+        'attachments' => 'array',
+    ];
+
     protected static function newFactory()
     {
         return \Modules\Cargo\Database\factories\SupportFactory::new();

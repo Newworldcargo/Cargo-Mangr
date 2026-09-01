@@ -5,6 +5,7 @@ namespace Modules\CustomerPortalApi\Http\Controllers\Api\V1;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Modules\CustomerPortalApi\Http\Resources\SupportCaseResource;
+use Modules\CustomerPortalApi\Models\PortalFile;
 use Modules\Cargo\Entities\Support as SupportCase;
 
 class SupportController extends PortalController
@@ -29,6 +30,7 @@ class SupportController extends PortalController
             'subject' => ['required', 'string', 'max:255'],
             'detail' => ['required', 'string', 'max:10000'],
             'shipmentNumber' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'attachmentFileId' => ['sometimes', 'nullable', 'uuid'],
         ]);
 
         if ($validator->fails()) {
@@ -36,6 +38,21 @@ class SupportController extends PortalController
         }
 
         $user = $this->customerContext->user();
+        $attachmentFileId = $request->input('attachmentFileId');
+        if ($attachmentFileId) {
+            $attachment = PortalFile::where('file_id', $attachmentFileId)
+                ->where('client_id', $this->customerContext->requireClient()->id)
+                ->where('purpose', 'support-attachment')
+                ->where('status', 'scan_pending')
+                ->first();
+
+            if (!$attachment) {
+                return $this->problem($request, 'VALIDATION_FAILED', 'Please correct the highlighted fields.', 422, [
+                    'attachmentFileId' => ['The selected attachment is unavailable.'],
+                ]);
+            }
+        }
+
         $case = new SupportCase();
         $case->user_id = $user->id;
         $case->category = $request->input('category');
@@ -44,6 +61,7 @@ class SupportController extends PortalController
         $case->message = $request->input('detail');
         $case->shipment_number = $request->input('shipmentNumber');
         $case->status = 'open';
+        $case->attachments = $attachmentFileId ? [$attachmentFileId] : null;
         $case->save();
 
         return $this->success($request, (new SupportCaseResource($case))->resolve($request), 201);
