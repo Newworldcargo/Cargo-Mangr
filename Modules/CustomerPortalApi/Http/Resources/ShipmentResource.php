@@ -3,6 +3,7 @@
 namespace Modules\CustomerPortalApi\Http\Resources;
 
 use Carbon\Carbon;
+use App\Models\TrackingStage;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Modules\Cargo\Entities\Shipment;
 
@@ -153,27 +154,32 @@ class ShipmentResource extends JsonResource
             return [];
         }
 
-        $stageDescriptions = $consignment->getTrackingStages();
+        $stages = TrackingStage::where('cargo_type', $consignment->cargo_type)
+            ->orderBy('order')
+            ->get();
+        $history = $consignment->trackingHistory->keyBy('stage_id');
+        $currentStageId = (int) $consignment->getCurrentStage();
+        $events = [];
 
-        $events = $consignment->trackingHistory
-            ->reject(fn ($event) => $event->notes === 'Stage completed automatically during stage skip')
-            ->sortBy('completed_at')
-            ->values();
-        $latestEventId = optional($events->last())->id;
-
-        return $events->map(function ($event) use ($stageDescriptions, $latestEventId) {
-            $stageId = (int) $event->stage_id;
-            $occurredAt = $event->completed_at ? $event->completed_at->toIso8601String() : null;
-
-            return [
-                'id' => (string) $event->id,
-                'label' => $stageDescriptions[$stageId] ?? ('Stage ' . $stageId),
-                'detail' => $event->notes ?: $event->location,
-                'occurredAt' => $occurredAt,
-                'displayTime' => $event->completed_at ? $event->completed_at->format('M j, Y g:i A') : 'Pending',
-                'complete' => $event->status === 'completed',
-                'current' => (int) $event->id === (int) $latestEventId,
+        foreach ($stages as $stage) {
+            $completed = $history->get($stage->id);
+            $isCurrent = !$completed && $currentStageId === (int) $stage->id;
+            $events[] = [
+                'id' => 'stage-' . $stage->id,
+                'label' => $stage->description ?: ($stage->name ?: 'Tracking update'),
+                'detail' => 'Shipment (Parcel) Code: ' . $this->code,
+                'occurredAt' => $completed?->completed_at?->toIso8601String(),
+                'displayTime' => $completed?->completed_at ? $completed->completed_at->format('M j, Y g:i A') : ($isCurrent ? 'Current stage' : 'Pending'),
+                'complete' => (bool) $completed,
+                'current' => $isCurrent,
             ];
-        })->all();
+        }
+
+        if ($events && !collect($events)->contains(fn ($event) => $event['current'])) {
+            $lastCompleted = array_key_last(array_filter($events, fn ($event) => $event['complete']));
+            if ($lastCompleted !== null) $events[$lastCompleted]['current'] = true;
+        }
+
+        return $events;
     }
 }
