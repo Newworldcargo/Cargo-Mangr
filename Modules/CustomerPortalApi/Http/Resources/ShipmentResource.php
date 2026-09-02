@@ -21,14 +21,14 @@ class ShipmentResource extends JsonResource
             'customerId' => (string) $this->client_id,
             'trackingNumber' => (string) $this->code,
             'consignmentCode' => optional($consignment)->consignment_code,
-            'carrier' => optional($consignment)->shipping_line,
+            'carrier' => optional($consignment)->shipping_line ?: 'New World Cargo',
             'transportMode' => $mode,
             'packageName' => $this->packageName(),
             'parcelOwner' => (string) ($this->reciver_name ?: ''),
             'origin' => optional($consignment)->source ?: $this->originAddress(),
             'destination' => optional($consignment)->destination ?: $this->getRawOriginal('reciver_address'),
             'etaAt' => $this->isoDate(optional($consignment)->eta),
-            'etaLabel' => $this->displayDate(optional($consignment)->eta),
+            'etaLabel' => $this->displayDate(optional($consignment)->eta) ?: 'To be confirmed',
             'status' => $status['status'],
             'statusLabel' => $status['label'],
             'price' => [
@@ -51,7 +51,7 @@ class ShipmentResource extends JsonResource
             return optional($package->pivot)->description ?: $package->name;
         }
 
-        return null;
+        return 'Customer shipment order';
     }
 
     private function originAddress()

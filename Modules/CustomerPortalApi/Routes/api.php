@@ -83,6 +83,7 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
     Route::get('shipment-drafts/{draft}', [DraftQuoteController::class, 'showDraft'])->whereNumber('draft');
     Route::put('shipment-drafts/{draft}', [DraftQuoteController::class, 'updateDraft'])->whereNumber('draft');
     Route::delete('shipment-drafts/{draft}', [DraftQuoteController::class, 'deleteDraft'])->whereNumber('draft');
+    Route::post('shipment-drafts/{draft}/submit', [DraftQuoteController::class, 'submitDraft'])->whereNumber('draft');
     Route::post('quotes', [DraftQuoteController::class, 'createQuote']);
     Route::get('quotes/{quote}', [DraftQuoteController::class, 'showQuote'])->whereNumber('quote');
 

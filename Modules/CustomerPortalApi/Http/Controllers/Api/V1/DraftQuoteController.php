@@ -9,6 +9,12 @@ use Modules\CustomerPortalApi\Http\Resources\PortalQuoteResource;
 use Modules\CustomerPortalApi\Http\Resources\ShipmentDraftResource;
 use Modules\CustomerPortalApi\Models\PortalQuote;
 use Modules\CustomerPortalApi\Models\PortalShipmentDraft;
+use Modules\CustomerPortalApi\Http\Resources\ShipmentResource;
+use Modules\Cargo\Entities\Branch;
+use Modules\Cargo\Entities\Country;
+use Modules\Cargo\Entities\Shipment;
+use Modules\Cargo\Entities\ShipmentSetting;
+use Modules\Cargo\Entities\State;
 
 class DraftQuoteController extends PortalController
 {
@@ -78,6 +84,91 @@ class DraftQuoteController extends PortalController
         $model->revision = ((int) ($model->revision ?: 1)) + 1;
         $model->save();
         return response()->noContent(204)->withHeaders(['X-Request-ID' => (string) $request->attributes->get('portal_request_id')]);
+    }
+
+    public function submitDraft(Request $request, $draft)
+    {
+        $model = $this->ownedDraft($draft);
+        if (!$model || !in_array($model->status, ['draft', 'quoted'], true)) return $this->problem($request, 'NOT_FOUND', 'Draft not found.', 404);
+        if ($this->revisionConflict($request, $model)) return $this->problem($request, 'REVISION_CONFLICT', 'This request has changed. Refresh it and try again.', 409);
+
+        $payload = (array) $model->payload;
+        $form = (array) ($payload['form'] ?? []);
+        $cargoRows = array_values(array_filter((array) ($payload['cargoRows'] ?? []), function ($row) {
+            return is_array($row) && trim((string) ($row['name'] ?? '')) !== '' && (int) ($row['quantity'] ?? 0) > 0;
+        }));
+        $validator = Validator::make([
+            'pickup' => $form['pickup'] ?? null,
+            'recipient' => $form['recipient'] ?? null,
+            'phone' => $form['phone'] ?? null,
+            'cargoRows' => $cargoRows,
+        ], [
+            'pickup' => ['required', 'string', 'max:1000'],
+            'recipient' => ['required', 'string', 'max:255'],
+            'phone' => ['required', 'string', 'max:60'],
+            'cargoRows' => ['required', 'array', 'min:1'],
+        ]);
+        if ($validator->fails()) return $this->problem($request, 'VALIDATION_FAILED', 'Complete the shipment request before submitting it.', 422, $validator->errors()->toArray());
+
+        $client = $this->customerContext->requireClient();
+        $branch = Branch::where('is_archived', 0)->whereKey($form['pickupBranchId'] ?? null)->first()
+            ?: Branch::where('is_archived', 0)->orderBy('id')->first();
+        if (!$branch) return $this->problem($request, 'DEPENDENCY_UNAVAILABLE', 'No collection branch is available right now.', 503);
+
+        try {
+            $shipment = DB::transaction(function () use ($model, $payload, $form, $cargoRows, $client, $branch) {
+                $origin = $this->locationProfile($branch->name . ' ' . $branch->address);
+                $destination = $this->locationProfile((string) ($form['destination'] ?? ''));
+                $shipment = Shipment::create([
+                    'code' => '-',
+                    'status_id' => Shipment::REQUESTED_STATUS,
+                    'type' => Shipment::PICKUP,
+                    'branch_id' => $branch->id,
+                    'shipping_date' => now()->toDateString(),
+                    'client_status' => Shipment::CLIENT_STATUS_CREATED,
+                    'client_id' => $client->id,
+                    'client_phone' => $client->responsible_mobile,
+                    'client_address' => (string) $form['pickup'],
+                    'reciver_name' => (string) $form['recipient'],
+                    'reciver_phone' => (string) $form['phone'],
+                    'reciver_address' => (string) ($form['destination'] ?? ''),
+                    'from_country_id' => $origin['country']->id,
+                    'from_state_id' => $origin['state']->id,
+                    'to_country_id' => $destination['country']->id,
+                    'to_state_id' => $destination['state']->id,
+                    'payment_type' => Shipment::POSTPAID,
+                    'order_id' => 'PORTAL-' . strtoupper(substr((string) \Illuminate\Support\Str::uuid(), 0, 12)),
+                    'total_weight' => count($cargoRows),
+                    'amount_to_be_collected' => 0,
+                ]);
+                $width = max(5, (int) (ShipmentSetting::getVal('shipment_code_count') ?: 5));
+                $shipment->barcode = str_pad((string) $shipment->id, $width, '0', STR_PAD_LEFT);
+                $shipment->code = (string) (ShipmentSetting::getVal('shipment_prefix') ?: 'NWC') . $shipment->barcode;
+                $shipment->save();
+                $payload['submittedShipmentId'] = $shipment->id;
+                $model->payload = $payload;
+                $model->status = 'submitted';
+                $model->revision = ((int) ($model->revision ?: 1)) + 1;
+                $model->save();
+                return $shipment;
+            });
+        } catch (\Throwable $exception) {
+            report($exception);
+            return $this->problem($request, 'ORDER_SUBMISSION_FAILED', 'We could not create your shipment order. Your draft is still safe.', 500);
+        }
+
+        return $this->success($request, (new ShipmentResource($shipment->load(['consignment.trackingHistory', 'from_address', 'packages'])))->resolve($request), 201);
+    }
+
+    private function locationProfile(string $text): array
+    {
+        $value = strtolower($text);
+        $countryName = str_contains($value, 'china') ? 'China' : (str_contains($value, 'zimbabwe') ? 'Zimbabwe' : 'Zambia');
+        $country = Country::where('covered', 1)->where('name', $countryName)->firstOrFail();
+        $preferredState = $countryName === 'China' ? 'Guangdong' : ($countryName === 'Zambia' && str_contains($value, 'kitwe') ? 'Copperbelt' : ($countryName === 'Zambia' ? 'Lusaka' : null));
+        $stateQuery = State::where('covered', 1)->where('country_id', $country->id);
+        $state = $preferredState ? (clone $stateQuery)->where('name', 'like', '%' . $preferredState . '%')->first() : null;
+        return ['country' => $country, 'state' => $state ?: $stateQuery->orderBy('id')->firstOrFail()];
     }
 
     public function createQuote(Request $request)
