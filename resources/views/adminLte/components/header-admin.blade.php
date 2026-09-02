@@ -190,18 +190,20 @@
             {{-- staff --}}
             @if ($user_role == $auth_staff)
                 @php
-                    $item_id = Modules\Cargo\Entities\Staff::where('user_id', auth()->user()->id)
+                    $staff_id = Modules\Cargo\Entities\Staff::where('user_id', auth()->user()->id)
                         ->pluck('id')
                         ->first();
                 @endphp
-                <a href="{{ fr_route('staffs.show', ['staff' => $item_id]) }}" class="dropdown-item">
-                    @lang('users::view.my_profile')
-                </a>
-                <div class="dropdown-divider"></div>
-                <a href="{{ fr_route('staffs.profile', ['id' => $item_id]) }}" class="dropdown-item">
-                    @lang('users::view.account_settings')
-                </a>
-                <div class="dropdown-divider"></div>
+                @if ($staff_id)
+                    <a href="{{ fr_route('staffs.show', ['staff' => $staff_id]) }}" class="dropdown-item">
+                        @lang('users::view.my_profile')
+                    </a>
+                    <div class="dropdown-divider"></div>
+                    <a href="{{ fr_route('staffs.profile', ['id' => $staff_id]) }}" class="dropdown-item">
+                        @lang('users::view.account_settings')
+                    </a>
+                    <div class="dropdown-divider"></div>
+                @endif
             @endif
             @endcheckModule
             <form id="formLogout" method="POST" action="{{ fr_route('logout') }}">
