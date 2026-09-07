@@ -88,6 +88,10 @@ class ConsignmentImportController extends Controller
     {
         $batch = $this->batch($uuid);
         abort_if($batch->status === 'completed', 422, 'This import has already been completed.');
+        if ($request->filled('selected_header_row')) {
+            $selectedHeaderRow = max(1, (int) $request->input('selected_header_row'));
+            $request->merge(['header_row' => $selectedHeaderRow, 'data_start_row' => $selectedHeaderRow + 1]);
+        }
         $sheets = $batch->rows()->distinct()->pluck('sheet_name')->all();
         $request->validate([
             'selected_sheet' => ['required', Rule::in($sheets)],

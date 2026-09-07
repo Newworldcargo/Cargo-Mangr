@@ -18,7 +18,7 @@
             <div class="card-header"><strong>1. Choose where the table starts</strong><span class="text-muted ml-2">Select the row containing the column titles.</span></div>
             <div class="card-body">
                 <div class="row align-items-end">
-                    <div class="col-md-4 form-group"><label>Worksheet</label><select name="selected_sheet" class="form-control" onchange="this.form.submit()">@foreach($sheets as $sheet)<option value="{{ $sheet }}" @selected($batch->selected_sheet === $sheet)>{{ $sheet }}</option>@endforeach</select></div>
+                    <div class="col-md-4 form-group"><label>Worksheet</label><select name="selected_sheet" class="form-control">@foreach($sheets as $sheet)<option value="{{ $sheet }}" @selected($batch->selected_sheet === $sheet)>{{ $sheet }}</option>@endforeach</select></div>
                     <div class="col-md-4 form-group"><label>Data begins on row</label><input id="dataStartRow" name="data_start_row" type="number" min="{{ $batch->header_row + 1 }}" value="{{ $batch->data_start_row }}" class="form-control"><small class="text-muted">Normally the row immediately below the titles.</small></div>
                     <div class="col-md-4 form-group text-md-right"><button type="button" class="btn btn-outline-primary" data-toggle="collapse" data-target="#titleRowChooser">Change title row</button></div>
                 </div>
@@ -27,7 +27,7 @@
                     <div class="table-responsive" style="max-height:390px"><table class="table table-sm table-bordered table-hover mb-0"><tbody>
                     @foreach($rows->take(40) as $candidate)
                         <tr class="{{ $candidate->spreadsheet_row == $batch->header_row ? 'table-primary' : '' }}">
-                            <td class="text-nowrap"><button type="button" class="btn btn-sm {{ $candidate->spreadsheet_row == $batch->header_row ? 'btn-primary' : 'btn-outline-secondary' }} choose-title-row" data-row="{{ $candidate->spreadsheet_row }}">{{ $candidate->spreadsheet_row == $batch->header_row ? 'Selected' : 'Use as titles' }}</button></td>
+                            <td class="text-nowrap"><button type="submit" name="selected_header_row" value="{{ $candidate->spreadsheet_row }}" class="btn btn-sm {{ $candidate->spreadsheet_row == $batch->header_row ? 'btn-primary' : 'btn-outline-secondary' }}">{{ $candidate->spreadsheet_row == $batch->header_row ? 'Selected' : 'Use as titles' }}</button></td>
                             <td class="font-weight-bold">Row {{ $candidate->spreadsheet_row }}</td>
                             @foreach($candidate->raw_values as $value)<td>{{ $value }}</td>@endforeach
                         </tr>
@@ -63,16 +63,6 @@
         </table></div></div>
         @if($batch->status !== 'completed')<div class="mt-3 text-right"><button class="btn btn-primary px-4">Save and refresh preview</button></div>@endif
     </form>
-    @if($batch->status !== 'completed')<form method="POST" action="{{ route('consignment.import.confirm', $batch->uuid) }}" class="mt-3 text-right">@csrf<button class="btn btn-success px-4" onclick="return confirm('Create the selected valid shipments now?')" @disabled(($batch->summary['selected'] ?? 0) < 1)>Confirm import ({{ $batch->summary['selected'] ?? 0 }} selected)</button></form>@endif
+    @if($batch->status !== 'completed')<form method="POST" action="{{ route('consignment.import.confirm', $batch->uuid) }}" class="mt-3 text-right">@csrf<button class="btn btn-success px-4" @disabled(($batch->summary['selected'] ?? 0) < 1)>Confirm import ({{ $batch->summary['selected'] ?? 0 }} selected)</button></form>@endif
 </div>
-<script>
-document.querySelectorAll('.choose-title-row').forEach(function (button) {
-    button.addEventListener('click', function () {
-        var row = Number(this.dataset.row);
-        document.getElementById('headerRow').value = row;
-        document.getElementById('dataStartRow').value = row + 1;
-        document.getElementById('mappingForm').submit();
-    });
-});
-</script>
 @endsection
