@@ -225,6 +225,32 @@ document.addEventListener('DOMContentLoaded', () => {
 </div>
 <!--end::Input group-->
 
+<!-- Branch location used by routing and spreadsheet imports -->
+<div class="row mb-6">
+    <div class="col-lg-6 fv-row">
+        <label class="col-form-label fw-bold fs-6 required">Branch country</label>
+        <select name="country_id" class="form-control form-control-lg @error('country_id') is-invalid @enderror">
+            <option value="">Select country</option>
+            @foreach($countries as $country)
+                <option value="{{ $country->id }}" {{ old('country_id', isset($model) ? $model->country_id : '') == $country->id ? 'selected' : '' }}>{{ $country->name }}</option>
+            @endforeach
+        </select>
+        @error('country_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
+    </div>
+    <div class="col-lg-6 fv-row">
+        <label class="col-form-label fw-bold fs-6 required">Branch province/state</label>
+        <select name="state_id" class="form-control form-control-lg @error('state_id') is-invalid @enderror">
+            <option value="">Select province/state</option>
+            @foreach($states as $state)
+                @php($stateCountry = $countries->firstWhere('id', $state->country_id))
+                <option value="{{ $state->id }}" {{ old('state_id', isset($model) ? $model->state_id : '') == $state->id ? 'selected' : '' }}>{{ $stateCountry ? $stateCountry->name.' — ' : '' }}{{ $state->name }}</option>
+            @endforeach
+        </select>
+        @error('state_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
+        <small class="text-muted">Configured once here, then reused by shipment imports.</small>
+    </div>
+</div>
+
 
 <!--begin::Input group --  Owner all -->
 <div class="row mb-6">

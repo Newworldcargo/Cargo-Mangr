@@ -9,6 +9,8 @@ use Modules\Cargo\Http\DataTables\BranchesDataTable;
 use Modules\Cargo\Http\Requests\BranchRequest;
 use Modules\Cargo\Entities\Branch;
 use Modules\Cargo\Entities\Shipment;
+use Modules\Cargo\Entities\Country;
+use Modules\Cargo\Entities\State;
 use App\Models\User;
 use Illuminate\Support\Facades\Storage;
 use Modules\Cargo\Http\Helpers\UserRegistrationHelper;
@@ -76,7 +78,8 @@ class BranchController extends Controller
                 'name' => __('cargo::view.add_branch'),
             ],
         ]);
-        $adminTheme = env('ADMIN_THEME', 'adminLte');return view('cargo::'.$adminTheme.'.pages.branches.create');
+        $adminTheme = env('ADMIN_THEME', 'adminLte');
+        return view('cargo::'.$adminTheme.'.pages.branches.create', $this->locationOptions());
     }
 
     /**
@@ -86,7 +89,7 @@ class BranchController extends Controller
      */
     public function store(BranchRequest $request)
     {
-        $data = $request->only(['name', 'email', 'password', 'responsible_mobile', 'country_code' ,'responsible_name','national_id','address']);
+        $data = $request->only(['name', 'email', 'password', 'responsible_mobile', 'country_code' ,'responsible_name','national_id','address','country_id','state_id']);
 
         $Userdata['name']     = $data['name'];
         $Userdata['email']    = $data['email'];
@@ -183,7 +186,8 @@ class BranchController extends Controller
             ],
         ]);
         $branch = Branch::findOrFail($id);
-        $adminTheme = env('ADMIN_THEME', 'adminLte');return view('cargo::'.$adminTheme.'.pages.branches.edit')->with(['model' => $branch]);
+        $adminTheme = env('ADMIN_THEME', 'adminLte');
+        return view('cargo::'.$adminTheme.'.pages.branches.edit', ['model' => $branch] + $this->locationOptions());
     }
 
 
@@ -240,7 +244,7 @@ class BranchController extends Controller
 
         $branch = Branch::findOrFail($id);
 
-        $data = $request->only(['name', 'email', 'password', 'responsible_mobile', 'country_code', 'responsible_name','national_id','address']);
+        $data = $request->only(['name', 'email', 'password', 'responsible_mobile', 'country_code', 'responsible_name','national_id','address','country_id','state_id']);
 
         $Userdata['name']     = $data['name'];
         $Userdata['email']    = $data['email'];
@@ -271,6 +275,14 @@ class BranchController extends Controller
             $branch->save();
         }
         return redirect()->back()->with(['message_alert' => __('cargo::messages.saved')]);
+    }
+
+    private function locationOptions(): array
+    {
+        return [
+            'countries' => Country::orderBy('name')->get(['id', 'name']),
+            'states' => State::orderBy('name')->get(['id', 'name', 'country_id']),
+        ];
     }
 
     /**

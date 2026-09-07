@@ -5,20 +5,17 @@ namespace App\Http\Controllers;
 use App\Models\Consignment;
 use App\Models\ConsignmentImportBatch;
 use App\Models\ConsignmentImportRow;
-use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Modules\Cargo\Entities\Branch;
 use Modules\Cargo\Entities\Client;
-use Modules\Cargo\Entities\Country;
 use Modules\Cargo\Entities\Package;
 use Modules\Cargo\Entities\PackageShipment;
 use Modules\Cargo\Entities\Shipment;
-use Modules\Cargo\Entities\Staff;
-use Modules\Cargo\Entities\State;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class ConsignmentImportController extends Controller
@@ -96,12 +93,29 @@ class ConsignmentImportController extends Controller
         $request->validate([
             'selected_sheet' => ['required', Rule::in($sheets)],
             'header_row' => ['required', 'integer', 'min:1'], 'data_start_row' => ['required', 'integer', 'min:1'],
-            'consignment_code' => ['nullable', 'string', 'max:255'], 'default_destination' => ['nullable', 'string', 'max:255'],
-            'branch_id' => ['nullable', 'integer'], 'from_country_id' => ['nullable', 'integer'], 'from_state_id' => ['nullable', 'integer'],
-            'to_country_id' => ['nullable', 'integer'], 'to_state_id' => ['nullable', 'integer'], 'mapping' => ['array'],
+            'consignment_code' => ['nullable', 'string', 'max:255'],
+            'pickup_branch_id' => ['nullable', 'integer', Rule::in($this->allowedBranches()->pluck('id')->all())],
+            'destination_branch_id' => ['nullable', 'integer', Rule::in($this->allowedBranches()->pluck('id')->all())],
+            'mapping' => ['array'],
         ]);
         $headerChanged = $batch->selected_sheet !== $request->selected_sheet || (int) $batch->header_row !== (int) $request->header_row;
-        $batch->update($request->only('selected_sheet','header_row','data_start_row','consignment_code','default_destination','branch_id','from_country_id','from_state_id','to_country_id','to_state_id'));
+        $batchData = $request->only('selected_sheet','header_row','data_start_row','consignment_code','pickup_branch_id','destination_branch_id');
+        if ($request->filled('pickup_branch_id') && $request->filled('destination_branch_id')) {
+            $pickupBranch = Branch::findOrFail($request->pickup_branch_id);
+            $destinationBranch = Branch::findOrFail($request->destination_branch_id);
+            if (!$pickupBranch->country_id || !$pickupBranch->state_id || !$destinationBranch->country_id || !$destinationBranch->state_id) {
+                throw ValidationException::withMessages(['pickup_branch_id' => 'The selected branches need a country and province/state configured in Branches before they can be used.']);
+            }
+            $batchData += [
+                'branch_id' => $pickupBranch->id,
+                'from_country_id' => $pickupBranch->country_id,
+                'from_state_id' => $pickupBranch->state_id,
+                'to_country_id' => $destinationBranch->country_id,
+                'to_state_id' => $destinationBranch->state_id,
+                'default_destination' => $destinationBranch->address ?: $destinationBranch->name,
+            ];
+        }
+        $batch->update($batchData);
         $mappings = $headerChanged ? $this->suggestMappings($batch->fresh()) : array_filter($request->input('mapping', []), fn($value) => $value !== '');
         $batch->update(['mappings' => $mappings]);
         if ($headerChanged) {
@@ -120,8 +134,9 @@ class ConsignmentImportController extends Controller
     {
         $batch = $this->batch($uuid)->fresh();
         abort_if($batch->status === 'completed', 422, 'This import has already been completed.');
-        foreach (['consignment_code','branch_id','from_country_id','from_state_id','to_country_id','to_state_id'] as $field) abort_unless($batch->{$field}, 422, 'Enter the consignment code and choose the branch, origin and destination settings before importing.');
-        $this->assertBranchAllowed((int) $batch->branch_id);
+        foreach (['consignment_code','pickup_branch_id','destination_branch_id','branch_id','from_country_id','from_state_id','to_country_id','to_state_id'] as $field) abort_unless($batch->{$field}, 422, 'Enter the consignment code and choose pickup and destination branches before importing.');
+        $this->assertBranchAllowed((int) $batch->pickup_branch_id);
+        $this->assertBranchAllowed((int) $batch->destination_branch_id);
         $this->validateRows($batch->fresh());
         $invalidSelected = $batch->rows()->where('included', true)->whereIn('status', ['invalid','duplicate'])->count();
         abort_if($invalidSelected > 0, 422, 'Fix or exclude every invalid and duplicate selected row before confirming.');
@@ -132,9 +147,11 @@ class ConsignmentImportController extends Controller
         $package = Package::query()->orderBy('id')->first();
         abort_unless($package, 422, 'No package type is configured. Create a package type before importing.');
 
-        DB::transaction(function () use ($batch, $rows, $first, $package) {
+        $pickupBranch = Branch::findOrFail($batch->pickup_branch_id);
+        $destinationBranch = Branch::findOrFail($batch->destination_branch_id);
+        DB::transaction(function () use ($batch, $rows, $first, $package, $pickupBranch, $destinationBranch) {
             $consignment = Consignment::create(['consignment_code' => $batch->consignment_code, 'name' => 'Imported consignment',
-                'source' => null, 'destination' => $first['destination'], 'status' => 'pending', 'cargo_type' => $batch->shipment_type,
+                'source' => $pickupBranch->name, 'destination' => $destinationBranch->name, 'status' => 'pending', 'cargo_type' => $batch->shipment_type,
                 'mawb_num' => $first['mawb_num'] ?? null]);
             $ids = [];
             foreach ($rows as $row) {
@@ -142,7 +159,7 @@ class ConsignmentImportController extends Controller
                 $client = $this->findClient($data['phone']);
                 if (!$client || Shipment::where('code', $data['hawb_number'])->exists()) throw new \RuntimeException('The import changed while it was being confirmed. Review the preview again.');
                 $shipment = Shipment::create(['consignment_id' => $consignment->id, 'code' => $data['hawb_number'], 'status_id' => Shipment::PENDING_STATUS,
-                    'type' => Shipment::PICKUP, 'branch_id' => $batch->branch_id, 'shipping_date' => now()->toDateString(), 'client_status' => Shipment::CLIENT_STATUS_CREATED,
+                    'type' => Shipment::PICKUP, 'branch_id' => $pickupBranch->id, 'next_destination' => $destinationBranch->name, 'shipping_date' => now()->toDateString(), 'client_status' => Shipment::CLIENT_STATUS_CREATED,
                     'client_id' => $client->id, 'client_phone' => $data['phone'], 'reciver_name' => $data['consignee_name'], 'reciver_phone' => $data['phone'],
                     'reciver_address' => $data['destination'], 'from_country_id' => $batch->from_country_id, 'from_state_id' => $batch->from_state_id,
                     'to_country_id' => $batch->to_country_id, 'to_state_id' => $batch->to_state_id, 'payment_type' => Shipment::POSTPAID,
@@ -162,14 +179,14 @@ class ConsignmentImportController extends Controller
         return ConsignmentImportBatch::where('uuid', $uuid)->where('created_by', auth()->id())->firstOrFail();
     }
     private function authorizeImport(): void { abort_unless(auth()->check() && auth()->user()->can('import-consignments'), 403); }
-    private function allowedBranches() { $u = auth()->user(); return (int) $u->role === User::ADMIN ? Branch::where('is_archived', 0)->orderBy('name')->get() : Branch::where('is_archived', 0)->whereIn('id', Staff::where('user_id', $u->id)->pluck('branch_id'))->get(); }
+    private function allowedBranches() { return Branch::where('is_archived', 0)->orderBy('name')->get(); }
     private function assertBranchAllowed(int $id): void { abort_unless($this->allowedBranches()->contains('id', $id), 403, 'You cannot import into that branch.'); }
     private function previewData(ConsignmentImportBatch $batch): array
     {
         $this->assertBranchIfSelected($batch);
         $rows = $batch->rows()->where('sheet_name', $batch->selected_sheet)->orderBy('spreadsheet_row')->limit(1000)->get();
         $header = optional($rows->firstWhere('spreadsheet_row', $batch->header_row))->raw_values ?? [];
-        return compact('batch','rows','header') + ['fields' => self::FIELDS, 'sheets' => $batch->rows()->distinct()->pluck('sheet_name'), 'branches' => $this->allowedBranches(), 'countries' => Country::orderBy('name')->get(), 'states' => State::orderBy('name')->get()];
+        return compact('batch','rows','header') + ['fields' => self::FIELDS, 'sheets' => $batch->rows()->distinct()->pluck('sheet_name'), 'branches' => $this->allowedBranches()];
     }
     private function assertBranchIfSelected(ConsignmentImportBatch $batch): void { if ($batch->branch_id) $this->assertBranchAllowed((int)$batch->branch_id); }
     private function guessHeaderRow(ConsignmentImportBatch $batch, string $sheet): int

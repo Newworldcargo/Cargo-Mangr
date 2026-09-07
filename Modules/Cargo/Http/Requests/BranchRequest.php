@@ -4,6 +4,7 @@ namespace Modules\Cargo\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Modules\Cargo\Entities\Branch;
+use Illuminate\Validation\Rule;
 
 class BranchRequest extends FormRequest
 {
@@ -14,6 +15,7 @@ class BranchRequest extends FormRequest
      */
     public function rules()
     {
+        $locationRequirement = auth()->check() && (int) auth()->user()->role === 3 ? 'nullable' : 'required';
         $email_validation = 'required|max:50|email|unique:users,email';
         $password_validation = 'string|min:6';
         if ($this->method() == 'PUT') {
@@ -32,6 +34,8 @@ class BranchRequest extends FormRequest
             'responsible_name' => 'required|string|min:3|max:50',
             'national_id'   => 'required',
             'address' => 'required',
+            'country_id' => [$locationRequirement, 'integer', 'exists:countries,id'],
+            'state_id' => [$locationRequirement, 'integer', Rule::exists('states', 'id')->where(fn ($query) => $query->where('country_id', $this->input('country_id')))],
         ];
     }
 
