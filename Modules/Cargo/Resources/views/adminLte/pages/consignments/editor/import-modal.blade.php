@@ -17,7 +17,7 @@
                         <i class="fas fa-cloud-upload-alt fa-3x text-primary"></i>
                     </div>
                     <h6 class="font-weight-bold">Upload Consignment Data</h6>
-                    <p class="text-muted small">Supported formats: .xlsx, .xls, .csv</p>
+                    <p class="text-muted small">Upload first, then review the sheet, map columns and confirm. Nothing is imported at this step.</p>
                 </div>
 
                 <form id="importForm" action="{{ route('consignment.import') }}" method="POST"
@@ -48,7 +48,7 @@
                         <label for="excel_file" class="font-weight-bold">Select File</label>
                         <div class="input-group">
                             <div class="custom-file">
-                                <input type="file" class="custom-file-input" id="excel_file" name="excel_file" required>
+                                <input type="file" class="custom-file-input" id="excel_file" name="excel_file" accept=".xlsx,.xls,.csv" required>
                                 <label class="custom-file-label" for="excel_file">Choose file...</label>
                             </div>
                         </div>
@@ -79,7 +79,7 @@
                                 <i class="fas fa-download mr-1"></i> Download Template
                             </a>
                             <button type="submit" class="btn btn-primary px-4">
-                                <i class="fas fa-upload mr-1"></i> Upload & Process
+                                <i class="fas fa-upload mr-1"></i> Upload & Preview
                             </button>
                         </div>
                     </div>
@@ -97,11 +97,9 @@ document.getElementById('excel_file').addEventListener('change', function(e) {
     label.textContent = fileName;
 });
 
-// Form submission handling
-document.getElementById('importForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    
-    // Show progress bar
+// The upload redirects to the preview screen. Keep the progress indication honest:
+// this is upload/parsing only; database records are not created yet.
+document.getElementById('importForm').addEventListener('submit', function() {
     document.getElementById('importStatus').classList.remove('d-none');
     
     // Simulate progress (in production, this would be AJAX-based)
@@ -116,22 +114,15 @@ document.getElementById('importForm').addEventListener('submit', function(e) {
         
         if (progress < 30) {
             progressText.textContent = 'Uploading file...';
-        } else if (progress < 60) {
-            progressText.textContent = 'Validating data...';
         } else if (progress < 90) {
-            progressText.textContent = 'Processing records...';
+            progressText.textContent = 'Reading spreadsheet for preview...';
         } else {
             progressText.textContent = 'Completing import...';
         }
         
         if (progress >= 100) {
             clearInterval(interval);
-            progressText.textContent = 'Import complete!';
-            
-            // In production, you would submit the form and redirect
-            setTimeout(function() {
-                document.getElementById('importForm').submit();
-            }, 500);
+            progressText.textContent = 'Opening preview...';
         }
     }, 150);
 });

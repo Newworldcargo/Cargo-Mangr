@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Response;
 use App\Http\Controllers\TrackingStageController;
 use App\Http\Controllers\NwcReportController;
 use App\Http\Controllers\AuditLogController;
+use App\Http\Controllers\ConsignmentImportController;
 /*
 |--------------------------------------------------------------------------
 | Web Routes
@@ -83,7 +84,10 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/consignment-details/{id}', 'ConsignmentController@show')->name('consignment.show');
     Route::get('/consignment/{id}', 'ConsignmentController@edit')->name('consignment.edit');
     Route::delete('/consignment/{id}', 'ConsignmentController@destroy')->name('consignment.destroy');
-    Route::post('/consignments/import', 'ConsignmentController@import')->name('consignment.import');
+    Route::post('/consignments/import', [ConsignmentImportController::class, 'upload'])->name('consignment.import');
+    Route::get('/consignments/imports/{uuid}/preview', [ConsignmentImportController::class, 'preview'])->name('consignment.import.preview');
+    Route::post('/consignments/imports/{uuid}/preview', [ConsignmentImportController::class, 'updatePreview'])->name('consignment.import.preview.update');
+    Route::post('/consignments/imports/{uuid}/confirm', [ConsignmentImportController::class, 'confirm'])->name('consignment.import.confirm');
     Route::post('/consignments/export', 'ConsignmentController@export')->name('consignment.export');
     Route::get('/consignment/{id}/tracker', 'ConsignmentController@editTracker')->name('consignment.tracker.edit');
     Route::patch('/consignment/tracker/update/{id}', 'ConsignmentController@updateTracker')->name('consignment.tracker.update');
