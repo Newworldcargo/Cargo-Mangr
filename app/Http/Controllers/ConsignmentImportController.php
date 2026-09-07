@@ -24,15 +24,14 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 class ConsignmentImportController extends Controller
 {
     private const FIELDS = [
-        'consignment_code' => ['label' => 'Consignment / container code', 'required' => true, 'aliases' => ['consignment code','container','container no','container number','job no','job number']],
         'hawb_number' => ['label' => 'HAWB / parcel code', 'required' => true, 'aliases' => ['hawb','hawb no','hawb number','parcel code','shipment code','tracking number']],
-        'consignee_name' => ['label' => 'Consignee name', 'required' => true, 'aliases' => ['consignee','consignee name','receiver','receiver name','customer name']],
+        'consignee_name' => ['label' => 'Consignee name', 'required' => true, 'aliases' => ['consignee','consignee name','consignee name address','receiver','receiver name','customer name']],
         'phone' => ['label' => 'Customer phone number', 'required' => true, 'aliases' => ['phone','phone number','mobile','mobile number','telephone','tel','customer phone']],
-        'destination' => ['label' => 'Destination', 'required' => true, 'aliases' => ['destination','delivery destination','city']],
-        'weight' => ['label' => 'Weight', 'required' => false, 'aliases' => ['weight','gross weight','kg','kgs']],
+        'destination' => ['label' => 'Destination', 'required' => false, 'aliases' => ['destination','delivery destination','city']],
+        'weight' => ['label' => 'Weight', 'required' => false, 'aliases' => ['weight','gross weight','g w kgs','g w kg','kg','kgs']],
         'pieces' => ['label' => 'Number of pieces', 'required' => false, 'aliases' => ['pieces','piece','qty','quantity','no of pieces']],
-        'description' => ['label' => 'Goods description', 'required' => false, 'aliases' => ['description','goods','contents','item description']],
-        'amount' => ['label' => 'Shipping amount', 'required' => false, 'aliases' => ['amount','shipping cost','cost','charge']],
+        'description' => ['label' => 'Goods description', 'required' => false, 'aliases' => ['description','description of goods','goods','contents','item description']],
+        'amount' => ['label' => 'Shipping amount', 'required' => false, 'aliases' => ['amount','bill','shipping cost','cost','charge']],
         'mawb_num' => ['label' => 'MAWB number', 'required' => false, 'aliases' => ['mawb','mawb no','mawb number']],
     ];
 
@@ -44,6 +43,7 @@ class ConsignmentImportController extends Controller
         $uuid = (string) Str::uuid();
         $path = $file->storeAs('consignment-imports/'.$uuid, 'source.'.$file->getClientOriginalExtension(), 'local');
 
+        $batch = null;
         try {
             $book = IOFactory::load(Storage::disk('local')->path($path));
             $batch = ConsignmentImportBatch::create([
@@ -62,12 +62,17 @@ class ConsignmentImportController extends Controller
                 }
                 foreach (array_chunk($insert, 500) as $chunk) ConsignmentImportRow::insert($chunk);
             }
-            $batch->update(['selected_sheet' => $firstSheet, 'header_row' => $this->guessHeaderRow($batch, $firstSheet), 'data_start_row' => 2]);
+            $batch->update(['selected_sheet' => $firstSheet, 'header_row' => $this->guessHeaderRow($batch, $firstSheet), 'data_start_row' => 2,
+                'consignment_code' => $this->guessConsignmentCode($batch, $firstSheet)]);
             $batch->update(['data_start_row' => $batch->header_row + 1, 'mappings' => $this->suggestMappings($batch)]);
             $this->validateRows($batch->fresh());
             return redirect()->route('consignment.import.preview', $batch->uuid);
         } catch (\Throwable $e) {
             Storage::disk('local')->delete($path);
+            if ($batch) {
+                $batch->rows()->delete();
+                $batch->delete();
+            }
             report($e);
             return back()->withInput()->with('error', 'The file could not be read: '.$e->getMessage());
         }
@@ -87,14 +92,22 @@ class ConsignmentImportController extends Controller
         $request->validate([
             'selected_sheet' => ['required', Rule::in($sheets)],
             'header_row' => ['required', 'integer', 'min:1'], 'data_start_row' => ['required', 'integer', 'min:1'],
+            'consignment_code' => ['nullable', 'string', 'max:255'], 'default_destination' => ['nullable', 'string', 'max:255'],
             'branch_id' => ['nullable', 'integer'], 'from_country_id' => ['nullable', 'integer'], 'from_state_id' => ['nullable', 'integer'],
             'to_country_id' => ['nullable', 'integer'], 'to_state_id' => ['nullable', 'integer'], 'mapping' => ['array'],
         ]);
-        $mappings = array_filter($request->input('mapping', []), fn($value) => $value !== '');
-        $batch->update($request->only('selected_sheet','header_row','data_start_row','branch_id','from_country_id','from_state_id','to_country_id','to_state_id') + ['mappings' => $mappings]);
-        $included = $request->input('included', []);
-        $batch->rows()->where('sheet_name', $batch->selected_sheet)->where('spreadsheet_row', '>=', $batch->data_start_row)->update(['included' => false]);
-        if ($included) $batch->rows()->whereIn('id', array_keys($included))->update(['included' => true]);
+        $headerChanged = $batch->selected_sheet !== $request->selected_sheet || (int) $batch->header_row !== (int) $request->header_row;
+        $batch->update($request->only('selected_sheet','header_row','data_start_row','consignment_code','default_destination','branch_id','from_country_id','from_state_id','to_country_id','to_state_id'));
+        $mappings = $headerChanged ? $this->suggestMappings($batch->fresh()) : array_filter($request->input('mapping', []), fn($value) => $value !== '');
+        $batch->update(['mappings' => $mappings]);
+        if ($headerChanged) {
+            $batch->rows()->where('sheet_name', $batch->selected_sheet)->update(['included' => false]);
+            $batch->rows()->where('sheet_name', $batch->selected_sheet)->where('spreadsheet_row', '>=', $batch->data_start_row)->update(['included' => true]);
+        } else {
+            $included = $request->input('included', []);
+            $batch->rows()->where('sheet_name', $batch->selected_sheet)->where('spreadsheet_row', '>=', $batch->data_start_row)->update(['included' => false]);
+            if ($included) $batch->rows()->whereIn('id', array_keys($included))->update(['included' => true]);
+        }
         $this->validateRows($batch->fresh());
         return redirect()->route('consignment.import.preview', $batch->uuid)->with('success', 'Preview updated. No records have been imported.');
     }
@@ -103,18 +116,20 @@ class ConsignmentImportController extends Controller
     {
         $batch = $this->batch($uuid)->fresh();
         abort_if($batch->status === 'completed', 422, 'This import has already been completed.');
-        foreach (['branch_id','from_country_id','from_state_id','to_country_id','to_state_id'] as $field) abort_unless($batch->{$field}, 422, 'Choose the branch, origin and destination settings before importing.');
+        foreach (['consignment_code','branch_id','from_country_id','from_state_id','to_country_id','to_state_id'] as $field) abort_unless($batch->{$field}, 422, 'Enter the consignment code and choose the branch, origin and destination settings before importing.');
         $this->assertBranchAllowed((int) $batch->branch_id);
         $this->validateRows($batch->fresh());
+        $invalidSelected = $batch->rows()->where('included', true)->whereIn('status', ['invalid','duplicate'])->count();
+        abort_if($invalidSelected > 0, 422, 'Fix or exclude every invalid and duplicate selected row before confirming.');
         $rows = $batch->rows()->where('included', true)->whereIn('status', ['valid','warning'])->get();
         abort_if($rows->isEmpty(), 422, 'There are no valid selected rows to import.');
         $first = $rows->first()->mapped_values;
-        abort_if(Consignment::where('consignment_code', $first['consignment_code'])->exists(), 422, 'That consignment/container code already exists.');
+        abort_if(Consignment::where('consignment_code', $batch->consignment_code)->exists(), 422, 'That consignment/container code already exists.');
         $package = Package::query()->orderBy('id')->first();
         abort_unless($package, 422, 'No package type is configured. Create a package type before importing.');
 
         DB::transaction(function () use ($batch, $rows, $first, $package) {
-            $consignment = Consignment::create(['consignment_code' => $first['consignment_code'], 'name' => 'Imported consignment',
+            $consignment = Consignment::create(['consignment_code' => $batch->consignment_code, 'name' => 'Imported consignment',
                 'source' => null, 'destination' => $first['destination'], 'status' => 'pending', 'cargo_type' => $batch->shipment_type,
                 'mawb_num' => $first['mawb_num'] ?? null]);
             $ids = [];
@@ -127,7 +142,7 @@ class ConsignmentImportController extends Controller
                     'client_id' => $client->id, 'client_phone' => $data['phone'], 'reciver_name' => $data['consignee_name'], 'reciver_phone' => $data['phone'],
                     'reciver_address' => $data['destination'], 'from_country_id' => $batch->from_country_id, 'from_state_id' => $batch->from_state_id,
                     'to_country_id' => $batch->to_country_id, 'to_state_id' => $batch->to_state_id, 'payment_type' => Shipment::POSTPAID,
-                    'shipping_cost' => (float) ($data['amount'] ?? 0), 'total_weight' => (float) ($data['weight'] ?? 0)]);
+                    'shipping_cost' => $this->number($data['amount'] ?? 0), 'total_weight' => $this->number($data['weight'] ?? 0)]);
                 PackageShipment::create(['package_id' => $package->id, 'shipment_id' => $shipment->id, 'description' => $data['description'] ?? null,
                     'weight' => $data['weight'] ?? 0, 'qty' => $data['pieces'] ?? 1]);
                 $row->update(['status' => 'imported']); $ids[] = $shipment->id;
@@ -171,11 +186,13 @@ class ConsignmentImportController extends Controller
         $rows = $batch->rows()->where('sheet_name',$batch->selected_sheet)->where('spreadsheet_row','>=',$batch->data_start_row)->get();
         foreach ($rows as $row) {
             $mapped=[]; foreach ($mappings as $field=>$column) $mapped[$field]=trim((string)($row->raw_values[$column] ?? ''));
+            if (empty($mapped['destination'])) $mapped['destination'] = $batch->default_destination ?? '';
             if (!array_filter($mapped, fn($v) => $v !== '')) { $row->update(['included'=>false,'status'=>'excluded','mapped_values'=>$mapped,'validation_errors'=>[],'validation_warnings'=>[]]); continue; }
             $counts['detected']++; $errors=[]; $warnings=[];
             foreach (self::FIELDS as $field=>$def) if ($def['required'] && empty($mapped[$field])) $errors[$field] = $def['label'].' is required.';
+            if (empty($mapped['destination'])) $errors['destination'] = 'Map a destination column or enter one destination for the whole file.';
             if (!empty($mapped['phone'])) { $mapped['phone']=$this->phone($mapped['phone']); if (!preg_match('/^\d{7,15}$/',$mapped['phone'])) $errors['phone']='Enter a valid phone number (7–15 digits).'; elseif (!$this->findClient($mapped['phone'])) $errors['phone']='No customer account matches this phone number. Create or verify the customer first.'; }
-            if (!empty($mapped['weight']) && !is_numeric($mapped['weight'])) $errors['weight']='Weight must be a number.';
+            if (!empty($mapped['weight']) && $this->number($mapped['weight']) === null) $errors['weight']='Weight must be a number.';
             if (!empty($mapped['pieces']) && (!ctype_digit($mapped['pieces']) || (int)$mapped['pieces'] < 1)) $errors['pieces']='Pieces must be a whole number.';
             $status = $errors ? 'invalid' : 'valid';
             if (!$errors && !empty($mapped['hawb_number']) && (isset($seen[$mapped['hawb_number']]) || Shipment::where('code',$mapped['hawb_number'])->exists())) { $status='duplicate'; $warnings['hawb_number']='This parcel code already exists or appears more than once in this file.'; }
@@ -185,8 +202,20 @@ class ConsignmentImportController extends Controller
         $batch->update(['summary'=>$counts]);
     }
     private function phone(string $value): string { return preg_replace('/\D+/', '', $value); }
+    private function number($value): ?float { $clean = preg_replace('/[^0-9.\-]/', '', (string) $value); return $clean !== '' && is_numeric($clean) ? (float) $clean : null; }
     private function findClient(string $phone): ?Client { $digits=$this->phone($phone); return Client::whereRaw("REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(responsible_mobile, ' ', ''), '+', ''), '-', ''), '(', ''), ')', '') = ?", [$digits])->where('is_archived',0)->first(); }
     private function normalise($value): string { return strtolower(trim(preg_replace('/[^a-z0-9]+/i',' ',(string)$value))); }
     private function normaliseAll(array $values): array { return array_map(fn($v)=>$this->normalise($v),$values); }
     private function aliases(): array { return array_merge(...array_values(array_map(fn($v)=>$v['aliases'], self::FIELDS))); }
+    private function guessConsignmentCode(ConsignmentImportBatch $batch, string $sheet): ?string
+    {
+        foreach ($batch->rows()->where('sheet_name', $sheet)->orderBy('spreadsheet_row')->limit(30)->get() as $row) {
+            $values = $row->raw_values; $columns = array_keys($values);
+            foreach ($columns as $index => $column) {
+                if (!in_array($this->normalise($values[$column]), ['job no','job number','consignment code','container','container no','container number'], true)) continue;
+                for ($next = $index + 1; $next < count($columns); $next++) if (trim((string) $values[$columns[$next]]) !== '') return trim((string) $values[$columns[$next]]);
+            }
+        }
+        return null;
+    }
 }
