@@ -17,7 +17,7 @@
             </div>
         </div>
         <div>
-            @can('create-consignments')
+            @can('import-consignments')
             <button type="button" class="btn btn-info mr-2" data-toggle="modal" data-target="#importModal">
                 <i class="fas fa-file-excel"></i> Import Consignments
             </button>

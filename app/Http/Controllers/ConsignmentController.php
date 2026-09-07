@@ -49,9 +49,12 @@ class ConsignmentController extends Controller
 
     public function import(Request $request)
     {
-        $this->authorizeConsignmentMutation();
-        // dd('here');
+        abort_unless(auth()->check() && auth()->user()->can('import-consignments'), 403);
         try {
+            $request->validate([
+                'shipment_type' => ['required', 'in:air,sea'],
+                'excel_file' => ['required', 'file', 'mimes:xlsx,xls,csv', 'max:10240'],
+            ]);
             switch ($request->shipment_type) {
                 case 'sea':
                     $this->importSea($request);
@@ -64,7 +67,7 @@ class ConsignmentController extends Controller
             }
             return redirect()->back()->with('success', 'Excel data imported successfully!');
         } catch (\Throwable $th) {
-            dd('Entry Error'.$th);
+            report($th);
             return redirect()->back()->with('error', $th->getMessage());
         }
     }
