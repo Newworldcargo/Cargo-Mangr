@@ -1024,7 +1024,7 @@ class ConsignmentController extends Controller
      */
     public function create()
     {
-        $this->authorizeConsignmentMutation();
+        abort_unless(auth()->check() && auth()->user()->can('create-consignments'), 403);
 
         $adminTheme = env('ADMIN_THEME', 'adminLte');
         return view('cargo::' . $adminTheme . '.pages.consignments.create');
@@ -1038,7 +1038,7 @@ class ConsignmentController extends Controller
      */
     public function store(Request $request)
     {
-        $this->authorizeConsignmentMutation();
+        abort_unless(auth()->check() && auth()->user()->can('create-consignments'), 403);
         try {
 
             $request->validate([
