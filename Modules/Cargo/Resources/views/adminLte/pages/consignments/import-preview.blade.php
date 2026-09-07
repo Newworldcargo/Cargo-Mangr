@@ -8,7 +8,13 @@
     </div>
     @if(isset($errors) && $errors->any())<div class="alert alert-danger"><strong>Please correct these items:</strong><ul class="mb-0 mt-2">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
     @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
-    @if($batch->status === 'completed')<div class="alert alert-success"><strong>Import completed.</strong> {{ $batch->result['imported'] ?? 0 }} shipment(s) were created.</div>@endif
+    @if($batch->status === 'completed')
+        <div class="alert alert-success"><strong>{{ $batch->mode === 'update' ? 'Update completed.' : 'Import completed.' }}</strong> {{ $batch->result['created'] ?? $batch->result['imported'] ?? 0 }} added, {{ $batch->result['updated'] ?? 0 }} updated and {{ $batch->result['unchanged'] ?? 0 }} unchanged.</div>
+    @elseif($batch->mode === 'update' && $targetConsignment)
+        <div class="alert alert-warning border-warning"><h5 class="alert-heading"><i class="fas fa-exclamation-triangle mr-2"></i>Updating existing consignment {{ $targetConsignment->consignment_code }}</h5><p class="mb-0">This consignment already has {{ $targetConsignment->shipments_count }} shipment(s). The preview will show what will be added, updated or left unchanged. Existing shipments missing from this file will not be deleted.</p></div>
+    @else
+        <div class="alert alert-info"><strong>Creating a new consignment.</strong> If the consignment code already exists, this page will automatically switch to update mode after you save the preview.</div>
+    @endif
 
     <form id="mappingForm" method="POST" action="{{ route('consignment.import.preview.update', $batch->uuid) }}">
         @csrf
@@ -51,12 +57,12 @@
             @endforeach
         </div><div class="alert alert-warning mb-0"><strong>Phone number is required.</strong> A file without a phone-number column cannot be confirmed.</div></div></div>
 
-        <div class="card"><div class="card-header d-flex flex-wrap justify-content-between"><strong>4. Data preview</strong><span>Detected: {{ $batch->summary['detected'] ?? 0 }} · Valid: {{ $batch->summary['valid'] ?? 0 }} · Invalid: {{ $batch->summary['invalid'] ?? 0 }} · Duplicates: {{ $batch->summary['duplicate'] ?? 0 }}</span></div><div class="card-body p-0 table-responsive"><table class="table table-sm table-bordered table-hover mb-0">
+        <div class="card"><div class="card-header d-flex flex-wrap justify-content-between"><strong>4. Data preview</strong><span>New: {{ $batch->summary['new'] ?? 0 }} · Updating: {{ $batch->summary['update'] ?? 0 }} · Unchanged: {{ $batch->summary['unchanged'] ?? 0 }} · Invalid: {{ $batch->summary['invalid'] ?? 0 }} · Conflicts: {{ $batch->summary['conflict'] ?? 0 }}</span></div><div class="card-body p-0 table-responsive"><table class="table table-sm table-bordered table-hover mb-0">
             <thead class="thead-light"><tr><th>Import</th><th>Row</th><th>Status</th>@foreach($header as $column => $heading)@if(trim((string) $heading) !== '')<th>{{ $heading }}</th>@endif @endforeach<th>Issues</th></tr></thead>
-            <tbody>@forelse($rows->where('spreadsheet_row','>=',$batch->data_start_row) as $row)<tr><td><input type="checkbox" name="included[{{ $row->id }}]" value="1" {{ $row->included ? 'checked' : '' }} {{ $batch->status === 'completed' ? 'disabled' : '' }}></td><td>{{ $row->spreadsheet_row }}</td><td><span class="badge badge-{{ $row->status === 'valid' ? 'success' : ($row->status === 'duplicate' ? 'warning' : ($row->status === 'invalid' ? 'danger' : 'secondary')) }}">{{ ucfirst($row->status) }}</span></td>@foreach($header as $column => $heading)@if(trim((string) $heading) !== '')<td>{{ $row->raw_values[$column] ?? '' }}</td>@endif @endforeach<td class="small text-danger">{{ implode(' ', $row->validation_errors ?? []) ?: implode(' ', $row->validation_warnings ?? []) }}</td></tr>@empty<tr><td colspan="99" class="text-center text-muted py-4">No data rows exist below the selected title row.</td></tr>@endforelse</tbody>
+            <tbody>@forelse($rows->where('spreadsheet_row','>=',$batch->data_start_row) as $row)<tr><td><input type="checkbox" name="included[{{ $row->id }}]" value="1" {{ $row->included ? 'checked' : '' }} {{ $batch->status === 'completed' ? 'disabled' : '' }}></td><td>{{ $row->spreadsheet_row }}</td><td>@php($statusColor = ['new'=>'success','update'=>'info','unchanged'=>'secondary','conflict'=>'warning','invalid'=>'danger','imported'=>'success'][$row->status] ?? 'secondary')<span class="badge badge-{{ $statusColor }}">{{ ucfirst($row->status) }}</span></td>@foreach($header as $column => $heading)@if(trim((string) $heading) !== '')<td>{{ $row->raw_values[$column] ?? '' }}</td>@endif @endforeach<td class="small {{ $row->status === 'update' ? 'text-info' : 'text-danger' }}">{{ implode(' ', $row->validation_errors ?? []) ?: implode(' ', $row->validation_warnings ?? []) }}</td></tr>@empty<tr><td colspan="99" class="text-center text-muted py-4">No data rows exist below the selected title row.</td></tr>@endforelse</tbody>
         </table></div></div>
         @if($batch->status !== 'completed')<div class="mt-3 text-right"><button class="btn btn-primary px-4">Save and refresh preview</button></div>@endif
     </form>
-    @if($batch->status !== 'completed')<form method="POST" action="{{ route('consignment.import.confirm', $batch->uuid) }}" class="mt-3 text-right">@csrf<button class="btn btn-success px-4" {{ ($batch->summary['selected'] ?? 0) < 1 ? 'disabled' : '' }}>Confirm import ({{ $batch->summary['selected'] ?? 0 }} selected)</button></form>@endif
+    @if($batch->status !== 'completed')<form method="POST" action="{{ route('consignment.import.confirm', $batch->uuid) }}" class="mt-3 text-right">@csrf<button class="btn btn-success px-4" {{ ($batch->summary['selected'] ?? 0) < 1 ? 'disabled' : '' }}>{{ $batch->mode === 'update' ? 'Confirm update' : 'Confirm import' }} ({{ $batch->summary['selected'] ?? 0 }} selected)</button></form>@endif
 </div>
 @endsection
