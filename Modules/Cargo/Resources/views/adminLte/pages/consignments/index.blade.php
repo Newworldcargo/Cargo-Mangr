@@ -327,75 +327,8 @@
             $('#consignmentId').val(consignmentId);
         });
 
-        // Initialize Dropzone
-        Dropzone.autoDiscover = false;
-
-        let myDropzone = new Dropzone("#importForm", {
-            url: "{{ route('consignment.import') }}",
-            maxFilesize: 10, // MB
-            maxFiles: 1,
-            acceptedFiles: ".xlsx,.xls,.csv",
-            autoProcessQueue: false,
-            dictDefaultMessage: `<div class="text-center p-4">
-                <i class="fas fa-cloud-upload-alt fa-2x mb-2 text-muted"></i>
-                <h6>Drag and drop your Excel file here</h6>
-                <span class="btn btn-sm btn-light mt-2">or click to browse</span>
-            </div>`,
-            dictFileTooBig: "File is too big). Max filesize: 1500MB.",
-            dictInvalidFileType: "Invalid file type. Please upload Excel or CSV files only.",
-            addRemoveLinks: true,
-            dictRemoveFile: "Remove file",
-        });
-
-        // Upload button click handler
-        $("#uploadBtn").click(function() {
-            if (myDropzone.getQueuedFiles().length > 0) {
-                // Show progress bar and start processing
-                $("#importStatus").removeClass("d-none");
-                simulateProgress();
-                myDropzone.processQueue();
-
-            } else {
-                alert("Please select a file to upload");
-            }
-        });
-
-        // File added handler
-        myDropzone.on("addedfile", function(file) {
-            console.log("File added: " + file.name);
-        });
-
-        // Success handler
-        myDropzone.on("success", function(file, response) {
-            console.log("Upload successful");
-            $("#importProgressBar").css("width", "100%").attr("aria-valuenow", 100);
-            $("#importProgressText").text("Upload complete! Refreshing...");
-
-            setTimeout(function() {
-                window.location.reload();
-            }, 1500);
-        });
-
-        // Error handler
-        myDropzone.on("error", function(file, errorMessage) {
-            console.error("Upload error:", errorMessage);
-            $("#importProgressBar").addClass("bg-danger").removeClass("bg-success");
-            $("#importProgressText").text("Error: " + errorMessage);
-        });
-
-        // Function to simulate progress while processing
-        function simulateProgress() {
-            let progress = 0;
-            const interval = setInterval(function() {
-                progress += Math.floor(Math.random() * 15);
-                if (progress > 90) {
-                    clearInterval(interval);
-                    return;
-                }
-                $("#importProgressBar").css("width", progress + "%").attr("aria-valuenow", progress);
-                $("#importProgressText").text("Processing... " + progress + "%");
-            }, 600);
-        }
+        // The import modal owns its ordinary multipart form submission. Do not
+        // attach Dropzone here: it hijacks the redirect to the mapping preview.
     });
 </script>
 @endsection

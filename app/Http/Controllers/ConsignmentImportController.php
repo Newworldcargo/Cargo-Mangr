@@ -188,5 +188,5 @@ class ConsignmentImportController extends Controller
     private function findClient(string $phone): ?Client { $digits=$this->phone($phone); return Client::whereRaw("REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(responsible_mobile, ' ', ''), '+', ''), '-', ''), '(', ''), ')', '') = ?", [$digits])->where('is_archived',0)->first(); }
     private function normalise($value): string { return strtolower(trim(preg_replace('/[^a-z0-9]+/i',' ',(string)$value))); }
     private function normaliseAll(array $values): array { return array_map(fn($v)=>$this->normalise($v),$values); }
-    private function aliases(): array { return array_merge(...array_map(fn($v)=>$v['aliases'],self::FIELDS)); }
+    private function aliases(): array { return array_merge(...array_values(array_map(fn($v)=>$v['aliases'], self::FIELDS))); }
 }
