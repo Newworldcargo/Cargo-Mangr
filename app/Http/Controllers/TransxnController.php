@@ -7,12 +7,15 @@ use App\Models\Transxn;
 use App\Services\FinancialTransactionScopeService;
 use App\Services\OperationalScopeFilterService;
 use Carbon\Carbon;
+use Modules\Cargo\Services\BranchAccessService;
+use Modules\Cargo\Entities\Branch;
 
 class TransxnController extends Controller
 {
     public function __construct(
         private readonly FinancialTransactionScopeService $transactionScope,
         private readonly OperationalScopeFilterService $scopeFilters,
+        private readonly BranchAccessService $branchAccess,
     )
     {
         $this->middleware('auth')->only('index');
@@ -129,16 +132,8 @@ class TransxnController extends Controller
 
     private function viewerBranch($user)
     {
-        if ((int) $user->role === 3) {
-            return \Modules\Cargo\Entities\Branch::where('user_id', $user->id)->first();
-        }
-
-        if (in_array((int) $user->role, [\App\Models\User::STAFF, 2], true)) {
-            $branchId = \Modules\Cargo\Entities\Staff::where('user_id', $user->id)->value('branch_id');
-            return $branchId ? \Modules\Cargo\Entities\Branch::find($branchId) : null;
-        }
-
-        return null;
+        $branchId = $this->branchAccess->branchIdFor($user);
+        return $branchId ? Branch::find($branchId) : null;
     }
 
     private function displayAmount($amount, ?string $storedCurrency, string $displayCurrency): float

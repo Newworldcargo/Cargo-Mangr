@@ -1,7 +1,6 @@
 @php
-    $checkoutBranch = auth()->user()->role == 3
-        ? \Modules\Cargo\Entities\Branch::where('user_id', auth()->id())->first()
-        : null;
+    $checkoutBranchId = app(\Modules\Cargo\Services\BranchAccessService::class)->branchIdFor(auth()->user());
+    $checkoutBranch = $checkoutBranchId ? \Modules\Cargo\Entities\Branch::find($checkoutBranchId) : null;
     $checkoutCurrency = strtoupper($checkoutBranch?->default_currency ?: ($shipment->branch?->default_currency ?: 'ZMW'));
     $checkoutSymbol = currency_symbol_for($checkoutCurrency);
 @endphp

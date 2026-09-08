@@ -18,9 +18,8 @@
         || ($user_role != 4 && (auth()->user()->can('confirm-shipment-payment') || auth()->user()->hasRole(['cashier', 'cashiers'])))
     );
     $pendingRefundRequest = $pendingRefundRequest ?? null;
-    $viewerBranch = $user_role == 3
-        ? \Modules\Cargo\Entities\Branch::where('user_id', auth()->id())->first()
-        : null;
+    $viewerBranchId = app(\Modules\Cargo\Services\BranchAccessService::class)->branchIdFor(auth()->user());
+    $viewerBranch = $viewerBranchId ? \Modules\Cargo\Entities\Branch::find($viewerBranchId) : null;
     $viewerCurrency = strtoupper($viewerBranch?->default_currency ?: ($shipment->branch?->default_currency ?: 'ZMW'));
     $viewerSymbol = currency_symbol_for($viewerCurrency);
     $viewerAmountFromUsd = function ($usdAmount) use ($viewerCurrency) {

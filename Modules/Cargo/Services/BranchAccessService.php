@@ -25,8 +25,13 @@ class BranchAccessService
             return null;
         }
 
-        if ((int) $user->role === 3) {
-            return Branch::where('user_id', $user->id)->value('id');
+        // The branch-user relationship is authoritative. Some historical
+        // branch accounts (including Zimbabwe) have role 0 instead of 3, so
+        // role-only detection incorrectly removed both branch scope and the
+        // branch's configured currency.
+        $ownedBranchId = Branch::where('user_id', $user->id)->value('id');
+        if ($ownedBranchId) {
+            return (int) $ownedBranchId;
         }
 
         // Historical installs use both 0 and 2 for staff accounts. Treating

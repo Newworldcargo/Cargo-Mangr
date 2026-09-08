@@ -3,9 +3,8 @@
         use Carbon\Carbon;
         use Illuminate\Support\HtmlString;
 
-        $viewerBranch = auth()->user()->role == 3
-            ? \Modules\Cargo\Entities\Branch::where('user_id', auth()->id())->first()
-            : null;
+        $viewerBranchId = app(\Modules\Cargo\Services\BranchAccessService::class)->branchIdFor(auth()->user());
+        $viewerBranch = $viewerBranchId ? \Modules\Cargo\Entities\Branch::find($viewerBranchId) : null;
         $viewerCurrency = strtoupper($viewerBranch?->default_currency ?: 'ZMW');
         $viewerSymbol = currency_symbol_for($viewerCurrency);
         $formatShipmentAmount = function ($shipment, string $primaryClass = 'text-dark text-md font-weight-bold', string $secondaryClass = 'text-warning text-sm') use ($viewerCurrency, $viewerSymbol) {
