@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Consignment;
 use App\Models\ConsignmentImportBatch;
 use App\Models\ConsignmentImportRow;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -23,7 +24,7 @@ class ConsignmentImportController extends Controller
 {
     private const FIELDS = [
         'hawb_number' => ['label' => 'HAWB / parcel code', 'required' => true, 'aliases' => ['hawb','hawb no','hawb number','parcel code','shipment code','tracking number']],
-        'consignee_name' => ['label' => 'Consignee name', 'required' => true, 'aliases' => ['consignee','consignee name','consignee name address','receiver','receiver name','customer name']],
+        'consignee_name' => ['label' => 'Consignee name', 'required' => true, 'aliases' => ['consignee','consignee name','consignee name address','receiver','receiver name','customer name','mark']],
         'phone' => ['label' => 'Customer phone number', 'required' => true, 'aliases' => ['phone','phone number','mobile','mobile number','telephone','tel','customer phone']],
         'destination' => ['label' => 'Destination', 'required' => false, 'aliases' => ['destination','delivery destination','city']],
         'weight' => ['label' => 'Weight', 'required' => false, 'aliases' => ['weight','gross weight','g w kgs','g w kg','kg','kgs']],
@@ -130,6 +131,10 @@ class ConsignmentImportController extends Controller
             'destination_branch_id' => ['nullable', 'integer', Rule::in($this->allowedBranches()->pluck('id')->all())],
             'mapping' => ['array'],
         ]);
+        $requestedMappings=array_filter($request->input('mapping',[]),fn($value)=>$value !== null && $value !== '');
+        if (collect($requestedMappings)->duplicatesStrict()->isNotEmpty()) {
+            throw ValidationException::withMessages(['mapping'=>'Each spreadsheet column can only be matched to one system field.']);
+        }
         $headerChanged = $batch->selected_sheet !== $request->selected_sheet || (int) $batch->header_row !== (int) $request->header_row;
         $batchData = $request->only('selected_sheet','header_row','data_start_row','consignment_code','pickup_branch_id','destination_branch_id');
         if ($request->filled('pickup_branch_id') && $request->filled('destination_branch_id')) {
@@ -149,7 +154,7 @@ class ConsignmentImportController extends Controller
         }
         $batch->update($batchData);
         $this->syncTargetConsignment($batch);
-        $mappings = $headerChanged ? $this->suggestMappings($batch->fresh()) : array_filter($request->input('mapping', []), fn($value) => $value !== '');
+        $mappings = $headerChanged ? $this->suggestMappings($batch->fresh()) : $requestedMappings;
         $batch->update(['mappings' => $mappings]);
         if ($headerChanged) {
             $batch->rows()->where('sheet_name', $batch->selected_sheet)->update(['included' => false]);
@@ -196,8 +201,7 @@ class ConsignmentImportController extends Controller
             $ids = []; $created = 0; $updated = 0; $unchanged = 0;
             foreach ($rows as $row) {
                 $data = $row->mapped_values;
-                $client = $this->findClient($data['phone']);
-                if (!$client) throw new \RuntimeException('A customer changed while the import was being confirmed. Review the preview again.');
+                $client = $this->resolveClient($data, $batch);
                 $shipment = Shipment::where('code', $data['hawb_number'])->first();
                 if ($shipment && (int) $shipment->consignment_id !== (int) $consignment->id) throw new \RuntimeException('A parcel code now belongs to another consignment. Review the preview again.');
                 $shipmentData = ['consignment_id' => $consignment->id, 'code' => $data['hawb_number'], 'branch_id' => $pickupBranch->id, 'next_destination' => $destinationBranch->name,
@@ -254,8 +258,17 @@ class ConsignmentImportController extends Controller
     }
     private function suggestMappings(ConsignmentImportBatch $batch): array
     {
-        $raw = optional($batch->rows()->where('sheet_name', $batch->selected_sheet)->where('spreadsheet_row', $batch->header_row)->first())->raw_values ?? []; $map=[];
-        foreach (self::FIELDS as $field => $def) foreach ($raw as $column => $heading) if (in_array($this->normalise($heading), array_merge([$this->normalise($def['label'])], $def['aliases']), true)) { $map[$field]=$column; break; }
+        $raw = optional($batch->rows()->where('sheet_name', $batch->selected_sheet)->where('spreadsheet_row', $batch->header_row)->first())->raw_values ?? [];
+        $map=[]; $used=[];
+        foreach (self::FIELDS as $field => $def) {
+            foreach ($raw as $column => $heading) {
+                if (isset($used[$column])) continue;
+                if (in_array($this->normalise($heading), array_merge([$this->normalise($def['label'])], $def['aliases']), true)) {
+                    $map[$field]=$column; $used[$column]=true; break;
+                }
+            }
+        }
+        if (empty($map['phone']) && ($phoneColumn = $this->guessPhoneColumn($batch, array_keys($used)))) $map['phone']=$phoneColumn;
         return $map;
     }
     private function validateRows(ConsignmentImportBatch $batch): void
@@ -265,12 +278,21 @@ class ConsignmentImportController extends Controller
         $rows = $batch->rows()->where('sheet_name',$batch->selected_sheet)->where('spreadsheet_row','>=',$batch->data_start_row)->get();
         foreach ($rows as $row) {
             $mapped=[]; foreach ($mappings as $field=>$column) $mapped[$field]=trim((string)($row->raw_values[$column] ?? ''));
-            if (empty($mapped['destination'])) $mapped['destination'] = $batch->default_destination ?? '';
             if (!array_filter($mapped, fn($v) => $v !== '')) { $row->update(['included'=>false,'status'=>'excluded','mapped_values'=>$mapped,'validation_errors'=>[],'validation_warnings'=>[]]); continue; }
+            if (empty($mapped['destination'])) $mapped['destination'] = $batch->default_destination ?? '';
             $counts['detected']++; $errors=[]; $warnings=[];
             foreach (self::FIELDS as $field=>$def) if ($def['required'] && empty($mapped[$field])) $errors[$field] = $def['label'].' is required.';
             if (empty($mapped['destination'])) $errors['destination'] = 'Map a destination column or enter one destination for the whole file.';
-            if (!empty($mapped['phone'])) { $mapped['phone']=$this->phone($mapped['phone']); if (!preg_match('/^\d{7,15}$/',$mapped['phone'])) $errors['phone']='Enter a valid phone number (7–15 digits).'; elseif (!$this->findClient($mapped['phone'])) $errors['phone']='No customer account matches this phone number. Create or verify the customer first.'; }
+            if (!empty($mapped['phone'])) {
+                $mapped['phone']=$this->phone($mapped['phone']);
+                if (!preg_match('/^\d{7,15}$/',$mapped['phone'])) {
+                    $errors['phone']='Enter a valid phone number (7–15 digits).';
+                } else {
+                    $client=$this->findClientForImport($mapped['phone'], $mapped['consignee_name'] ?? '');
+                    if (!$client) $warnings['customer']='A new customer profile will be created when you confirm the import.';
+                    elseif (!$this->phone((string)$client->responsible_mobile)) $warnings['customer']='This phone number will be added to the existing customer profile when you confirm.';
+                }
+            }
             if (!empty($mapped['hawb_number']) && !preg_match('/^[A-Za-z0-9]+(?:[-\/]?[A-Za-z0-9]+)*$/', $mapped['hawb_number'])) $errors['hawb_number']='Parcel code contains invalid characters.';
             if (!empty($mapped['weight']) && $this->number($mapped['weight']) === null) $errors['weight']='Weight must be a number.';
             if (!empty($mapped['pieces']) && (!ctype_digit($mapped['pieces']) || (int)$mapped['pieces'] < 1)) $errors['pieces']='Pieces must be a whole number.';
@@ -288,6 +310,7 @@ class ConsignmentImportController extends Controller
                 }
             }
             $seen[$mapped['hawb_number'] ?? $row->id] = true; $row->update(['mapped_values'=>$mapped,'validation_errors'=>$errors,'validation_warnings'=>$warnings,'status'=>$status]);
+            if (in_array($status,['invalid','conflict'],true)) $row->update(['included'=>false]);
             $counts[$status]++; if ($row->included && in_array($status,['new','update','unchanged'])) $counts['selected']++;
         }
         $batch->update(['summary'=>$counts]);
@@ -295,7 +318,7 @@ class ConsignmentImportController extends Controller
 
     private function shipmentChanges(Shipment $shipment, array $data, ConsignmentImportBatch $batch): array
     {
-        $client = $this->findClient($data['phone']);
+        $client = $this->findClientForImport($data['phone'], $data['consignee_name'] ?? '');
         $checks = [
             'customer' => [(int) $shipment->client_id, (int) optional($client)->id],
             'phone' => [$this->phone((string) $shipment->client_phone), $data['phone']],
@@ -324,9 +347,68 @@ class ConsignmentImportController extends Controller
         ];
         return array_keys(array_filter($checks, fn ($values) => $values[0] !== $values[1]));
     }
-    private function phone(string $value): string { return preg_replace('/\D+/', '', $value); }
+    private function phone(string $value): string
+    {
+        $value = trim($value);
+        if (preg_match('/^\+?\d+\.0+$/', $value)) $value = preg_replace('/\.0+$/', '', $value);
+        return preg_replace('/\D+/', '', $value);
+    }
     private function number($value): ?float { $clean = preg_replace('/[^0-9.\-]/', '', (string) $value); return $clean !== '' && is_numeric($clean) ? (float) $clean : null; }
-    private function findClient(string $phone): ?Client { $digits=$this->phone($phone); return Client::whereRaw("REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(responsible_mobile, ' ', ''), '+', ''), '-', ''), '(', ''), ')', '') = ?", [$digits])->where('is_archived',0)->first(); }
+    private function findClientForImport(string $phone, string $name): ?Client
+    {
+        $phone=$this->phone($phone);
+        $name=$this->normalise($name);
+        if ($name === '' || $phone === '') return null;
+        $nameMatches=Client::whereRaw('LOWER(TRIM(name)) = ?', [$name])->where('is_archived',0)->limit(10)->get();
+        $samePhone=$nameMatches->filter(fn($client)=>$this->phonesMatch($client->responsible_mobile,$phone));
+        if ($samePhone->count() === 1) return $samePhone->first();
+        $withoutPhone=$nameMatches->filter(fn($client)=>$this->phone((string)$client->responsible_mobile) === '');
+        if ($nameMatches->count() === 1 && $withoutPhone->count() === 1) return $withoutPhone->first();
+
+        $normalisedPhone="REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(responsible_mobile, ' ', ''), '+', ''), '-', ''), '(', ''), ')', ''), '.', '')";
+        $phoneMatches=Client::whereRaw("$normalisedPhone LIKE ?", ['%'.substr($phone,-9)])->where('is_archived',0)->limit(20)->get()
+            ->filter(fn($client)=>$this->phonesMatch($client->responsible_mobile,$phone) && $this->normalise($client->name) === $name);
+        return $phoneMatches->count() === 1 ? $phoneMatches->first() : null;
+    }
+    private function phonesMatch($left, $right): bool
+    {
+        $left=$this->phone((string)$left); $right=$this->phone((string)$right);
+        if ($left === '' || $right === '') return false;
+        return $left === $right || (strlen($left) >= 9 && strlen($right) >= 9 && substr($left,-9) === substr($right,-9));
+    }
+    private function resolveClient(array $data, ConsignmentImportBatch $batch): Client
+    {
+        $phone=$this->phone($data['phone']);
+        $name=trim($data['consignee_name']);
+        $client=$this->findClientForImport($phone,$name);
+        if ($client) {
+            if (!$this->phone((string)$client->responsible_mobile)) {
+                $client->update(['responsible_mobile'=>$phone,'responsible_name'=>$client->responsible_name ?: $name,'branch_id'=>$client->branch_id ?: $batch->pickup_branch_id,'updated_by'=>auth()->id()]);
+                if ($client->user_id && ($user=User::find($client->user_id)) && !$this->phone((string)$user->responsible_mobile)) $user->update(['responsible_mobile'=>$phone]);
+            }
+            return $client;
+        }
+        $email='imported+'.$phone.'.'.substr(sha1($this->normalise($name)),0,10).'@newworldcargo.invalid';
+        $user=User::firstOrCreate(['email'=>$email], ['name'=>$name,'password'=>bcrypt(Str::random(40)),'responsible_mobile'=>$phone,'role'=>4,'verified'=>0]);
+        $client=Client::firstOrCreate(['user_id'=>$user->id], ['code'=>0,'name'=>$name,'email'=>$email,'responsible_name'=>$name,'responsible_mobile'=>$phone,'branch_id'=>$batch->pickup_branch_id,'is_archived'=>0,'created_by'=>auth()->id()]);
+        if (!$client->code) $client->update(['code'=>$client->id]);
+        return $client;
+    }
+    private function guessPhoneColumn(ConsignmentImportBatch $batch, array $usedColumns): ?string
+    {
+        $rows=$batch->rows()->where('sheet_name',$batch->selected_sheet)->where('spreadsheet_row','>',$batch->header_row)->orderBy('spreadsheet_row')->limit(30)->get();
+        $columns=array_keys(optional($batch->rows()->where('sheet_name',$batch->selected_sheet)->where('spreadsheet_row',$batch->header_row)->first())->raw_values ?? []);
+        $best=null; $bestScore=0;
+        foreach ($columns as $column) {
+            if (in_array($column,$usedColumns,true)) continue;
+            $values=$rows->pluck('raw_values')->map(fn($values)=>trim((string)($values[$column] ?? '')))->filter(fn($value)=>$value !== '');
+            if ($values->count() < 2) continue;
+            $valid=$values->filter(fn($value)=>preg_match('/^\d{7,15}$/',$this->phone($value)))->count();
+            $score=$valid/$values->count();
+            if ($valid >= 2 && $score > $bestScore) { $best=$column; $bestScore=$score; }
+        }
+        return $bestScore >= .7 ? $best : null;
+    }
     private function normalise($value): string { return strtolower(trim(preg_replace('/[^a-z0-9]+/i',' ',(string)$value))); }
     private function normaliseAll(array $values): array { return array_map(fn($v)=>$this->normalise($v),$values); }
     private function aliases(): array { return array_merge(...array_values(array_map(fn($v)=>$v['aliases'], self::FIELDS))); }
