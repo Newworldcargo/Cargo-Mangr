@@ -47,15 +47,16 @@ class BranchAccessService
 
     /**
      * Resolve the currency that an authenticated user should operate in.
-     * A staff assignment takes precedence over the shipment's owning branch.
-     * Historical Zambian branches with no saved currency use ZMW.
+     * An authenticated user's assignment takes precedence. Authenticated users
+     * without an assignment use the system default unless they explicitly
+     * selected a branch context (for example, a top-admin report filter).
      */
-    public function currencyFor(?User $user, ?Branch $fallbackBranch = null): string
+    public function currencyFor(?User $user, ?Branch $contextBranch = null, bool $useExplicitBranchContext = false): string
     {
-        return $this->currencyContextFor($user, $fallbackBranch)['currency'];
+        return $this->currencyContextFor($user, $contextBranch, $useExplicitBranchContext)['currency'];
     }
 
-    public function currencyContextFor(?User $user, ?Branch $fallbackBranch = null): array
+    public function currencyContextFor(?User $user, ?Branch $contextBranch = null, bool $useExplicitBranchContext = false): array
     {
         $branchId = $this->branchIdFor($user);
         if ($branchId) {
@@ -69,12 +70,12 @@ class BranchAccessService
             ];
         }
 
-        if ($fallbackBranch?->default_currency) {
+        if ((!$user || $useExplicitBranchContext) && $contextBranch?->default_currency) {
             return [
-                'currency' => strtoupper($fallbackBranch->default_currency),
-                'source' => 'shipment_branch',
-                'branch_id' => $fallbackBranch->id,
-                'branch_name' => $fallbackBranch->name,
+                'currency' => strtoupper($contextBranch->default_currency),
+                'source' => $useExplicitBranchContext ? 'selected_branch' : 'shipment_branch',
+                'branch_id' => $contextBranch->id,
+                'branch_name' => $contextBranch->name,
             ];
         }
 
