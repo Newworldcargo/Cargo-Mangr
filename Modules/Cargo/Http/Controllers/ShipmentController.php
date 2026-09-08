@@ -2303,14 +2303,8 @@ class ShipmentController extends Controller
 
     private function shipmentPaymentCurrency(Shipment $shipment): string
     {
-        if (auth()->check() && (int) auth()->user()->role === 3) {
-            $branchCurrency = \Modules\Cargo\Entities\Branch::where('user_id', auth()->id())->value('default_currency');
-            if ($branchCurrency) {
-                return strtoupper($branchCurrency);
-            }
-        }
-
-        return strtoupper($shipment->branch?->default_currency ?: 'ZMW');
+        return app(\Modules\Cargo\Services\BranchAccessService::class)
+            ->currencyFor(auth()->user(), $shipment->branch);
     }
 
     private function shipmentPaymentAmount(Shipment $shipment): float

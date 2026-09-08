@@ -44,6 +44,23 @@ class BranchAccessService
         return null;
     }
 
+    /**
+     * Resolve the currency that an authenticated user should operate in.
+     * A staff assignment takes precedence over the shipment's owning branch.
+     * Historical Zambian branches with no saved currency use ZMW.
+     */
+    public function currencyFor(?User $user, ?Branch $fallbackBranch = null): string
+    {
+        $branchId = $this->branchIdFor($user);
+        if ($branchId) {
+            $currency = Branch::whereKey($branchId)->value('default_currency');
+
+            return strtoupper($currency ?: 'ZMW');
+        }
+
+        return strtoupper($fallbackBranch?->default_currency ?: 'ZMW');
+    }
+
     public function preview(User $user): array
     {
         $branchId = $this->branchIdFor($user);

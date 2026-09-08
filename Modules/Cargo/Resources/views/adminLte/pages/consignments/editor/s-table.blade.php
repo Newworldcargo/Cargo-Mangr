@@ -3,11 +3,9 @@
         use Carbon\Carbon;
         use Illuminate\Support\HtmlString;
 
-        $viewerBranchId = app(\Modules\Cargo\Services\BranchAccessService::class)->branchIdFor(auth()->user());
-        $viewerBranch = $viewerBranchId ? \Modules\Cargo\Entities\Branch::find($viewerBranchId) : null;
-        $viewerCurrency = strtoupper($viewerBranch?->default_currency ?: 'ZMW');
+        $viewerCurrency = app(\Modules\Cargo\Services\BranchAccessService::class)->currencyFor(auth()->user());
         $viewerSymbol = currency_symbol_for($viewerCurrency);
-        $formatShipmentAmount = function ($shipment, string $primaryClass = 'text-dark text-md font-weight-bold', string $secondaryClass = 'text-warning text-sm') use ($viewerCurrency, $viewerSymbol) {
+        $formatShipmentAmount = function ($shipment, string $primaryClass = 'text-dark text-md font-weight-bold') use ($viewerCurrency, $viewerSymbol) {
             $usdAmount = (float) ($shipment->amount_to_be_collected ?: $shipment->shipping_cost ?: 0);
             if ($viewerCurrency === 'USD') {
                 return new HtmlString('<span class="' . e($primaryClass) . '">$' . number_format($usdAmount, 2) . '</span>');
@@ -22,10 +20,7 @@
                 $displayAmount = $rate ? ($usdAmount * (float) $rate) : $usdAmount;
             }
 
-            return new HtmlString(
-                '<span class="' . e($primaryClass) . '">' . e($viewerSymbol) . number_format($displayAmount, 2) . ' ' . e($viewerCurrency) . '</span>' .
-                '<span class="' . e($secondaryClass) . '"> ($' . number_format($usdAmount, 2) . ' USD)</span>'
-            );
+            return new HtmlString('<span class="' . e($primaryClass) . '">' . e($viewerSymbol) . number_format($displayAmount, 2) . ' ' . e($viewerCurrency) . '</span>');
         };
     @endphp
     <div class="row">
@@ -213,7 +208,7 @@
                                     </div>
                                 </div>
                                 <div class="shipment-amount text-end pe-3">
-                                    <div>{!! $formatShipmentAmount($shipment, 'fw-bold text-dark fs-6', 'text-warning small d-block') !!}</div>
+                                    <div>{!! $formatShipmentAmount($shipment, 'fw-bold text-dark fs-6') !!}</div>
                                     <span class="badge {{ $shipment->paid ? 'bg-success' : 'bg-secondary' }} rounded-pill px-2 py-1 mt-1">{{ $shipment->paid ? 'PAID' : 'UNPAID' }}</span>
                                     <div class="text-muted small mt-1">{{ $shipment->created_at->toFormattedDateString() }}</div>
                                 </div>
@@ -258,7 +253,7 @@
                                             @endforeach
                                         </small>
                                     </div>
-                                    <div>{!! $formatShipmentAmount($shipment, 'fw-bold text-dark fs-6 mb-1', 'text-warning small d-block') !!}</div>
+                                    <div>{!! $formatShipmentAmount($shipment, 'fw-bold text-dark fs-6 mb-1') !!}</div>
                                 </div>
                                 <div class="card-footer bg-white border-0 pt-0 pb-3 px-3">
                                     <div class="d-flex justify-content-between align-items-center">

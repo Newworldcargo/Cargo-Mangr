@@ -18,9 +18,7 @@
         || ($user_role != 4 && (auth()->user()->can('confirm-shipment-payment') || auth()->user()->hasRole(['cashier', 'cashiers'])))
     );
     $pendingRefundRequest = $pendingRefundRequest ?? null;
-    $viewerBranchId = app(\Modules\Cargo\Services\BranchAccessService::class)->branchIdFor(auth()->user());
-    $viewerBranch = $viewerBranchId ? \Modules\Cargo\Entities\Branch::find($viewerBranchId) : null;
-    $viewerCurrency = strtoupper($viewerBranch?->default_currency ?: ($shipment->branch?->default_currency ?: 'ZMW'));
+    $viewerCurrency = app(\Modules\Cargo\Services\BranchAccessService::class)->currencyFor(auth()->user(), $shipment->branch);
     $viewerSymbol = currency_symbol_for($viewerCurrency);
     $viewerAmountFromUsd = function ($usdAmount) use ($viewerCurrency) {
         $usdAmount = (float) ($usdAmount ?? 0);
@@ -35,14 +33,11 @@
             ->value('exchange_rate');
         return $rate && $rate > 0 ? round($usdAmount * (float) $rate, 2) : round($usdAmount, 2);
     };
-    $formatViewerAmount = function ($usdAmount, string $primaryClass = '', string $secondaryClass = 'text-muted text-sm') use ($viewerCurrency, $viewerSymbol, $viewerAmountFromUsd) {
+    $formatViewerAmount = function ($usdAmount, string $primaryClass = '') use ($viewerCurrency, $viewerSymbol, $viewerAmountFromUsd) {
         $usdAmount = (float) ($usdAmount ?? 0);
         $displayAmount = $viewerAmountFromUsd($usdAmount);
         $primary = trim($primaryClass) !== '' ? ' class="' . e($primaryClass) . '"' : '';
         $html = '<span' . $primary . '>' . e($viewerSymbol) . number_format($displayAmount, 2) . ($viewerCurrency === 'USD' ? '' : ' ' . e($viewerCurrency)) . '</span>';
-        if ($viewerCurrency !== 'USD') {
-            $html .= '<span class="' . e($secondaryClass) . '"> ($' . number_format($usdAmount, 2) . ' USD)</span>';
-        }
         return new HtmlString($html);
     };
 @endphp
