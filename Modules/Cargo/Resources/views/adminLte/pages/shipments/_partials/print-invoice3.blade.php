@@ -367,8 +367,8 @@
                     <div><span class="info-label">Prev Branch:</span> {{ Modules\Cargo\Entities\Branch::find($shipment->prev_branch)->name ?? 'N/A' }}</div>
                 @endif
                 <div><span class="info-label">Weight:</span> {{ $shipment->total_weight }} KG</div>
-                <div><span class="info-label">Tax:</span> {{ format_price($shipment->tax) }}</div>
-                <div><span class="info-label">Collection:</span> {{ format_price($shipment->amount_to_be_collected ?? 0) }}</div>
+                <div><span class="info-label">Tax:</span> {{ format_shipment_price($shipment->tax, $shipment) }}</div>
+                <div><span class="info-label">Collection:</span> {{ format_shipment_price($shipment->amount_to_be_collected ?? 0, $shipment) }}</div>
             </div>
 
             <div class="summary-column">
@@ -425,11 +425,11 @@
         </div>
         <div class="total-row">
             <div>Tax:</div>
-            <div>{{ format_price($shipment->tax) }}</div>
+            <div>{{ format_shipment_price($shipment->tax, $shipment) }}</div>
         </div>
         <div class="total-row">
             <div>TOTAL:</div>
-            <div>{{ format_price($shipment->amount_to_be_collected ?? 0) }}</div>
+            <div>{{ format_shipment_price($shipment->amount_to_be_collected ?? 0, $shipment) }}</div>
         </div>
     </div>
 

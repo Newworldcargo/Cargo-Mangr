@@ -207,7 +207,7 @@ $d = new DNS1D();
 																<!--end::Table-->
 																<div class="mb-8 d-flex flex-column">
 																	<span class="mb-4 text-dark font-weight-bold">{{ __('cargo::view.total_cost') }}</span>
-																	<span class="text-muted font-weight-bolder font-size-lg">{{format_price($shipment->tax + $shipment->shipping_cost + $shipment->insurance) }}</span>
+																	<span class="text-muted font-weight-bolder font-size-lg">{{ format_shipment_price($shipment->tax + $shipment->shipping_cost + $shipment->insurance, $shipment) }}</span>
 																	<span class="text-muted font-weight-bolder font-size-lg">{{ __('cargo::view.included_tax_insurance') }}</span>
 																</div>
 															</div>

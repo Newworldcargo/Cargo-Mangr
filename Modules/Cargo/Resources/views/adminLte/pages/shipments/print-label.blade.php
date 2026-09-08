@@ -67,14 +67,14 @@ $cash_payment = 'cash_payment';
                                                                         @if ($shipment->amount_to_be_collected && $shipment->amount_to_be_collected  > 0)
 
                                                                             @if($shipment->payment_type == Modules\Cargo\Entities\Shipment::POSTPAID )
-                                                                                {{format_price($shipment->amount_to_be_collected + $shipment->tax + $shipment->shipping_cost + $shipment->insurance)}}
+                                                                                {{ format_shipment_price($shipment->amount_to_be_collected + $shipment->tax + $shipment->shipping_cost + $shipment->insurance, $shipment) }}
                                                                             @else
-                                                                                {{format_price($shipment->amount_to_be_collected)}}
+                                                                                {{ format_shipment_price($shipment->amount_to_be_collected, $shipment) }}
                                                                             @endif
 
                                                                         @else
                                                                             @if($shipment->payment_type == Modules\Cargo\Entities\Shipment::POSTPAID )
-                                                                                {{format_price($shipment->tax + $shipment->shipping_cost + $shipment->insurance)}}
+                                                                                {{ format_shipment_price($shipment->tax + $shipment->shipping_cost + $shipment->insurance, $shipment) }}
                                                                             @else
                                                                                 0
                                                                             @endif
@@ -225,14 +225,14 @@ $cash_payment = 'cash_payment';
                                                                         @if ($shipment->amount_to_be_collected && $shipment->amount_to_be_collected  > 0)
 
                                                                             @if($shipment->payment_type == Modules\Cargo\Entities\Shipment::POSTPAID )
-                                                                                {{format_price($shipment->amount_to_be_collected + $shipment->tax + $shipment->shipping_cost + $shipment->insurance)}}
+                                                                                {{ format_shipment_price($shipment->amount_to_be_collected + $shipment->tax + $shipment->shipping_cost + $shipment->insurance, $shipment) }}
                                                                             @else
-                                                                                {{format_price($shipment->amount_to_be_collected)}}
+                                                                                {{ format_shipment_price($shipment->amount_to_be_collected, $shipment) }}
                                                                             @endif
 
                                                                         @else
                                                                             @if($shipment->payment_type == Modules\Cargo\Entities\Shipment::POSTPAID )
-                                                                                {{format_price($shipment->tax + $shipment->shipping_cost + $shipment->insurance)}}
+                                                                                {{ format_shipment_price($shipment->tax + $shipment->shipping_cost + $shipment->insurance, $shipment) }}
                                                                             @else
                                                                                 0
                                                                             @endif

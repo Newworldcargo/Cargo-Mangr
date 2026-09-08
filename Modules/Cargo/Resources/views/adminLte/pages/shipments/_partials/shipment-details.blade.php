@@ -51,7 +51,7 @@
         </div>
         <div>
             <p class="text-sm text-gray-500">{{ __('cargo::view.tax_duty') }}</p>
-            <p class="font-medium">{{ format_price($shipment->tax) }}</p>
+            <p class="font-medium">{{ format_shipment_price($shipment->tax, $shipment) }}</p>
         </div>
         <!-- New Consignment Fields -->
         <div>

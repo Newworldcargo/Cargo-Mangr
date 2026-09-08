@@ -884,7 +884,7 @@
                                                     </span>
                                                     <div>
                                                         <span class="chbs-meta-title">{{ __('cargo::view.TOTAL_PRICE') }}</span>
-                                                        <span class="chbs-meta-count" id="price">0{{currency_symbol()}}</span>
+                                                        <span class="chbs-meta-count" id="price">0{{ current_branch_currency_symbol() }}</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -896,7 +896,7 @@
                                                     </span>
                                                     <div>
                                                         <span class="chbs-meta-title">{{ __('cargo::view.SHIPPING_COST') }}</span>
-                                                        <span class="chbs-meta-count" id="shipping_cost">{{currency_symbol()}}0</span>
+                                                        <span class="chbs-meta-count" id="shipping_cost">{{ current_branch_currency_symbol() }}0</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -908,7 +908,7 @@
                                                     </span>
                                                     <div>
                                                         <span class="chbs-meta-title">{{ __('cargo::view.TAX_COST') }}</span>
-                                                        <span class="chbs-meta-count" id="tax_duty">{{currency_symbol()}}0</span>
+                                                        <span class="chbs-meta-count" id="tax_duty">{{ current_branch_currency_symbol() }}0</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -920,7 +920,7 @@
                                                     </span>
                                                     <div>
                                                         <span class="chbs-meta-title">{{ __('cargo::view.INSURANCE_COST') }}</span>
-                                                        <span class="chbs-meta-count" id="insurance">{{currency_symbol()}}0</span>
+                                                        <span class="chbs-meta-count" id="insurance">{{ current_branch_currency_symbol() }}0</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -932,7 +932,7 @@
                                                     </span>
                                                     <div>
                                                         <span class="chbs-meta-title">{{ __('cargo::view.TOTAL_COST') }}</span>
-                                                        <span class="chbs-meta-count" id="total_cost">{{currency_symbol()}}0</span>
+                                                        <span class="chbs-meta-count" id="total_cost">{{ current_branch_currency_symbol() }}0</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1709,7 +1709,7 @@
                 var price = {{$mile_price}} ;
                 var tota_price = distance_in_mile.toFixed(2) * price ;
                 $('#in_mile').html(distance_in_mile.toFixed(2) + " MI");
-                $('#price').html(tota_price+"{{currency_symbol()}}");
+                $('#price').html(tota_price+"{{ current_branch_currency_symbol() }}");
                 $('#duration_text').html(duration_text);
             }
             // on submit  display route ,append results and send calculateDistance to ajax request
@@ -1817,4 +1817,3 @@
             }
     </script>
 @endsection
-

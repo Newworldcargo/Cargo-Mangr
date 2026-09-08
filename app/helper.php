@@ -60,6 +60,40 @@ if (!function_exists('convert_currency')) {
         return '$';
     }
 
+    // Currency used for operational shipment amounts. Prefer the logged-in
+    // user's assigned/owned branch, then the shipment branch, then ZMW.
+    function shipment_display_currency($shipment = null, $user = null) {
+        $user = $user ?: auth()->user();
+        $branchId = $user ? app(\Modules\Cargo\Services\BranchAccessService::class)->branchIdFor($user) : null;
+        $branch = $branchId ? \Modules\Cargo\Entities\Branch::find($branchId) : null;
+        if (!$branch && $shipment && $shipment->branch_id) {
+            $branch = $shipment->relationLoaded('branch') ? $shipment->branch : \Modules\Cargo\Entities\Branch::find($shipment->branch_id);
+        }
+        return strtoupper($branch?->default_currency ?: 'ZMW');
+    }
+
+    function convert_usd_to_display_currency($amount, $currency) {
+        $currency = strtoupper($currency ?: 'ZMW');
+        $amount = (float) ($amount ?? 0);
+        if ($currency === 'USD') {
+            return $amount;
+        }
+        $rate = \App\Models\CurrencyExchangeRate::where('from_currency', 'USD')
+            ->where('to_currency', $currency)
+            ->value('exchange_rate');
+        return $rate && $rate > 0 ? $amount * (float) $rate : $amount;
+    }
+
+    function format_shipment_price($amount, $shipment = null, $includeCode = true) {
+        $currency = shipment_display_currency($shipment);
+        $displayAmount = convert_usd_to_display_currency($amount, $currency);
+        return currency_symbol_for($currency) . number_format($displayAmount, 2) . ($includeCode ? ' ' . $currency : '');
+    }
+
+    function current_branch_currency_symbol() {
+        return currency_symbol_for(shipment_display_currency());
+    }
+
 
 function customer_numbers($consignment_id)
 {

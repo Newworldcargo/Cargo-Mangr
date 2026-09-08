@@ -118,7 +118,7 @@
                                         <td>{{$shipment->payment_method_id}} ({{$shipment->getPaymentType()}})</td>
                                         <td>@if($shipment->paid == 1) {{__('cargo::view.paid')}} @else {{ __('cargo::view.pending') }} @endif</td>
                                         <td>@if($shipment->paid == 1) {{$shipment->payment->payment_date ?? ""}} @else - @endif</td>
-                                        <td class="text-right text-primary font-size-h3 font-weight-boldest">{{format_price($shipment->tax + $shipment->shipping_cost + $shipment->insurance) }}<br /><span class="text-muted font-weight-bolder font-size-lg">{{ __('cargo::view.included_tax_insurance') }}</span></td>
+                                        <td class="text-right text-primary font-size-h3 font-weight-boldest">{{ format_shipment_price($shipment->tax + $shipment->shipping_cost + $shipment->insurance, $shipment) }}<br /><span class="text-muted font-weight-bolder font-size-lg">{{ __('cargo::view.included_tax_insurance') }}</span></td>
                                     </tr>
                                 </tbody>
                             </table>
