@@ -17,6 +17,7 @@ use Modules\Cargo\Entities\Package;
 use Modules\Cargo\Entities\PackageShipment;
 use Modules\Cargo\Entities\Shipment;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
 
 class ConsignmentImportController extends Controller
 {
@@ -42,7 +43,7 @@ class ConsignmentImportController extends Controller
 
         $batch = null;
         try {
-            $book = IOFactory::load(Storage::disk('local')->path($path));
+            $book = $this->loadSpreadsheet(Storage::disk('local')->path($path));
             $batch = ConsignmentImportBatch::create([
                 'uuid' => $uuid, 'created_by' => $request->user()->id, 'original_filename' => $file->getClientOriginalName(),
                 'storage_path' => $path, 'shipment_type' => $request->shipment_type,
@@ -73,6 +74,36 @@ class ConsignmentImportController extends Controller
             }
             report($e);
             return back()->withInput()->with('error', 'The file could not be read: '.$e->getMessage());
+        }
+    }
+
+    /**
+     * Load workbooks that use root-relative ZIP member paths while open_basedir
+     * is enabled. PhpSpreadsheet probes those member names with file_exists(),
+     * which raises a warning even though it subsequently reads them from the
+     * workbook archive. Keep open_basedir active and suppress only that probe.
+     */
+    private function loadSpreadsheet(string $path): Spreadsheet
+    {
+        $previousHandler = null;
+        $previousHandler = set_error_handler(function ($severity, $message, $file, $line) use (&$previousHandler) {
+            $isSpreadsheetArchiveProbe = $severity === E_WARNING
+                && strpos($message, 'file_exists(): open_basedir restriction in effect.') === 0
+                && substr(str_replace('\\', '/', $file), -31) === '/PhpSpreadsheet/Shared/File.php';
+
+            if ($isSpreadsheetArchiveProbe) {
+                return true;
+            }
+
+            return $previousHandler
+                ? $previousHandler($severity, $message, $file, $line)
+                : false;
+        });
+
+        try {
+            return IOFactory::load($path);
+        } finally {
+            restore_error_handler();
         }
     }
 
