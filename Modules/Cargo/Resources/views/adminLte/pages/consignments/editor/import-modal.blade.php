@@ -42,6 +42,19 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="form-group mb-4">
+                        <label for="consignment_status" class="font-weight-bold">Consignment Status <span class="text-danger">*</span></label>
+                        <select id="consignment_status" name="consignment_status" class="form-control" required>
+                            <option value="" selected disabled>Choose consignment status</option>
+                            <option value="pending">Pending</option>
+                            <option value="dispatched">Dispatched</option>
+                            <option value="in_transit">In transit</option>
+                            <option value="delivered">Delivered</option>
+                            <option value="canceled">Canceled</option>
+                        </select>
+                        <small class="form-text text-muted">Choose the consignment's current operational status. Delivered is not selected automatically.</small>
+                    </div>
                     
                     <!-- File Upload Section -->
                     <div class="form-group mb-4">
