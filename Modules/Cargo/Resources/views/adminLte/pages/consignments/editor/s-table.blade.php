@@ -8,7 +8,7 @@
         $viewerCurrency = strtoupper($viewerBranch?->default_currency ?: 'ZMW');
         $viewerSymbol = currency_symbol_for($viewerCurrency);
         $formatShipmentAmount = function ($shipment, string $primaryClass = 'text-dark text-md font-weight-bold', string $secondaryClass = 'text-warning text-sm') use ($viewerCurrency, $viewerSymbol) {
-            $usdAmount = (float) ($shipment->amount_to_be_collected ?? 0);
+            $usdAmount = (float) ($shipment->amount_to_be_collected ?: $shipment->shipping_cost ?: 0);
             if ($viewerCurrency === 'USD') {
                 return new HtmlString('<span class="' . e($primaryClass) . '">$' . number_format($usdAmount, 2) . '</span>');
             }
@@ -111,6 +111,7 @@
                             <th><i class="bi bi-cube me-1"></i>Volume</th>
                             <th><i class="bi bi-person me-1"></i> Client</th>
                             <th><i class="bi bi-cube me-1"></i> Package CTN</th>
+                            <th><i class="bi bi-speedometer2 me-1"></i> Weight</th>
                             <th><i class="bi bi-file me-1"></i> Package Information</th>
                             <th><i class="bi bi-telephone me-1"></i> Client Phone</th>
                             <th><i class="bi bi-currency-dollar me-1"></i> Cost</th>
@@ -131,6 +132,7 @@
                                 <td style="background-color: #F5A905;">
                                     <b>{{ Modules\Cargo\Entities\PackageShipment::where('shipment_id', $shipment->id)->sum('qty') }}</b>
                                 </td>
+                                <td>{{ number_format((float) $shipment->total_weight, 2) }} kg</td>
                                 <td>
                                     @foreach (Modules\Cargo\Entities\PackageShipment::where('shipment_id', $shipment->id)->get() as $package)
                                         {{ $package->description }}
@@ -201,6 +203,7 @@
                                     <div class="d-flex flex-wrap gap-3 text-muted small mb-1">
                                         <span><i class="bi bi-person me-1"></i>{{ $shipment->salesman }}</span>
                                         <span><i class="bi bi-telephone me-1"></i>{{ $shipment->client_phone ?? 'No phone' }}</span>
+                                        <span><i class="bi bi-speedometer2 me-1"></i>{{ number_format((float) $shipment->total_weight, 2) }} kg</span>
                                     </div>
                                     <div class="text-muted small mb-1">
                                         <i class="bi bi-file me-1"></i>
@@ -245,6 +248,7 @@
                                         <span class="text-muted small"><i class="bi bi-person me-1"></i>{{ $shipment->salesman }}</span>
                                         <span class="text-muted small"><i class="bi bi-building me-1"></i>Lusaka</span>
                                         <span class="text-muted small"><i class="bi bi-telephone me-1"></i>{{ $shipment->client_phone ?? 'No phone' }}</span>
+                                        <span class="text-muted small"><i class="bi bi-speedometer2 me-1"></i>{{ number_format((float) $shipment->total_weight, 2) }} kg</span>
                                     </div>
                                     <div class="mb-2">
                                         <small class="text-muted">

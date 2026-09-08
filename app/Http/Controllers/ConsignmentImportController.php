@@ -209,7 +209,8 @@ class ConsignmentImportController extends Controller
                     'client_id' => $client->id, 'client_phone' => $data['phone'], 'reciver_name' => $data['consignee_name'], 'reciver_phone' => $data['phone'],
                     'reciver_address' => $data['destination'], 'from_country_id' => $batch->from_country_id, 'from_state_id' => $batch->from_state_id,
                     'to_country_id' => $batch->to_country_id, 'to_state_id' => $batch->to_state_id, 'payment_type' => Shipment::POSTPAID,
-                    'shipping_cost' => $this->number($data['amount'] ?? 0), 'total_weight' => $this->number($data['weight'] ?? 0)];
+                    'shipping_cost' => $this->number($data['amount'] ?? 0), 'amount_to_be_collected' => $this->number($data['amount'] ?? 0),
+                    'total_weight' => $this->number($data['weight'] ?? 0)];
                 if (!$shipment) {
                     $shipment = Shipment::create($shipmentData + ['status_id' => Shipment::PENDING_STATUS, 'type' => Shipment::PICKUP,
                         'shipping_date' => now()->toDateString(), 'client_status' => Shipment::CLIENT_STATUS_CREATED]);
