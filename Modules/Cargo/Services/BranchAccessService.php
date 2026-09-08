@@ -5,6 +5,7 @@ namespace Modules\Cargo\Services;
 use App\Models\User;
 use Modules\Cargo\Entities\Branch;
 use Modules\Cargo\Entities\Staff;
+use Modules\Currency\Entities\Currency;
 
 /**
  * The Cargo module's single source of truth for branch access.
@@ -55,10 +56,20 @@ class BranchAccessService
         if ($branchId) {
             $currency = Branch::whereKey($branchId)->value('default_currency');
 
-            return strtoupper($currency ?: 'ZMW');
+            return strtoupper($currency ?: $this->systemCurrency());
         }
 
-        return strtoupper($fallbackBranch?->default_currency ?: 'ZMW');
+        return strtoupper($fallbackBranch?->default_currency ?: $this->systemCurrency());
+    }
+
+    public function systemCurrency(): string
+    {
+        $currency = Currency::query()
+            ->where('default', 1)
+            ->where('status', 1)
+            ->value('code');
+
+        return strtoupper($currency ?: 'USD');
     }
 
     public function preview(User $user): array

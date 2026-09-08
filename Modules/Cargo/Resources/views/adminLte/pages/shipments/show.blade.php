@@ -25,19 +25,16 @@
         if ($viewerCurrency === 'USD') {
             return round($usdAmount, 2);
         }
-        if ($viewerCurrency === 'ZMW') {
-            return round((float) convert_currency($usdAmount, 'usd', 'zmw'), 2);
-        }
-        $rate = \App\Models\CurrencyExchangeRate::where('from_currency', 'USD')
-            ->where('to_currency', $viewerCurrency)
-            ->value('exchange_rate');
-        return $rate && $rate > 0 ? round($usdAmount * (float) $rate, 2) : round($usdAmount, 2);
+        return round((float) convert_usd_to_display_currency($usdAmount, $viewerCurrency), 2);
     };
     $formatViewerAmount = function ($usdAmount, string $primaryClass = '') use ($viewerCurrency, $viewerSymbol, $viewerAmountFromUsd) {
         $usdAmount = (float) ($usdAmount ?? 0);
         $displayAmount = $viewerAmountFromUsd($usdAmount);
         $primary = trim($primaryClass) !== '' ? ' class="' . e($primaryClass) . '"' : '';
-        $html = '<span' . $primary . '>' . e($viewerSymbol) . number_format($displayAmount, 2) . ($viewerCurrency === 'USD' ? '' : ' ' . e($viewerCurrency)) . '</span>';
+        $html = '<span' . $primary . '>' . e($viewerSymbol) . number_format($displayAmount, 2) . ' ' . e($viewerCurrency) . '</span>';
+        if ($viewerCurrency !== 'USD') {
+            $html .= '<span class="text-muted text-sm d-block">Original bill: $' . number_format($usdAmount, 2) . ' USD</span>';
+        }
         return new HtmlString($html);
     };
 @endphp

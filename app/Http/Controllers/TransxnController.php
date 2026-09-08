@@ -71,11 +71,8 @@ class TransxnController extends Controller
             (int) $request->input('branch_id') ?: null,
             $request->input('scope') === 'self' ? $viewer->id : ((int) $request->input('user_id') ?: null),
         );
-        $branchCurrency = 'ZMW';
-        $viewerBranch = $this->viewerBranch($viewer);
-        if ($viewerBranch) {
-            $branchCurrency = $viewerBranch->default_currency ?? 'ZMW';
-        }
+        $selectedBranch = $selectedScope['selectedBranchId'] ? Branch::find($selectedScope['selectedBranchId']) : null;
+        $branchCurrency = $this->branchAccess->currencyFor($viewer, $selectedBranch);
 
         $scopeQuery = fn ($query) => $this->applyGlobalScope($this->transactionScope->apply($query, $viewer), $selectedScope);
 

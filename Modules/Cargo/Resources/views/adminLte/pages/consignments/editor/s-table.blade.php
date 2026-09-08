@@ -3,24 +3,21 @@
         use Carbon\Carbon;
         use Illuminate\Support\HtmlString;
 
-        $viewerCurrency = app(\Modules\Cargo\Services\BranchAccessService::class)->currencyFor(auth()->user());
-        $viewerSymbol = currency_symbol_for($viewerCurrency);
-        $formatShipmentAmount = function ($shipment, string $primaryClass = 'text-dark text-md font-weight-bold') use ($viewerCurrency, $viewerSymbol) {
+        $currencyContext = app(\Modules\Cargo\Services\BranchAccessService::class);
+        $formatShipmentAmount = function ($shipment, string $primaryClass = 'text-dark text-md font-weight-bold') use ($currencyContext) {
+            $viewerCurrency = $currencyContext->currencyFor(auth()->user(), $shipment->branch);
+            $viewerSymbol = currency_symbol_for($viewerCurrency);
             $usdAmount = (float) ($shipment->amount_to_be_collected ?: $shipment->shipping_cost ?: 0);
             if ($viewerCurrency === 'USD') {
-                return new HtmlString('<span class="' . e($primaryClass) . '">$' . number_format($usdAmount, 2) . '</span>');
+                return new HtmlString('<span class="' . e($primaryClass) . '">$' . number_format($usdAmount, 2) . ' USD</span>');
             }
 
-            if ($viewerCurrency === 'ZMW') {
-                $displayAmount = convert_currency($usdAmount, 'usd', 'zmw');
-            } else {
-                $rate = \App\Models\CurrencyExchangeRate::where('from_currency', 'USD')
-                    ->where('to_currency', $viewerCurrency)
-                    ->value('exchange_rate');
-                $displayAmount = $rate ? ($usdAmount * (float) $rate) : $usdAmount;
-            }
+            $displayAmount = convert_usd_to_display_currency($usdAmount, $viewerCurrency);
 
-            return new HtmlString('<span class="' . e($primaryClass) . '">' . e($viewerSymbol) . number_format($displayAmount, 2) . ' ' . e($viewerCurrency) . '</span>');
+            return new HtmlString(
+                '<span class="' . e($primaryClass) . '">' . e($viewerSymbol) . number_format($displayAmount, 2) . ' ' . e($viewerCurrency) . '</span>' .
+                '<span class="text-muted text-sm d-block">Original bill: $' . number_format($usdAmount, 2) . ' USD</span>'
+            );
         };
     @endphp
     <div class="row">

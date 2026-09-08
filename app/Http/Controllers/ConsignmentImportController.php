@@ -148,17 +148,7 @@ class ConsignmentImportController extends Controller
         if ($request->filled('pickup_branch_id') && $request->filled('destination_branch_id')) {
             $pickupBranch = Branch::findOrFail($request->pickup_branch_id);
             $destinationBranch = Branch::findOrFail($request->destination_branch_id);
-            if (!$pickupBranch->country_id || !$pickupBranch->state_id || !$destinationBranch->country_id || !$destinationBranch->state_id) {
-                throw ValidationException::withMessages(['pickup_branch_id' => 'The selected branches need a country and province/state configured in Branches before they can be used.']);
-            }
-            $batchData += [
-                'branch_id' => $pickupBranch->id,
-                'from_country_id' => $pickupBranch->country_id,
-                'from_state_id' => $pickupBranch->state_id,
-                'to_country_id' => $destinationBranch->country_id,
-                'to_state_id' => $destinationBranch->state_id,
-                'default_destination' => $destinationBranch->address ?: $destinationBranch->name,
-            ];
+            $batchData += $this->branchLocationData($pickupBranch, $destinationBranch);
         }
         $batch->update($batchData);
         $this->syncTargetConsignment($batch);
@@ -425,7 +415,42 @@ class ConsignmentImportController extends Controller
     private function syncTargetConsignment(ConsignmentImportBatch $batch): void
     {
         $target = $batch->consignment_code ? Consignment::where('consignment_code', trim($batch->consignment_code))->first() : null;
-        $batch->update(['mode' => $target ? 'update' : 'create', 'target_consignment_id' => optional($target)->id]);
+        $data = ['mode' => $target ? 'update' : 'create', 'target_consignment_id' => optional($target)->id];
+        if ($target) {
+            $pickupBranch = $batch->pickup_branch_id
+                ? Branch::find($batch->pickup_branch_id)
+                : Branch::find($target->shipments()->whereNotNull('branch_id')->value('branch_id'));
+            $destinationBranch = $batch->destination_branch_id
+                ? Branch::find($batch->destination_branch_id)
+                : Branch::whereRaw('LOWER(TRIM(name)) = ?', [strtolower(trim((string) $target->destination))])->first();
+
+            if ($pickupBranch && $destinationBranch) {
+                $data += [
+                    'pickup_branch_id' => $pickupBranch->id,
+                    'destination_branch_id' => $destinationBranch->id,
+                ] + $this->branchLocationData($pickupBranch, $destinationBranch);
+            }
+            if (!$batch->consignment_status) {
+                $data['consignment_status'] = $target->status;
+            }
+        }
+        $batch->update($data);
+    }
+
+    private function branchLocationData(Branch $pickupBranch, Branch $destinationBranch): array
+    {
+        if (!$pickupBranch->country_id || !$pickupBranch->state_id || !$destinationBranch->country_id || !$destinationBranch->state_id) {
+            throw ValidationException::withMessages(['pickup_branch_id' => 'The selected branches need a country and province/state configured in Branches before they can be used.']);
+        }
+
+        return [
+            'branch_id' => $pickupBranch->id,
+            'from_country_id' => $pickupBranch->country_id,
+            'from_state_id' => $pickupBranch->state_id,
+            'to_country_id' => $destinationBranch->country_id,
+            'to_state_id' => $destinationBranch->state_id,
+            'default_destination' => $destinationBranch->address ?: $destinationBranch->name,
+        ];
     }
     private function guessConsignmentCode(ConsignmentImportBatch $batch, string $sheet): ?string
     {

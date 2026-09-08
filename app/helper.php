@@ -9,43 +9,45 @@ use Modules\Cargo\Entities\Client;
 if (!function_exists('convert_currency')) {
 
     function current_x_rate() {
-        $rate = CurrencyExchangeRate::first();
+        $systemCurrency = app(\Modules\Cargo\Services\BranchAccessService::class)->systemCurrency();
+        $rate = CurrencyExchangeRate::where('from_currency', 'USD')->where('to_currency', $systemCurrency)->first();
         return $rate ? $rate->exchange_rate : 0;
     }
 
     function convert_currency($amount, $from, $to) {
-        $rate = CurrencyExchangeRate::first();
-        if ($rate && $rate->exchange_rate) {
-            return $amount * $rate->exchange_rate;
+        $amount = (float) ($amount ?? 0);
+        $from = strtoupper((string) $from);
+        $to = strtoupper((string) $to);
+        if ($from === $to || $from === '' || $to === '') {
+            return $amount;
         }
 
-        return $amount; // fallback if no rate found
+        $directRate = CurrencyExchangeRate::where('from_currency', $from)->where('to_currency', $to)->value('exchange_rate');
+        if ($directRate && $directRate > 0) {
+            return $amount * (float) $directRate;
+        }
+
+        $inverseRate = CurrencyExchangeRate::where('from_currency', $to)->where('to_currency', $from)->value('exchange_rate');
+        if ($inverseRate && $inverseRate > 0) {
+            return $amount / (float) $inverseRate;
+        }
+
+        if ($from !== 'USD' && $to !== 'USD') {
+            $usdToFrom = CurrencyExchangeRate::where('from_currency', 'USD')->where('to_currency', $from)->value('exchange_rate');
+            $usdToTarget = CurrencyExchangeRate::where('from_currency', 'USD')->where('to_currency', $to)->value('exchange_rate');
+            if ($usdToFrom && $usdToFrom > 0 && $usdToTarget && $usdToTarget > 0) {
+                return ($amount / (float) $usdToFrom) * (float) $usdToTarget;
+            }
+        }
+
+        return $amount;
     }
     // Convert a stored amount (always in ZMW) to the target currency using the
     // currency_exchange_rates table. Keeps the system settings-driven: no
     // hard-coded country or currency logic. ZMW->X uses the stored rate;
     // X->ZMW uses 1/rate. Same-currency returns the amount unchanged.
     function convert_amount_to_branch_currency($amount, $target) {
-        if (!$target || strtoupper($target) === 'ZMW') {
-            return (float) $amount;
-        }
-        $rate = \App\Models\CurrencyExchangeRate::where('from_currency', 'ZMW')
-            ->where('to_currency', strtoupper($target))
-            ->first();
-        if (!$rate) {
-            // try the inverse row
-            $rate = \App\Models\CurrencyExchangeRate::where('from_currency', strtoupper($target))
-                ->where('to_currency', 'ZMW')
-                ->first();
-            if ($rate && $rate->exchange_rate > 0) {
-                return (float) $amount / $rate->exchange_rate;
-            }
-            return (float) $amount;
-        }
-        if ($rate->exchange_rate <= 0) {
-            return (float) $amount;
-        }
-        return (float) ($amount / $rate->exchange_rate);
+        return convert_currency($amount, 'ZMW', $target);
     }
 
     // Currency symbol for display, driven by the currencies table.
@@ -54,34 +56,25 @@ if (!function_exists('convert_currency')) {
         if ($cur && !empty($cur->symbol)) {
             return $cur->symbol;
         }
-        if (strtoupper($code) === 'ZMW') {
-            return 'K';
-        }
-        return '$';
+        return strtoupper($code) === 'USD' ? '$' : '';
     }
 
     // Currency used for operational shipment amounts. Prefer the logged-in
-    // user's assigned/owned branch, then the shipment branch, then ZMW.
+    // user's assigned/owned branch, then the shipment branch, then the
+    // Currency module's configured system default.
     function shipment_display_currency($shipment = null, $user = null) {
         $user = $user ?: auth()->user();
-        $branchId = $user ? app(\Modules\Cargo\Services\BranchAccessService::class)->branchIdFor($user) : null;
-        $branch = $branchId ? \Modules\Cargo\Entities\Branch::find($branchId) : null;
-        if (!$branch && $shipment && $shipment->branch_id) {
-            $branch = $shipment->relationLoaded('branch') ? $shipment->branch : \Modules\Cargo\Entities\Branch::find($shipment->branch_id);
+        $shipmentBranch = null;
+        if ($shipment && $shipment->branch_id) {
+            $shipmentBranch = $shipment->relationLoaded('branch') ? $shipment->branch : \Modules\Cargo\Entities\Branch::find($shipment->branch_id);
         }
-        return strtoupper($branch?->default_currency ?: 'ZMW');
+
+        return app(\Modules\Cargo\Services\BranchAccessService::class)->currencyFor($user, $shipmentBranch);
     }
 
     function convert_usd_to_display_currency($amount, $currency) {
         $currency = strtoupper($currency ?: 'ZMW');
-        $amount = (float) ($amount ?? 0);
-        if ($currency === 'USD') {
-            return $amount;
-        }
-        $rate = \App\Models\CurrencyExchangeRate::where('from_currency', 'USD')
-            ->where('to_currency', $currency)
-            ->value('exchange_rate');
-        return $rate && $rate > 0 ? $amount * (float) $rate : $amount;
+        return convert_currency($amount, 'USD', $currency);
     }
 
     function format_shipment_price($amount, $shipment = null, $includeCode = true) {
