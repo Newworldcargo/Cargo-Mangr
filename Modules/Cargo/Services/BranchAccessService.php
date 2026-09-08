@@ -52,14 +52,38 @@ class BranchAccessService
      */
     public function currencyFor(?User $user, ?Branch $fallbackBranch = null): string
     {
+        return $this->currencyContextFor($user, $fallbackBranch)['currency'];
+    }
+
+    public function currencyContextFor(?User $user, ?Branch $fallbackBranch = null): array
+    {
         $branchId = $this->branchIdFor($user);
         if ($branchId) {
-            $currency = Branch::whereKey($branchId)->value('default_currency');
+            $branch = Branch::find($branchId);
 
-            return strtoupper($currency ?: $this->systemCurrency());
+            return [
+                'currency' => strtoupper($branch?->default_currency ?: $this->systemCurrency()),
+                'source' => 'assigned_branch',
+                'branch_id' => $branch?->id,
+                'branch_name' => $branch?->name,
+            ];
         }
 
-        return strtoupper($fallbackBranch?->default_currency ?: $this->systemCurrency());
+        if ($fallbackBranch?->default_currency) {
+            return [
+                'currency' => strtoupper($fallbackBranch->default_currency),
+                'source' => 'shipment_branch',
+                'branch_id' => $fallbackBranch->id,
+                'branch_name' => $fallbackBranch->name,
+            ];
+        }
+
+        return [
+            'currency' => $this->systemCurrency(),
+            'source' => 'system_default',
+            'branch_id' => null,
+            'branch_name' => null,
+        ];
     }
 
     public function systemCurrency(): string

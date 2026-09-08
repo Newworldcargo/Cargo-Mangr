@@ -1,5 +1,7 @@
 @php
-    $checkoutCurrency = app(\Modules\Cargo\Services\BranchAccessService::class)->currencyFor(auth()->user(), $shipment->branch);
+    $checkoutCurrencyContext = app(\Modules\Cargo\Services\BranchAccessService::class)->currencyContextFor(auth()->user(), $shipment->branch);
+    $checkoutCurrency = $checkoutCurrencyContext['currency'];
+    $checkoutCurrencyLocation = $checkoutCurrencyContext['branch_name'] ?: 'System default';
     $checkoutSymbol = currency_symbol_for($checkoutCurrency);
 @endphp
 <div id="checkoutModal" class="checkout-modal">
@@ -64,6 +66,7 @@
             <div class="wizard-step" id="step2">
                 <h3>Billing Information</h3>
                 <p>Review your shipment details before proceeding.</p>
+                <p><strong>Payment Currency:</strong> {{ $checkoutCurrency }} · {{ $checkoutCurrencyLocation }}</p>
 
                 <div id="shipment-summary">
                     <p><strong>Tracking ID:</strong> <span id="tracking-id"></span></p>

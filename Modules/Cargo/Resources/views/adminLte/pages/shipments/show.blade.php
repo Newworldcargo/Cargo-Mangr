@@ -18,7 +18,9 @@
         || ($user_role != 4 && (auth()->user()->can('confirm-shipment-payment') || auth()->user()->hasRole(['cashier', 'cashiers'])))
     );
     $pendingRefundRequest = $pendingRefundRequest ?? null;
-    $viewerCurrency = app(\Modules\Cargo\Services\BranchAccessService::class)->currencyFor(auth()->user(), $shipment->branch);
+    $viewerCurrencyContext = app(\Modules\Cargo\Services\BranchAccessService::class)->currencyContextFor(auth()->user(), $shipment->branch);
+    $viewerCurrency = $viewerCurrencyContext['currency'];
+    $viewerCurrencyLocation = $viewerCurrencyContext['branch_name'] ?: 'System default';
     $viewerSymbol = currency_symbol_for($viewerCurrency);
     $viewerAmountFromUsd = function ($usdAmount) use ($viewerCurrency) {
         $usdAmount = (float) ($usdAmount ?? 0);
@@ -306,7 +308,13 @@
                                             <path
                                                 d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2" />
                                         </svg>
-                                        <p class="mb-0 fw-medium">Are you sure you want to mark this shipment as paid?</p>
+                                        <div>
+                                            <p class="mb-1 fw-medium">Are you sure you want to mark this shipment as paid?</p>
+                                            <small class="text-muted d-block">Payment currency: <strong>{{ $paymentCurrency }}</strong> · {{ $viewerCurrencyLocation }}</small>
+                                            @if($paymentCurrency !== 'USD')
+                                                <small class="text-muted d-block">Original imported bill: <strong>${{ number_format($baseUsdAmount, 2) }} USD</strong></small>
+                                            @endif
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="card border-0 shadow-sm rounded-3 p-4 mb-4" style="background-color: white;">
