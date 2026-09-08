@@ -159,10 +159,6 @@ class ConsignmentImportController extends Controller
         if ($headerChanged) {
             $batch->rows()->where('sheet_name', $batch->selected_sheet)->update(['included' => false]);
             $batch->rows()->where('sheet_name', $batch->selected_sheet)->where('spreadsheet_row', '>=', $batch->data_start_row)->update(['included' => true]);
-        } else {
-            $included = $request->input('included', []);
-            $batch->rows()->where('sheet_name', $batch->selected_sheet)->where('spreadsheet_row', '>=', $batch->data_start_row)->update(['included' => false]);
-            if ($included) $batch->rows()->whereIn('id', array_keys($included))->update(['included' => true]);
         }
         $this->validateRows($batch->fresh());
         return redirect()->route('consignment.import.preview', $batch->uuid)->with('success', 'Preview updated. No records have been imported.');
@@ -175,6 +171,11 @@ class ConsignmentImportController extends Controller
         foreach (['consignment_code','pickup_branch_id','destination_branch_id','branch_id','from_country_id','from_state_id','to_country_id','to_state_id'] as $field) abort_unless($batch->{$field}, 422, 'Enter the consignment code and choose pickup and destination branches before importing.');
         $this->assertBranchAllowed((int) $batch->pickup_branch_id);
         $this->assertBranchAllowed((int) $batch->destination_branch_id);
+        $eligibleRows=$batch->rows()->whereIn('status',['new','update','unchanged']);
+        $eligibleIds=$eligibleRows->pluck('id')->all();
+        $selectedIds=array_values(array_intersect($eligibleIds,array_map('intval',array_keys($request->input('included',[])))));
+        $eligibleRows->update(['included'=>false]);
+        if ($selectedIds) $batch->rows()->whereIn('id',$selectedIds)->update(['included'=>true]);
         $this->validateRows($batch->fresh());
         $invalidSelected = $batch->rows()->where('included', true)->whereIn('status', ['invalid','conflict'])->count();
         abort_if($invalidSelected > 0, 422, 'Fix or exclude every invalid and conflicting selected row before confirming.');
