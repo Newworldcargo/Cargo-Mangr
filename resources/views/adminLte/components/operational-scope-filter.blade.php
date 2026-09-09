@@ -33,7 +33,7 @@
             .operational-scope-filter .scope-filter-actions .btn { flex: 1; }
         }
     </style>
-    <script src="{{ asset('js/operational-scope-filter.js') }}" defer></script>
+    <script src="{{ asset('js/operational-scope-filter.js') }}?v=20260909-2" defer></script>
 @endonce
 
 <form method="GET" action="{{ $scopeFilterAction }}" class="operational-scope-filter" data-operational-scope-filter>

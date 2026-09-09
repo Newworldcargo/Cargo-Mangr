@@ -9,17 +9,29 @@
             var branch = form.querySelector('[data-scope-branch]');
             var user = form.querySelector('[data-scope-user]');
             var self = form.querySelector('[data-scope-self]');
+            var submitting = false;
             var submit = function () {
-                if (typeof form.requestSubmit === 'function') form.requestSubmit();
-                else form.submit();
+                if (submitting) return;
+                submitting = true;
+                window.setTimeout(function () {
+                    if (typeof form.requestSubmit === 'function') form.requestSubmit();
+                    else form.submit();
+                }, 0);
+            };
+            var selectChanged = function () {
+                if (self) self.checked = false;
+                submit();
             };
 
             [branch, user].forEach(function (select) {
                 if (!select) return;
-                select.addEventListener('change', function () {
-                    if (self) self.checked = false;
-                    submit();
-                });
+                select.addEventListener('change', selectChanged);
+
+                // Select2 dispatches through jQuery and does not consistently
+                // reach native addEventListener handlers in older jQuery builds.
+                if (window.jQuery) {
+                    window.jQuery(select).on('change.operationalScopeFilter select2:select.operationalScopeFilter', selectChanged);
+                }
             });
 
             if (self) {
