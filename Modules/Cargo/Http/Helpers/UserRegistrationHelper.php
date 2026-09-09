@@ -21,7 +21,13 @@ class UserRegistrationHelper{
 	public function NewUser($data ,$roles = null, $permissions = null){
         $user = $this->user;
 
-		$data['password'] = bcrypt($data['password']);
+        if (!empty($data['password'])) {
+            $data['password'] = bcrypt($data['password']);
+        } else {
+            // Keep an existing account's password when an edit form leaves the
+            // optional password field blank.
+            unset($data['password']);
+        }
         $token = Str::random(60);
         $data['remember_token'] = hash('sha256', $token);
         $user->fill($data);
