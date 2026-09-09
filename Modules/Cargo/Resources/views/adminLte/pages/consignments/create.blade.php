@@ -196,13 +196,13 @@
                             </div>
 
                             <div>
-                                <label for="cargo_date" class="block text-sm font-medium text-gray-700 mb-1">Cargo Date</label>
+                                <label for="cargo_date" class="block text-sm font-medium text-gray-700 mb-1">Consignment Date</label>
                                 <div class="flex">
                                     <span class="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-yellow-400 text-white text-sm">
                                         <i class="fas fa-calendar-check"></i>
                                     </span>
-                                    <input type="date" id="cargo_date" name="cargo_date"
-                                        class="border-blue-500 flex-1 block w-full rounded-r-md sm:text-sm border-gray-300">
+                                    <input type="date" id="cargo_date" name="cargo_date" value="{{ old('cargo_date', now()->toDateString()) }}"
+                                        class="border-blue-500 flex-1 block w-full rounded-r-md sm:text-sm border-gray-300" required>
                                 </div>
                             </div>
 

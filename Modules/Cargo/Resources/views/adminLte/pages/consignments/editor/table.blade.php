@@ -123,7 +123,7 @@
             <th class="px-6 py-3 font-semibold tracking-wider text-left">CONSIGNEE</th>
             <th class="px-6 py-3 font-semibold tracking-wider text-left">SOURCE</th>
             <th class="px-6 py-3 font-semibold tracking-wider text-left">DESTINATION</th>
-            <th class="px-6 py-3 font-semibold tracking-wider text-left">UPDATED</th>
+            <th class="px-6 py-3 font-semibold tracking-wider text-left">CONSIGNMENT DATE</th>
             <th class="px-6 py-3 font-semibold tracking-wider text-left">STATUS</th>
             <th class="px-6 py-3 font-semibold tracking-wider text-center">ACTIONS</th>
         </tr>
@@ -188,7 +188,7 @@
                 {{ $destinationDisplay }}
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                {{ $consignment->updated_at->toFormattedDateString() }}
+                {{ ($consignment->cargo_date ?: $consignment->created_at)->toFormattedDateString() }}
             </td>
             <td class="px-6 py-4 whitespace-nowrap">
                 @if($consignment->status == 'delivered')
@@ -276,7 +276,9 @@
           $sourceValue = $normalize($sourceDisplay);
           $destinationValue = $normalize($destinationDisplay);
           $cargoType = $normalize($consignment->cargo_type ?? '');
-          $updatedAtFormatted = $consignment->updated_at ? $consignment->updated_at->toFormattedDateString() : 'N/A';
+          $consignmentDateFormatted = ($consignment->cargo_date ?: $consignment->created_at)
+              ? ($consignment->cargo_date ?: $consignment->created_at)->toFormattedDateString()
+              : 'N/A';
       @endphp
       <div class="consignment-visual-item flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 px-2"
         data-status="{{ $statusValue }}"
@@ -312,7 +314,7 @@
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm text-gray-600">
             <div><span class="font-semibold">Consignee:</span> {{ $consignment->name }}</div>
             <div><span class="font-semibold">Parcels:</span> {{ $consignment->shipment_count ?? 'Unspecified' }}</div>
-            <div><span class="font-semibold">Updated:</span> {{ $updatedAtFormatted }}</div>
+            <div><span class="font-semibold">Consignment date:</span> {{ $consignmentDateFormatted }}</div>
             <div><span class="font-semibold">Source:</span> {{ $sourceDisplay }}</div>
             <div><span class="font-semibold">Destination:</span> {{ $destinationDisplay }}</div>
           </div>
@@ -407,7 +409,9 @@
             $sourceValue = $normalize($sourceDisplay);
             $destinationValue = $normalize($destinationDisplay);
             $cargoType = $normalize($consignment->cargo_type ?? '');
-            $updatedAtFormatted = $consignment->updated_at ? $consignment->updated_at->toFormattedDateString() : 'N/A';
+            $consignmentDateFormatted = ($consignment->cargo_date ?: $consignment->created_at)
+                ? ($consignment->cargo_date ?: $consignment->created_at)->toFormattedDateString()
+                : 'N/A';
         @endphp
         <div class="consignment-visual-item consignment-grid-card border border-gray-200 rounded-lg shadow-sm p-4 bg-white"
           data-status="{{ $statusValue }}"
@@ -455,7 +459,7 @@
             <div class="flex justify-between"><span class="font-semibold">Parcels:</span><span>{{ $consignment->shipment_count ?? 'Unspecified' }}</span></div>
             <div class="flex justify-between"><span class="font-semibold">Source:</span><span>{{ $sourceDisplay }}</span></div>
             <div class="flex justify-between"><span class="font-semibold">Destination:</span><span>{{ $destinationDisplay }}</span></div>
-            <div class="flex justify-between"><span class="font-semibold">Updated:</span><span>{{ $updatedAtFormatted }}</span></div>
+            <div class="flex justify-between"><span class="font-semibold">Consignment date:</span><span>{{ $consignmentDateFormatted }}</span></div>
           </div>
           <div class="mt-4 flex flex-wrap gap-2">
             @can('edit-consignments')

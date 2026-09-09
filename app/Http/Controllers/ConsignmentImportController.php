@@ -42,6 +42,7 @@ class ConsignmentImportController extends Controller
         $request->validate([
             'shipment_type' => ['required', 'in:air,sea'],
             'consignment_status' => ['required', Rule::in(self::CONSIGNMENT_STATUSES)],
+            'consignment_date' => ['required', 'date'],
             'excel_file' => ['required', 'file', 'mimes:xlsx,xls,csv', 'max:10240'],
         ]);
         $file = $request->file('excel_file');
@@ -55,6 +56,7 @@ class ConsignmentImportController extends Controller
                 'uuid' => $uuid, 'created_by' => $request->user()->id, 'original_filename' => $file->getClientOriginalName(),
                 'storage_path' => $path, 'shipment_type' => $request->shipment_type,
                 'consignment_status' => $request->consignment_status,
+                'consignment_date' => $request->consignment_date,
             ]);
             $firstSheet = null;
             foreach ($book->getWorksheetIterator() as $sheet) {
@@ -135,6 +137,7 @@ class ConsignmentImportController extends Controller
             'header_row' => ['required', 'integer', 'min:1'], 'data_start_row' => ['required', 'integer', 'min:1'],
             'consignment_code' => ['nullable', 'string', 'max:255'],
             'consignment_status' => ['required', Rule::in(self::CONSIGNMENT_STATUSES)],
+            'consignment_date' => ['required', 'date'],
             'pickup_branch_id' => ['nullable', 'integer', Rule::in($this->allowedBranches()->pluck('id')->all())],
             'destination_branch_id' => ['nullable', 'integer', Rule::in($this->allowedBranches()->pluck('id')->all())],
             'mapping' => ['array'],
@@ -154,7 +157,7 @@ class ConsignmentImportController extends Controller
         }
         $headerChanged = $batch->selected_sheet !== $request->selected_sheet || (int) $batch->header_row !== (int) $request->header_row;
         $phoneMappingChanged = ($batch->mappings['phone'] ?? null) !== ($requestedMappings['phone'] ?? null);
-        $batchData = $request->only('selected_sheet','header_row','data_start_row','consignment_code','consignment_status','pickup_branch_id','destination_branch_id');
+        $batchData = $request->only('selected_sheet','header_row','data_start_row','consignment_code','consignment_status','consignment_date','pickup_branch_id','destination_branch_id');
         if ($request->filled('pickup_branch_id') && $request->filled('destination_branch_id')) {
             $pickupBranch = Branch::findOrFail($request->pickup_branch_id);
             $destinationBranch = Branch::findOrFail($request->destination_branch_id);
@@ -197,6 +200,7 @@ class ConsignmentImportController extends Controller
         $missingSetup = collect([
             'consignment/container code' => $batch->consignment_code,
             'consignment status' => $batch->consignment_status,
+            'consignment date' => $batch->consignment_date,
             'pickup branch' => $batch->pickup_branch_id,
             'destination branch' => $batch->destination_branch_id,
             'pickup branch location' => $batch->from_country_id && $batch->from_state_id,
@@ -230,10 +234,11 @@ class ConsignmentImportController extends Controller
             if (!$consignment) {
                 $consignment = Consignment::create(['consignment_code' => $batch->consignment_code, 'name' => 'Imported consignment',
                     'source' => $pickupBranch->name, 'destination' => $destinationBranch->name, 'status' => $batch->consignment_status, 'cargo_type' => $batch->shipment_type,
-                    'mawb_num' => $first['mawb_num'] ?? null]);
+                    'cargo_date' => $batch->consignment_date, 'mawb_num' => $first['mawb_num'] ?? null]);
             } else {
                 $consignment->update(['source' => $pickupBranch->name, 'destination' => $destinationBranch->name, 'status' => $batch->consignment_status,
-                    'cargo_type' => $batch->shipment_type, 'mawb_num' => $first['mawb_num'] ?? $consignment->mawb_num]);
+                    'cargo_type' => $batch->shipment_type, 'cargo_date' => $batch->consignment_date,
+                    'mawb_num' => $first['mawb_num'] ?? $consignment->mawb_num]);
             }
             $ids = []; $created = 0; $updated = 0; $unchanged = 0;
             foreach ($rows as $row) {
@@ -253,10 +258,10 @@ class ConsignmentImportController extends Controller
                     'reciver_address' => $data['destination'], 'from_country_id' => $batch->from_country_id, 'from_state_id' => $batch->from_state_id,
                     'to_country_id' => $batch->to_country_id, 'to_state_id' => $batch->to_state_id, 'payment_type' => Shipment::POSTPAID,
                     'shipping_cost' => $amount, 'amount_to_be_collected' => $amount,
-                    'total_weight' => $weight];
+                    'total_weight' => $weight, 'shipping_date' => $batch->consignment_date->toDateString()];
                 if (!$shipment) {
                     $shipment = Shipment::create($shipmentData + ['status_id' => Shipment::PENDING_STATUS, 'type' => Shipment::PICKUP,
-                        'shipping_date' => now()->toDateString(), 'client_status' => Shipment::CLIENT_STATUS_CREATED]);
+                        'client_status' => Shipment::CLIENT_STATUS_CREATED]);
                     PackageShipment::create(['package_id' => $package->id, 'shipment_id' => $shipment->id, 'description' => $data['description'] ?? null,
                         'weight' => $weight, 'qty' => $pieces]);
                     $created++;
@@ -484,6 +489,8 @@ class ConsignmentImportController extends Controller
             'destination' => [trim((string) $shipment->reciver_address), trim((string) $data['destination'])],
             'amount' => [(float) $shipment->shipping_cost, (float) ($this->number($data['amount'] ?? 0) ?? 0)],
             'weight' => [(float) $shipment->total_weight, (float) ($this->number($data['weight'] ?? 0) ?? 0)],
+            'shipping date' => [substr((string) $shipment->shipping_date, 0, 10),
+                optional($batch->consignment_date)->format('Y-m-d')],
         ];
         if ($batch->pickup_branch_id && $batch->destination_branch_id) {
             $destinationBranch = Branch::find($batch->destination_branch_id);

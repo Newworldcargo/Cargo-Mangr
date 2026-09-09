@@ -42,7 +42,14 @@ class Consignment extends Model
 
     protected $casts = [
         'created_at' => 'datetime',
-        'updated_at' => 'datetime'
+        'updated_at' => 'datetime',
+        'cargo_date' => 'date',
+        'date' => 'date',
+        'departure_date' => 'date',
+        'arrival_date' => 'date',
+        'eta' => 'date',
+        'eta_dar' => 'date',
+        'eta_lun' => 'date',
     ];
 
     public function getFormattedCreatedAtAttribute()

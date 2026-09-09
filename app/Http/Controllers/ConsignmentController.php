@@ -40,6 +40,7 @@ class ConsignmentController extends Controller
     {
         $consignments = Consignment::query()
             ->withCount('shipments')
+            ->orderByRaw('COALESCE(cargo_date, DATE(created_at)) DESC')
             ->orderByDesc('created_at')
             ->paginate(200);
 
@@ -1050,6 +1051,7 @@ class ConsignmentController extends Controller
                 'consignee' => 'nullable|string|max:255',
                 'job_num' => 'nullable|string|max:255',
                 'mawb_num' => 'nullable|string|max:255',
+                'cargo_date' => 'required|date',
             ]);
 
             Consignment::create($request->all());
@@ -1110,7 +1112,7 @@ class ConsignmentController extends Controller
                 'consignee' => 'nullable|string',
                 'mawb_num' => 'nullable|string',
                 'eta' => 'nullable|date',
-                'cargo_date' => 'nullable|date',
+                'cargo_date' => 'required|date',
                 'job_num' => 'nullable|string|nullable',
                 'cargo_type' => 'nullable|string',
                 'eta_dar' => 'nullable|date',

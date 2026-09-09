@@ -55,6 +55,13 @@
                         </select>
                         <small class="form-text text-muted">Choose the consignment's current operational status. Delivered is not selected automatically.</small>
                     </div>
+
+                    <div class="form-group mb-4">
+                        <label for="import_consignment_date" class="font-weight-bold">Consignment Date <span class="text-danger">*</span></label>
+                        <input type="date" id="import_consignment_date" name="consignment_date" class="form-control"
+                            value="{{ old('consignment_date', now()->toDateString()) }}" required>
+                        <small class="form-text text-muted">Choose the actual consignment date. You can select an earlier date when entering historical cargo.</small>
+                    </div>
                     
                     <!-- File Upload Section -->
                     <div class="form-group mb-4">
