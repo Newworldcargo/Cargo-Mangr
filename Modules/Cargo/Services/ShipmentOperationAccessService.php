@@ -3,6 +3,7 @@
 namespace Modules\Cargo\Services;
 
 use App\Models\User;
+use Modules\Cargo\Entities\Branch;
 use Modules\Cargo\Entities\Client;
 use Modules\Cargo\Entities\Driver;
 use Modules\Cargo\Entities\Shipment;
@@ -73,7 +74,21 @@ class ShipmentOperationAccessService
                 && in_array($permission, ['received-shipments', 'deliverd-shipments'], true);
         }
 
-        if ($this->branches->branchIdFor($user) !== (int) $shipment->branch_id) {
+        $assignedBranchId = $this->branches->branchIdFor($user);
+        $operationalBranchIds = [(int) $shipment->branch_id];
+
+        // A payment may be collected at the branch where cargo originated or
+        // at the branch receiving it. Shared shipment visibility alone is not
+        // enough: the user must still be assigned to one of those branches and
+        // hold the payment permission below.
+        if ($permission === 'confirm-shipment-payment') {
+            $destinationBranchId = $this->destinationBranchId($shipment);
+            if ($destinationBranchId) {
+                $operationalBranchIds[] = $destinationBranchId;
+            }
+        }
+
+        if (!$assignedBranchId || !in_array($assignedBranchId, array_unique($operationalBranchIds), true)) {
             return false;
         }
 
@@ -112,5 +127,22 @@ class ShipmentOperationAccessService
     private function hasPermission(User $user, string $permission): bool
     {
         return $user->can('manage-shipments') || $user->can($permission);
+    }
+
+    private function destinationBranchId(Shipment $shipment): ?int
+    {
+        if (!$shipment->to_country_id) {
+            return null;
+        }
+
+        $query = Branch::query()
+            ->where('country_id', $shipment->to_country_id)
+            ->where('is_archived', 0);
+
+        if ($shipment->to_state_id) {
+            $query->where('state_id', $shipment->to_state_id);
+        }
+
+        return ($branchId = $query->value('id')) ? (int) $branchId : null;
     }
 }
