@@ -45,10 +45,10 @@
 
         <div class="card mb-3"><div class="card-header"><strong>2. Consignment details</strong><span class="text-muted ml-2">These values apply to the whole uploaded table.</span></div><div class="card-body">
             <div class="row">
-                <div class="col-md-4 form-group"><label>Consignment / container code <span class="text-danger">*</span></label><input name="consignment_code" value="{{ $batch->consignment_code }}" class="form-control" placeholder="e.g. D032"></div>
+                <div class="col-md-4 form-group"><label>Consignment / container code <span class="text-danger">*</span></label><input name="consignment_code" value="{{ $batch->consignment_code }}" class="form-control" placeholder="e.g. D032" required></div>
                 <div class="col-md-4 form-group"><label>Consignment status <span class="text-danger">*</span></label><select name="consignment_status" class="form-control" required><option value="">Choose status</option><option value="pending" {{ $batch->consignment_status === 'pending' ? 'selected' : '' }}>Pending</option><option value="dispatched" {{ $batch->consignment_status === 'dispatched' ? 'selected' : '' }}>Dispatched</option><option value="in_transit" {{ $batch->consignment_status === 'in_transit' ? 'selected' : '' }}>In transit</option><option value="delivered" {{ $batch->consignment_status === 'delivered' ? 'selected' : '' }}>Delivered</option><option value="canceled" {{ $batch->consignment_status === 'canceled' ? 'selected' : '' }}>Canceled</option></select><small class="text-muted">The current status of the whole consignment.</small></div>
-                <div class="col-md-4 form-group"><label>Pickup branch <span class="text-danger">*</span></label><select name="pickup_branch_id" class="form-control"><option value="">Choose pickup branch</option>@foreach($branches as $branch)<option value="{{ $branch->id }}" {{ $batch->pickup_branch_id == $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>@endforeach</select><small class="text-muted">Where this consignment starts.</small></div>
-                <div class="col-md-4 form-group"><label>Destination branch <span class="text-danger">*</span></label><select name="destination_branch_id" class="form-control"><option value="">Choose destination branch</option>@foreach($branches as $branch)<option value="{{ $branch->id }}" {{ $batch->destination_branch_id == $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>@endforeach</select><small class="text-muted">Where this consignment is going.</small></div>
+                <div class="col-md-4 form-group"><label>Pickup branch <span class="text-danger">*</span></label><select name="pickup_branch_id" class="form-control" required><option value="">Choose pickup branch</option>@foreach($branches as $branch)<option value="{{ $branch->id }}" {{ $batch->pickup_branch_id == $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>@endforeach</select><small class="text-muted">Where this consignment starts.</small></div>
+                <div class="col-md-4 form-group"><label>Destination branch <span class="text-danger">*</span></label><select name="destination_branch_id" class="form-control" required><option value="">Choose destination branch</option>@foreach($branches as $branch)<option value="{{ $branch->id }}" {{ $batch->destination_branch_id == $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>@endforeach</select><small class="text-muted">Where this consignment is going.</small></div>
             </div>
         </div></div>
 
@@ -57,11 +57,12 @@
                 <div class="col-md-4 form-group"><label>{{ $definition['label'] }} @if($definition['required'])<span class="text-danger">*</span>@endif</label><select class="form-control" name="mapping[{{ $field }}]"><option value="">Not mapped</option>@foreach($header as $column => $heading)@if(trim((string) $heading) !== '')<option value="{{ $column }}" {{ ($batch->mappings[$field] ?? '') === $column ? 'selected' : '' }}>{{ $heading }} (Column {{ $column }})</option>@endif @endforeach</select></div>
             @endforeach
         </div><div class="alert alert-warning mb-0"><strong>Phone number is required.</strong> A file without a phone-number column cannot be confirmed.</div></div></div>
-        @if($batch->status !== 'completed')<div class="mb-3 text-right"><button class="btn btn-primary px-4">Save and refresh preview</button></div>@endif
+        @if($batch->status !== 'completed')<div class="mb-3 text-right"><button class="btn btn-primary px-4">Save consignment details & refresh preview</button></div>@endif
     </form>
 
     @php($readyCount = ($batch->summary['new'] ?? 0) + ($batch->summary['update'] ?? 0) + ($batch->summary['unchanged'] ?? 0))
     @php($selectReadyByDefault = ($batch->summary['selected'] ?? 0) < 1)
+    @php($setupComplete = $batch->consignment_code && $batch->consignment_status && $batch->pickup_branch_id && $batch->destination_branch_id && $batch->from_country_id && $batch->from_state_id && $batch->to_country_id && $batch->to_state_id)
     @php($removableCount = $batch->status === 'completed' ? $rows->filter(fn($row) => $row->status === 'imported' && $row->import_action === 'created' && $row->shipment_id)->count() : 0)
     <form method="POST" action="{{ $batch->status === 'completed' ? route('consignment.import.rows.remove', $batch->uuid) : route('consignment.import.confirm', $batch->uuid) }}" @if($batch->status === 'completed') data-confirm-message="Remove the selected shipments? Only newly created, unused shipments will be deleted. This cannot be undone." @endif>
         @csrf
@@ -149,9 +150,12 @@
             </div>
         </div>
         @if($batch->status !== 'completed')
+            @if(!$setupComplete)
+                <div class="alert alert-warning mt-3 mb-2"><strong>Save the consignment details first.</strong> Enter the container code and choose both branches in section 2, then click “Save consignment details & refresh preview”.</div>
+            @endif
             <div class="mt-3 d-flex flex-wrap justify-content-end">
                 <button type="submit" name="action" value="refresh" class="btn btn-outline-primary px-4 mr-2 mb-2">Apply phone corrections</button>
-                <button type="submit" class="btn btn-success px-4 mb-2" {{ $readyCount < 1 ? 'disabled' : '' }}>{{ $batch->mode === 'update' ? 'Confirm update' : 'Confirm import' }} ({{ $readyCount }} ready)</button>
+                <button type="submit" class="btn btn-success px-4 mb-2" {{ $readyCount < 1 || !$setupComplete ? 'disabled' : '' }}>{{ $batch->mode === 'update' ? 'Confirm update' : 'Confirm import' }} ({{ $readyCount }} ready)</button>
             </div>
         @elseif($removableCount > 0)
             <div class="mt-3 d-flex flex-wrap justify-content-end">

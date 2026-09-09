@@ -194,7 +194,17 @@ class ConsignmentImportController extends Controller
             return redirect()->route('consignment.import.preview', $batch->uuid)
                 ->with('success', 'Phone corrections applied. Review the updated validation before importing.');
         }
-        foreach (['consignment_code','consignment_status','pickup_branch_id','destination_branch_id','branch_id','from_country_id','from_state_id','to_country_id','to_state_id'] as $field) abort_unless($batch->{$field}, 422, 'Enter the consignment code, choose its status, and choose pickup and destination branches before importing.');
+        $missingSetup = collect([
+            'consignment/container code' => $batch->consignment_code,
+            'consignment status' => $batch->consignment_status,
+            'pickup branch' => $batch->pickup_branch_id,
+            'destination branch' => $batch->destination_branch_id,
+            'pickup branch location' => $batch->from_country_id && $batch->from_state_id,
+            'destination branch location' => $batch->to_country_id && $batch->to_state_id,
+        ])->filter(fn($value) => !$value)->keys()->all();
+        if ($missingSetup) {
+            throw ValidationException::withMessages(['import_setup' => 'Complete and save the consignment details before importing. Missing: '.implode(', ', $missingSetup).'.']);
+        }
         $this->assertBranchAllowed((int) $batch->pickup_branch_id);
         $this->assertBranchAllowed((int) $batch->destination_branch_id);
         $eligibleRows=$batch->rows()->whereIn('status',['new','update','unchanged']);
@@ -688,11 +698,18 @@ class ConsignmentImportController extends Controller
     }
     private function guessConsignmentCode(ConsignmentImportBatch $batch, string $sheet): ?string
     {
-        foreach ($batch->rows()->where('sheet_name', $sheet)->orderBy('spreadsheet_row')->limit(30)->get() as $row) {
+        $rows = $batch->rows()->where('sheet_name', $sheet)->orderBy('spreadsheet_row')->limit(30)->get();
+        foreach ($rows as $row) {
             $values = $row->raw_values; $columns = array_keys($values);
             foreach ($columns as $index => $column) {
                 if (!in_array($this->normalise($values[$column]), ['job no','job number','consignment code','container','container no','container number'], true)) continue;
                 for ($next = $index + 1; $next < count($columns); $next++) if (trim((string) $values[$columns[$next]]) !== '') return trim((string) $values[$columns[$next]]);
+            }
+        }
+        foreach ($rows->where('spreadsheet_row', '<', $batch->header_row ?: 31) as $row) {
+            foreach ($row->raw_values as $value) {
+                $candidate = strtoupper(trim((string) $value));
+                if (preg_match('/^[A-Z]{2,}[0-9]+[A-Z]*$/', $candidate)) return $candidate;
             }
         }
         return null;
