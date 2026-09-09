@@ -41,6 +41,7 @@ class AuthController extends PortalController
         $identifier = trim($request->input('identifier'));
         $user = User::where('email', $identifier)
             ->orWhere('responsible_mobile', $identifier)
+            ->orWhere('secondary_mobile', $identifier)
             ->first();
 
         if (!$user || !Hash::check($request->input('password'), $user->password)) {

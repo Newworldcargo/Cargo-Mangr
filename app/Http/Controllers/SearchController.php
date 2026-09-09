@@ -185,6 +185,7 @@ class SearchController extends Controller
             $query->where(function($q) use ($term) {
                 $q->where('code', 'LIKE', "%{$term}%") // tracking number
                   ->orWhere('client_phone', 'LIKE', "%{$term}%")
+                  ->orWhere('client_phone_2', 'LIKE', "%{$term}%")
                   ->orWhere('client_address', 'LIKE', "%{$term}%")
                   ->orWhere('shipping_date', 'LIKE', "%{$term}%")
                   ->orWhere('shipping_cost', 'LIKE', "%{$term}%")
@@ -198,6 +199,7 @@ class SearchController extends Controller
             'id',
             'code',
             'client_phone',
+            'client_phone_2',
             'client_address',
             'shipping_date',
             'shipping_cost',
@@ -215,7 +217,7 @@ class SearchController extends Controller
                 'id' => $item->id,
                 'title' => $item->code ?: $item->code,
                 'subtitle' => "Ref: " . ($item->code ?: 'N/A'),
-                'description' => "Phone: {$item->client_phone} | Address: {$item->client_address} | Port: {$item->dest_port}",
+                'description' => "Phone: {$item->client_phone}" . ($item->client_phone_2 ? " / {$item->client_phone_2}" : '') . " | Address: {$item->client_address} | Port: {$item->dest_port}",
                 'status' => $item->getStatus(),
                 'type' => $item->getTypeAttribute($item->type),
                 'date' => $item->created_at->format('M d, Y'),
@@ -236,7 +238,9 @@ class SearchController extends Controller
         foreach ($searchTerms as $term) {
             $query->where(function($q) use ($term) {
                 $q->where('name', 'LIKE', "%{$term}%")
-                  ->orWhere('email', 'LIKE', "%{$term}%");
+                  ->orWhere('email', 'LIKE', "%{$term}%")
+                  ->orWhere('responsible_mobile', 'LIKE', "%{$term}%")
+                  ->orWhere('secondary_mobile', 'LIKE', "%{$term}%");
             });
         }
 
@@ -244,6 +248,8 @@ class SearchController extends Controller
             'id',
             'name',
             'email',
+            'responsible_mobile',
+            'secondary_mobile',
             'role',
             'created_at'
         ])
@@ -297,6 +303,7 @@ class SearchController extends Controller
             'shipments.id',
             'shipments.code',
             'shipments.client_phone',
+            'shipments.client_phone_2',
             'shipments.client_address',
             'shipments.shipping_date',
             'shipments.shipping_cost',
@@ -315,7 +322,7 @@ class SearchController extends Controller
                 'id' => $item->id,
                 'title' => $item->code ?: 'Shipment #' . $item->id,
                 'subtitle' => "Ref: " . ($item->code ?: 'N/A'),
-                'description' => "Phone: {$item->client_phone} | Address: {$item->client_address} | Port: {$item->dest_port}",
+                'description' => "Phone: {$item->client_phone}" . ($item->client_phone_2 ? " / {$item->client_phone_2}" : '') . " | Address: {$item->client_address} | Port: {$item->dest_port}",
                 'status' => $item->getStatus(),
                 'type' => $item->getTypeAttribute($item->type),
                 'date' => $item->created_at->format('M d, Y'),

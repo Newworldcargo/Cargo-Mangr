@@ -51,6 +51,7 @@ class User extends Authenticatable implements HasMedia
         'role',
         'national_id',
         'responsible_mobile',
+        'secondary_mobile',
         'country_code',
         'provider',
         'provider_id',

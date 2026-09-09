@@ -71,7 +71,7 @@
             </div>
             <div class="card-body border-bottom py-2">
                 <div class="alert alert-info mb-0 py-2">
-                    Names and other text are removed from phone fields automatically. If a row contains two different full phone numbers, choose the consignee's number and apply the correction before importing.
+                    Names and other text are removed from phone fields automatically. If a row contains two different full phone numbers, choose the primary number and optionally confirm the other as Phone number 2 before importing.
                 </div>
             </div>
             <div class="card-body p-0 table-responsive">
@@ -92,6 +92,7 @@
                         @forelse($rows->where('spreadsheet_row','>=',$batch->data_start_row)->where('status','!=','excluded') as $row)
                             @php($candidates = $phoneCandidates[$row->id] ?? [])
                             @php($phoneValue = $row->phone_override ?: (count($candidates) === 1 ? $candidates[0] : ''))
+                            @php($phoneValue2 = $row->phone_override_2 ?: '')
                             <tr>
                                 <td><input type="checkbox" name="included[{{ $row->id }}]" value="1" {{ ($row->included || ($selectReadyByDefault && in_array($row->status, ['new','update','unchanged']))) ? 'checked' : '' }} {{ $batch->status === 'completed' || in_array($row->status, ['invalid','conflict']) ? 'disabled' : '' }}></td>
                                 <td>{{ $row->spreadsheet_row }}</td>
@@ -101,16 +102,23 @@
                                 </td>
                                 <td>
                                     @if($batch->status === 'completed')
-                                        {{ $row->mapped_values['phone'] ?? '—' }}
+                                        <div>{{ $row->mapped_values['phone'] ?? '—' }}</div>
+                                        @if(!empty($row->mapped_values['phone_2']))<div class="text-muted">{{ $row->mapped_values['phone_2'] }}</div>@endif
                                     @else
+                                        <label class="small mb-1">Primary phone <span class="text-danger">*</span></label>
                                         <input type="text" name="phone_override[{{ $row->id }}]" value="{{ $phoneValue }}" list="phone-options-{{ $row->id }}" class="form-control form-control-sm {{ count($candidates) > 1 && !$row->phone_override ? 'border-danger' : '' }}" inputmode="tel" autocomplete="off" placeholder="{{ count($candidates) > 1 ? 'Choose a phone number' : 'Enter phone number' }}">
                                         @if($candidates)
                                             <datalist id="phone-options-{{ $row->id }}">
                                                 @foreach($candidates as $candidate)<option value="{{ $candidate }}">+{{ $candidate }}</option>@endforeach
                                             </datalist>
                                         @endif
-                                        @if(count($candidates) > 1 && !$row->phone_override)
-                                            <small class="text-danger d-block mt-1">Multiple numbers found: {{ implode(' or ', array_map(fn($phone) => '+'.$phone, $candidates)) }}</small>
+                                        @if(count($candidates) > 1)
+                                            <label class="small mb-1 mt-2">Phone number 2 <span class="text-muted">(optional)</span></label>
+                                            <input type="text" name="phone_override_2[{{ $row->id }}]" value="{{ $phoneValue2 }}" list="phone-options-{{ $row->id }}" class="form-control form-control-sm" inputmode="tel" autocomplete="off" placeholder="Leave blank to use one number">
+                                            <small class="{{ !$row->phone_override ? 'text-danger' : 'text-muted' }} d-block mt-1">Found: {{ implode(' or ', array_map(fn($phone) => '+'.$phone, $candidates)) }}. Choose a primary number; add the other as Phone number 2 only when both belong to this customer.</small>
+                                        @elseif($phoneValue2)
+                                            <label class="small mb-1 mt-2">Phone number 2 <span class="text-muted">(optional)</span></label>
+                                            <input type="text" name="phone_override_2[{{ $row->id }}]" value="{{ $phoneValue2 }}" class="form-control form-control-sm" inputmode="tel" autocomplete="off">
                                         @elseif(count($candidates) === 1)
                                             <small class="text-muted d-block mt-1">Found automatically: +{{ $candidates[0] }}</small>
                                         @endif
