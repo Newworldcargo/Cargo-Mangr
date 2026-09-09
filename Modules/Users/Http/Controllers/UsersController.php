@@ -142,12 +142,8 @@ class UsersController extends Controller
             ],
         ]);
         $user = User::findOrFail($id);
-        $linkedBranch = Branch::where('user_id', $user->id)->first();
         $adminTheme = env('ADMIN_THEME', 'adminLte');
-        return view('users::'.$adminTheme.'.pages.users.edit')->with([
-            'model' => $user,
-            'linkedBranch' => $linkedBranch,
-        ]);
+        return view('users::'.$adminTheme.'.pages.users.edit')->with(['model' => $user]);
     }
 
     /**
@@ -164,21 +160,11 @@ class UsersController extends Controller
         // }
 
         $user = User::findOrFail($id);
-        $linkedBranch = Branch::where('user_id', $user->id)->first();
         if (empty($request->password)) {
             $data = $request->only(['name', 'email', 'role','responsible_mobile' ,'country_code','national_id']);
         }else{
             $data = $request->only(['name', 'email', 'role' ,'password','responsible_mobile','country_code','national_id']);
             $data['password'] = bcrypt($data['password']);
-        }
-
-        // Branch details are the source of truth for a branch-owned login.
-        // The generic user editor must not let the account label, login email,
-        // or legacy user type drift away from the branch it represents.
-        if ($linkedBranch) {
-            $data['name'] = $linkedBranch->name;
-            $data['email'] = $linkedBranch->email;
-            $data['role'] = $user->role;
         }
 
         $user->update($data);

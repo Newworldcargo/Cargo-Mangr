@@ -4,7 +4,6 @@
     $hasAvatar = isset($model) && $model->avatar;
     $getAvatar = $hasAvatar ? $model->avatarImage : '';
     $branches = Modules\Cargo\Entities\Branch::where('is_archived',0)->get();
-    $linkedBranch = $linkedBranch ?? null;
 @endphp
 <!--css & jq country_code -->
 @include('cargo::adminLte.components.inputs.phone')
@@ -110,11 +109,6 @@
 
 
 <!--begin::Input group --  Full name -->
-@if($linkedBranch)
-    <div class="alert alert-info mb-6">
-        This login belongs to <strong>{{ $linkedBranch->name }}</strong>. Its name, email, and account type are managed from the branch settings so they stay consistent across receipts, reports, and audit logs.
-    </div>
-@endif
 <div class="row mb-6">
     <!--begin::Label-->
     <label class="col-lg-4 col-form-label @if ($typeForm == 'create') required @endif fw-bold fs-6">{{ __('users::view.table.full_name') }}</label>
@@ -123,7 +117,7 @@
     <!--begin::Input group-->
     <div class="col-lg-8 fv-row">
         <div class="input-group mb-4">
-            <input type="text" name="name" class="form-control form-control-lg @error('name') is-invalid @enderror" placeholder="{{ __('users::view.table.full_name') }}" value="{{ old('name', $linkedBranch ? $linkedBranch->name : (isset($model) ? $model->name : '')) }}" {{ $linkedBranch ? 'readonly' : '' }} />
+            <input type="text" name="name" class="form-control form-control-lg @error('name') is-invalid @enderror" placeholder="{{ __('users::view.table.full_name') }}" value="{{ old('name', isset($model) ? $model->name : '') }}" />
             @error('name')
                 <div class="invalid-feedback">
                     {{ $message }}
@@ -145,7 +139,7 @@
     <!--begin::Input group-->
     <div class="col-lg-8 fv-row">
         <div class="input-group mb-4">
-            <input type="text" name="email" class="form-control form-control-lg @error('email') is-invalid @enderror" placeholder="{{ __('users::view.table.email') }}" value="{{ old('email', $linkedBranch ? $linkedBranch->email : (isset($model) ? $model->email : '')) }}" {{ $linkedBranch ? 'readonly' : '' }} />
+            <input type="text" name="email" class="form-control form-control-lg @error('email') is-invalid @enderror" placeholder="{{ __('users::view.table.email') }}" value="{{ old('email', isset($model) ? $model->email : '') }}" />
             @error('email')
                 <div class="invalid-feedback">
                     {{ $message }}
@@ -207,7 +201,7 @@
     </div>
     <!--end::Input group-->
 
-@if (!$linkedBranch && auth()->user()->role == 1 && ( (isset($model) && $model->id != 1) || !isset($model)))
+@if (auth()->user()->role == 1 && ( (isset($model) && $model->id != 1) || !isset($model)))
 
 <!--begin::Input group-->
 <div class="row mb-6">
@@ -245,7 +239,7 @@
 @endif
 
 @if($typeForm == 'edit')
-    @if (isset($model) && $model->role != 1 && !$linkedBranch)
+    @if (isset($model) && $model->role != 1)
    <!--begin::Input group --  National Id -->
     <div class="row mb-6">
 
