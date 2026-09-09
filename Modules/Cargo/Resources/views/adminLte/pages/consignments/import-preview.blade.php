@@ -64,11 +64,76 @@
     @php($selectReadyByDefault = ($batch->summary['selected'] ?? 0) < 1)
     <form method="POST" action="{{ route('consignment.import.confirm', $batch->uuid) }}">
         @csrf
-        <div class="card"><div class="card-header d-flex flex-wrap justify-content-between"><strong>4. Data preview</strong><span>New: {{ $batch->summary['new'] ?? 0 }} · Updating: {{ $batch->summary['update'] ?? 0 }} · Unchanged: {{ $batch->summary['unchanged'] ?? 0 }} · Invalid: {{ $batch->summary['invalid'] ?? 0 }} · Conflicts: {{ $batch->summary['conflict'] ?? 0 }}</span></div><div class="card-body p-0 table-responsive"><table class="table table-sm table-bordered table-hover mb-0">
-            <thead class="thead-light"><tr><th>Import</th><th>Row</th><th>Status</th>@foreach($header as $column => $heading)@if(trim((string) $heading) !== '')<th>{{ $heading }}</th>@endif @endforeach<th>Issues</th></tr></thead>
-            <tbody>@forelse($rows->where('spreadsheet_row','>=',$batch->data_start_row)->where('status','!=','excluded') as $row)<tr><td><input type="checkbox" name="included[{{ $row->id }}]" value="1" {{ ($row->included || ($selectReadyByDefault && in_array($row->status, ['new','update','unchanged']))) ? 'checked' : '' }} {{ $batch->status === 'completed' || in_array($row->status, ['invalid','conflict']) ? 'disabled' : '' }}></td><td>{{ $row->spreadsheet_row }}</td><td>@php($statusColor = ['new'=>'success','update'=>'info','unchanged'=>'secondary','conflict'=>'warning','invalid'=>'danger','imported'=>'success'][$row->status] ?? 'secondary')<span class="badge badge-{{ $statusColor }}">{{ ucfirst($row->status) }}</span></td>@foreach($header as $column => $heading)@if(trim((string) $heading) !== '')<td>{{ $row->raw_values[$column] ?? '' }}</td>@endif @endforeach<td class="small {{ !empty($row->validation_errors) ? 'text-danger' : (!empty($row->validation_warnings) ? 'text-warning' : 'text-muted') }}">{{ implode(' ', $row->validation_errors ?? []) ?: implode(' ', $row->validation_warnings ?? []) }}</td></tr>@empty<tr><td colspan="99" class="text-center text-muted py-4">No data rows exist below the selected title row.</td></tr>@endforelse</tbody>
-        </table></div></div>
-        @if($batch->status !== 'completed')<div class="mt-3 text-right"><button class="btn btn-success px-4" {{ $readyCount < 1 ? 'disabled' : '' }}>{{ $batch->mode === 'update' ? 'Confirm update' : 'Confirm import' }} ({{ $readyCount }} ready)</button></div>@endif
+        <div class="card">
+            <div class="card-header d-flex flex-wrap justify-content-between">
+                <strong>4. Data preview</strong>
+                <span>New: {{ $batch->summary['new'] ?? 0 }} · Updating: {{ $batch->summary['update'] ?? 0 }} · Unchanged: {{ $batch->summary['unchanged'] ?? 0 }} · Invalid: {{ $batch->summary['invalid'] ?? 0 }} · Conflicts: {{ $batch->summary['conflict'] ?? 0 }}</span>
+            </div>
+            <div class="card-body border-bottom py-2">
+                <div class="alert alert-info mb-0 py-2">
+                    Names and other text are removed from phone fields automatically. If a row contains two different full phone numbers, choose the consignee's number and apply the correction before importing.
+                </div>
+            </div>
+            <div class="card-body p-0 table-responsive">
+                <table class="table table-sm table-bordered table-hover mb-0">
+                    <thead class="thead-light">
+                        <tr>
+                            <th>Import</th>
+                            <th>Row</th>
+                            <th>Status</th>
+                            <th style="min-width: 235px">Customer phone</th>
+                            @foreach($header as $column => $heading)
+                                @if(trim((string) $heading) !== '')<th>{{ $heading }}</th>@endif
+                            @endforeach
+                            <th style="min-width: 240px">Issues</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($rows->where('spreadsheet_row','>=',$batch->data_start_row)->where('status','!=','excluded') as $row)
+                            @php($candidates = $phoneCandidates[$row->id] ?? [])
+                            @php($phoneValue = $row->phone_override ?: (count($candidates) === 1 ? $candidates[0] : ''))
+                            <tr>
+                                <td><input type="checkbox" name="included[{{ $row->id }}]" value="1" {{ ($row->included || ($selectReadyByDefault && in_array($row->status, ['new','update','unchanged']))) ? 'checked' : '' }} {{ $batch->status === 'completed' || in_array($row->status, ['invalid','conflict']) ? 'disabled' : '' }}></td>
+                                <td>{{ $row->spreadsheet_row }}</td>
+                                <td>
+                                    @php($statusColor = ['new'=>'success','update'=>'info','unchanged'=>'secondary','conflict'=>'warning','invalid'=>'danger','imported'=>'success'][$row->status] ?? 'secondary')
+                                    <span class="badge badge-{{ $statusColor }}">{{ ucfirst($row->status) }}</span>
+                                </td>
+                                <td>
+                                    @if($batch->status === 'completed')
+                                        {{ $row->mapped_values['phone'] ?? '—' }}
+                                    @else
+                                        <input type="text" name="phone_override[{{ $row->id }}]" value="{{ $phoneValue }}" list="phone-options-{{ $row->id }}" class="form-control form-control-sm {{ count($candidates) > 1 && !$row->phone_override ? 'border-danger' : '' }}" inputmode="tel" autocomplete="off" placeholder="{{ count($candidates) > 1 ? 'Choose a phone number' : 'Enter phone number' }}">
+                                        @if($candidates)
+                                            <datalist id="phone-options-{{ $row->id }}">
+                                                @foreach($candidates as $candidate)<option value="{{ $candidate }}">+{{ $candidate }}</option>@endforeach
+                                            </datalist>
+                                        @endif
+                                        @if(count($candidates) > 1 && !$row->phone_override)
+                                            <small class="text-danger d-block mt-1">Multiple numbers found: {{ implode(' or ', array_map(fn($phone) => '+'.$phone, $candidates)) }}</small>
+                                        @elseif(count($candidates) === 1)
+                                            <small class="text-muted d-block mt-1">Found automatically: +{{ $candidates[0] }}</small>
+                                        @endif
+                                    @endif
+                                </td>
+                                @foreach($header as $column => $heading)
+                                    @if(trim((string) $heading) !== '')<td>{{ $row->raw_values[$column] ?? '' }}</td>@endif
+                                @endforeach
+                                <td class="small {{ !empty($row->validation_errors) ? 'text-danger' : (!empty($row->validation_warnings) ? 'text-warning' : 'text-muted') }}">{{ implode(' ', $row->validation_errors ?? []) ?: implode(' ', $row->validation_warnings ?? []) }}</td>
+                            </tr>
+                        @empty
+                            <tr><td colspan="99" class="text-center text-muted py-4">No data rows exist below the selected title row.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        @if($batch->status !== 'completed')
+            <div class="mt-3 d-flex flex-wrap justify-content-end">
+                <button type="submit" name="action" value="refresh" class="btn btn-outline-primary px-4 mr-2 mb-2">Apply phone corrections</button>
+                <button type="submit" class="btn btn-success px-4 mb-2" {{ $readyCount < 1 ? 'disabled' : '' }}>{{ $batch->mode === 'update' ? 'Confirm update' : 'Confirm import' }} ({{ $readyCount }} ready)</button>
+            </div>
+        @endif
     </form>
 </div>
 @endsection

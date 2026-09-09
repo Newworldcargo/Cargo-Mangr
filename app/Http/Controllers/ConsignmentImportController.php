@@ -25,12 +25,12 @@ class ConsignmentImportController extends Controller
     private const CONSIGNMENT_STATUSES = ['pending', 'dispatched', 'in_transit', 'delivered', 'canceled'];
 
     private const FIELDS = [
-        'hawb_number' => ['label' => 'HAWB / parcel code', 'required' => true, 'aliases' => ['hawb','hawb no','hawb number','parcel code','shipment code','tracking number']],
+        'hawb_number' => ['label' => 'HAWB / parcel code', 'required' => true, 'aliases' => ['hawb','hawb no','hawb number','hbl','hb l','h b l','parcel code','shipment code','tracking number']],
         'consignee_name' => ['label' => 'Consignee name', 'required' => true, 'aliases' => ['consignee','consignee name','consignee name address','receiver','receiver name','customer name','mark']],
         'phone' => ['label' => 'Customer phone number', 'required' => true, 'aliases' => ['phone','phone number','mobile','mobile number','telephone','tel','customer phone']],
-        'destination' => ['label' => 'Destination', 'required' => false, 'aliases' => ['destination','delivery destination','city']],
-        'weight' => ['label' => 'Weight', 'required' => false, 'aliases' => ['weight','gross weight','g w kgs','g w kg','kg','kgs']],
-        'pieces' => ['label' => 'Number of pieces', 'required' => false, 'aliases' => ['pieces','piece','qty','quantity','no of pieces']],
+        'destination' => ['label' => 'Destination', 'required' => false, 'aliases' => ['destination','delivery destination','dest port','destination port','city']],
+        'weight' => ['label' => 'Weight', 'required' => false, 'aliases' => ['weight','weight kgs','weight kg','gross weight','g w kgs','g w kg','kg','kgs']],
+        'pieces' => ['label' => 'Number of pieces', 'required' => false, 'aliases' => ['pieces','piece','qty','quantity','no of pieces','no of pkg','number of packages']],
         'description' => ['label' => 'Goods description', 'required' => false, 'aliases' => ['description','description of goods','goods','contents','item description']],
         'amount' => ['label' => 'Shipping amount', 'required' => false, 'aliases' => ['amount','bill','shipping cost','cost','charge']],
         'mawb_num' => ['label' => 'MAWB number', 'required' => false, 'aliases' => ['mawb','mawb no','mawb number']],
@@ -138,12 +138,20 @@ class ConsignmentImportController extends Controller
             'pickup_branch_id' => ['nullable', 'integer', Rule::in($this->allowedBranches()->pluck('id')->all())],
             'destination_branch_id' => ['nullable', 'integer', Rule::in($this->allowedBranches()->pluck('id')->all())],
             'mapping' => ['array'],
+            'phone_override' => ['nullable', 'array'],
+            'phone_override.*' => ['nullable', 'string', 'max:100'],
         ]);
         $requestedMappings=array_filter($request->input('mapping',[]),fn($value)=>$value !== null && $value !== '');
-        if (collect($requestedMappings)->duplicatesStrict()->isNotEmpty()) {
-            throw ValidationException::withMessages(['mapping'=>'Each spreadsheet column can only be matched to one system field.']);
+        $fieldsByColumn = [];
+        foreach ($requestedMappings as $field => $column) $fieldsByColumn[$column][] = $field;
+        foreach ($fieldsByColumn as $mappedFields) {
+            sort($mappedFields);
+            if (count($mappedFields) > 1 && $mappedFields !== ['consignee_name', 'phone']) {
+                throw ValidationException::withMessages(['mapping'=>'A spreadsheet column can only be matched once, except when Consignee name and Customer phone number are combined in the same column.']);
+            }
         }
         $headerChanged = $batch->selected_sheet !== $request->selected_sheet || (int) $batch->header_row !== (int) $request->header_row;
+        $phoneMappingChanged = ($batch->mappings['phone'] ?? null) !== ($requestedMappings['phone'] ?? null);
         $batchData = $request->only('selected_sheet','header_row','data_start_row','consignment_code','consignment_status','pickup_branch_id','destination_branch_id');
         if ($request->filled('pickup_branch_id') && $request->filled('destination_branch_id')) {
             $pickupBranch = Branch::findOrFail($request->pickup_branch_id);
@@ -154,9 +162,15 @@ class ConsignmentImportController extends Controller
         $this->syncTargetConsignment($batch);
         $mappings = $headerChanged ? $this->suggestMappings($batch->fresh()) : $requestedMappings;
         $batch->update(['mappings' => $mappings]);
+        if ($headerChanged || $phoneMappingChanged) {
+            $batch->rows()->update(['phone_override' => null]);
+        }
         if ($headerChanged) {
             $batch->rows()->where('sheet_name', $batch->selected_sheet)->update(['included' => false]);
             $batch->rows()->where('sheet_name', $batch->selected_sheet)->where('spreadsheet_row', '>=', $batch->data_start_row)->update(['included' => true]);
+        }
+        if (!$headerChanged && !$phoneMappingChanged) {
+            $this->savePhoneOverrides($batch, $request->input('phone_override', []));
         }
         $this->validateRows($batch->fresh());
         return redirect()->route('consignment.import.preview', $batch->uuid)->with('success', 'Preview updated. No records have been imported.');
@@ -166,6 +180,16 @@ class ConsignmentImportController extends Controller
     {
         $batch = $this->batch($uuid)->fresh();
         abort_if($batch->status === 'completed', 422, 'This import has already been completed.');
+        $request->validate([
+            'phone_override' => ['nullable', 'array'],
+            'phone_override.*' => ['nullable', 'string', 'max:100'],
+        ]);
+        $this->savePhoneOverrides($batch, $request->input('phone_override', []));
+        $this->validateRows($batch->fresh());
+        if ($request->input('action') === 'refresh') {
+            return redirect()->route('consignment.import.preview', $batch->uuid)
+                ->with('success', 'Phone corrections applied. Review the updated validation before importing.');
+        }
         foreach (['consignment_code','consignment_status','pickup_branch_id','destination_branch_id','branch_id','from_country_id','from_state_id','to_country_id','to_state_id'] as $field) abort_unless($batch->{$field}, 422, 'Enter the consignment code, choose its status, and choose pickup and destination branches before importing.');
         $this->assertBranchAllowed((int) $batch->pickup_branch_id);
         $this->assertBranchAllowed((int) $batch->destination_branch_id);
@@ -247,7 +271,12 @@ class ConsignmentImportController extends Controller
         $rows = $batch->rows()->where('sheet_name', $batch->selected_sheet)->orderBy('spreadsheet_row')->limit(1000)->get();
         $header = optional($rows->firstWhere('spreadsheet_row', $batch->header_row))->raw_values ?? [];
         $targetConsignment = $batch->target_consignment_id ? Consignment::withCount('shipments')->find($batch->target_consignment_id) : null;
-        return compact('batch','rows','header','targetConsignment') + ['fields' => self::FIELDS, 'sheets' => $batch->rows()->distinct()->pluck('sheet_name'), 'branches' => $this->allowedBranches()];
+        $phoneColumn = $batch->mappings['phone'] ?? $batch->mappings['consignee_name'] ?? null;
+        $phoneCandidates = $rows->mapWithKeys(function (ConsignmentImportRow $row) use ($phoneColumn) {
+            $rawPhone = $phoneColumn ? (string) ($row->raw_values[$phoneColumn] ?? '') : '';
+            return [$row->id => $this->phoneCandidates($rawPhone)];
+        });
+        return compact('batch','rows','header','targetConsignment','phoneCandidates') + ['fields' => self::FIELDS, 'sheets' => $batch->rows()->distinct()->pluck('sheet_name'), 'branches' => $this->allowedBranches()];
     }
     private function assertBranchIfSelected(ConsignmentImportBatch $batch): void { if ($batch->branch_id) $this->assertBranchAllowed((int)$batch->branch_id); }
     private function guessHeaderRow(ConsignmentImportBatch $batch, string $sheet): int
@@ -268,7 +297,7 @@ class ConsignmentImportController extends Controller
                 }
             }
         }
-        if (empty($map['phone']) && ($phoneColumn = $this->guessPhoneColumn($batch, array_keys($used)))) $map['phone']=$phoneColumn;
+        if (empty($map['phone']) && ($phoneColumn = $this->guessPhoneColumn($batch, []))) $map['phone']=$phoneColumn;
         return $map;
     }
     private function validateRows(ConsignmentImportBatch $batch): void
@@ -279,18 +308,35 @@ class ConsignmentImportController extends Controller
         foreach ($rows as $row) {
             $mapped=[]; foreach ($mappings as $field=>$column) $mapped[$field]=trim((string)($row->raw_values[$column] ?? ''));
             if (!array_filter($mapped, fn($v) => $v !== '')) { $row->update(['included'=>false,'status'=>'excluded','mapped_values'=>$mapped,'validation_errors'=>[],'validation_warnings'=>[]]); continue; }
+            if (empty($mapped['phone']) && !empty($mappings['consignee_name'])) {
+                $mapped['phone'] = trim((string) ($row->raw_values[$mappings['consignee_name']] ?? ''));
+            }
+            if (!empty($mapped['consignee_name'])) {
+                $mapped['consignee_name'] = $this->consigneeName($mapped['consignee_name']);
+            }
             if (empty($mapped['destination'])) $mapped['destination'] = $batch->default_destination ?? '';
             $counts['detected']++; $errors=[]; $warnings=[];
-            foreach (self::FIELDS as $field=>$def) if ($def['required'] && empty($mapped[$field])) $errors[$field] = $def['label'].' is required.';
+            foreach (self::FIELDS as $field=>$def) {
+                $hasPhoneOverride = $field === 'phone' && !empty($row->phone_override);
+                if ($def['required'] && empty($mapped[$field]) && !$hasPhoneOverride) $errors[$field] = $def['label'].' is required.';
+            }
             if (empty($mapped['destination'])) $errors['destination'] = 'Map a destination column or enter one destination for the whole file.';
-            if (!empty($mapped['phone'])) {
-                $mapped['phone']=$this->phone($mapped['phone']);
+            if (!empty($mapped['phone']) || !empty($row->phone_override)) {
+                $phoneCandidates = $this->phoneCandidates((string) ($mapped['phone'] ?? ''));
+                $mapped['phone'] = $row->phone_override
+                    ? $this->phone($row->phone_override)
+                    : ($phoneCandidates[0] ?? $this->phone((string) ($mapped['phone'] ?? '')));
                 if (!preg_match('/^\d{7,15}$/',$mapped['phone'])) {
                     $errors['phone']='Enter a valid phone number (7–15 digits).';
                 } else {
-                    $client=$this->findClientForImport($mapped['phone'], $mapped['consignee_name'] ?? '');
-                    if (!$client) $warnings['customer']='A new customer profile will be created when you confirm the import.';
-                    elseif (!$this->phone((string)$client->responsible_mobile)) $warnings['customer']='This phone number will be added to the existing customer profile when you confirm.';
+                    if (!$row->phone_override && count($phoneCandidates) > 1) {
+                        $errors['phone'] = 'More than one phone number was found. Choose the correct number for this consignee.';
+                    }
+                    if (empty($errors['phone'])) {
+                        $client=$this->findClientForImport($mapped['phone'], $mapped['consignee_name'] ?? '');
+                        if (!$client) $warnings['customer']='A new customer profile will be created when you confirm the import.';
+                        elseif (!$this->phone((string)$client->responsible_mobile)) $warnings['customer']='This phone number will be added to the existing customer profile when you confirm.';
+                    }
                 }
             }
             if (!empty($mapped['hawb_number']) && !preg_match('/^[A-Za-z0-9]+(?:[-\/]?[A-Za-z0-9]+)*$/', $mapped['hawb_number'])) $errors['hawb_number']='Parcel code contains invalid characters.';
@@ -351,7 +397,68 @@ class ConsignmentImportController extends Controller
     {
         $value = trim($value);
         if (preg_match('/^\+?\d+\.0+$/', $value)) $value = preg_replace('/\.0+$/', '', $value);
-        return preg_replace('/\D+/', '', $value);
+        $phone = preg_replace('/\D+/', '', $value);
+        if (preg_match('/^(260|263)0(\d{9})$/', $phone, $parts)) $phone = $parts[1].$parts[2];
+        return $phone;
+    }
+    private function phoneCandidates(string $value): array
+    {
+        $value = trim($value);
+        if ($value === '') return [];
+        if (preg_match('/^\+?\d+\.0+$/', $value)) $value = preg_replace('/\.0+$/', '', $value);
+
+        $matches = [];
+        foreach ($this->phonePatterns() as $pattern) {
+            preg_match_all($pattern, $value, $found);
+            $matches = array_merge($matches, $found[0] ?? []);
+        }
+
+        $candidates = [];
+        foreach ($matches as $match) {
+            $phone = $this->phone($match);
+            if (preg_match('/^\d{7,15}$/', $phone)) {
+                $identity = strlen($phone) >= 9 ? substr($phone, -9) : $phone;
+                $candidates[$identity] ??= $phone;
+            }
+        }
+
+        if (!$candidates) {
+            $fallback = $this->phone($value);
+            if (preg_match('/^\d{7,15}$/', $fallback)) $candidates[$fallback] = $fallback;
+        }
+
+        return array_values($candidates);
+    }
+    private function phonePatterns(): array
+    {
+        return [
+            '/\+\s*\d(?:[\s().-]*\d){6,14}/u',
+            '/(?<!\d)(?:260|263|86)(?:[\s().-]*\d){6,12}(?!\d)/u',
+            '/(?<!\d)0(?:[\s().-]*\d){7,13}(?!\d)/u',
+        ];
+    }
+    private function consigneeName(string $value): string
+    {
+        foreach ($this->phonePatterns() as $pattern) $value = preg_replace($pattern, ' ', $value);
+        $value = preg_replace('/[\s\x{00A0}\/|,;]+/u', ' ', $value);
+        return trim($value, " \t\n\r\0\x0B-–—,;/|");
+    }
+    private function savePhoneOverrides(ConsignmentImportBatch $batch, array $overrides): void
+    {
+        if (!$overrides) return;
+
+        $rowIds = array_values(array_filter(array_map('intval', array_keys($overrides))));
+        $rows = $batch->rows()
+            ->where('sheet_name', $batch->selected_sheet)
+            ->whereIn('id', $rowIds)
+            ->get()
+            ->keyBy('id');
+        foreach ($overrides as $rowId => $value) {
+            $row = $rows->get((int) $rowId);
+            if (!$row) continue;
+            $cleaned = trim((string) $value);
+            $row->update(['phone_override' => $cleaned === '' ? null : $this->phone($cleaned)]);
+        }
     }
     private function number($value): ?float { $clean = preg_replace('/[^0-9.\-]/', '', (string) $value); return $clean !== '' && is_numeric($clean) ? (float) $clean : null; }
     private function findClientForImport(string $phone, string $name): ?Client
@@ -403,7 +510,7 @@ class ConsignmentImportController extends Controller
             if (in_array($column,$usedColumns,true)) continue;
             $values=$rows->pluck('raw_values')->map(fn($values)=>trim((string)($values[$column] ?? '')))->filter(fn($value)=>$value !== '');
             if ($values->count() < 2) continue;
-            $valid=$values->filter(fn($value)=>preg_match('/^\d{7,15}$/',$this->phone($value)))->count();
+            $valid=$values->filter(fn($value)=>count($this->phoneCandidates($value)) > 0)->count();
             $score=$valid/$values->count();
             if ($valid >= 2 && $score > $bestScore) { $best=$column; $bestScore=$score; }
         }
