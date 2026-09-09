@@ -62,7 +62,8 @@
 
     @php($readyCount = ($batch->summary['new'] ?? 0) + ($batch->summary['update'] ?? 0) + ($batch->summary['unchanged'] ?? 0))
     @php($selectReadyByDefault = ($batch->summary['selected'] ?? 0) < 1)
-    <form method="POST" action="{{ route('consignment.import.confirm', $batch->uuid) }}">
+    @php($removableCount = $batch->status === 'completed' ? $rows->filter(fn($row) => $row->status === 'imported' && $row->import_action === 'created' && $row->shipment_id)->count() : 0)
+    <form method="POST" action="{{ $batch->status === 'completed' ? route('consignment.import.rows.remove', $batch->uuid) : route('consignment.import.confirm', $batch->uuid) }}" @if($batch->status === 'completed') data-confirm-message="Remove the selected shipments? Only newly created, unused shipments will be deleted. This cannot be undone." @endif>
         @csrf
         <div class="card">
             <div class="card-header d-flex flex-wrap justify-content-between">
@@ -71,14 +72,18 @@
             </div>
             <div class="card-body border-bottom py-2">
                 <div class="alert alert-info mb-0 py-2">
-                    Names and other text are removed from phone fields automatically. If a row contains two different full phone numbers, choose the primary number and optionally confirm the other as Phone number 2 before importing.
+                    @if($batch->status === 'completed')
+                        Select only wrongly imported rows. Updated or previously existing shipments cannot be removed here, and shipments with later activity are protected.
+                    @else
+                        All ready rows are selected by default. Untick totals, notes or any row you do not want to import. Names and other text are removed from phone fields automatically.
+                    @endif
                 </div>
             </div>
             <div class="card-body p-0 table-responsive">
                 <table class="table table-sm table-bordered table-hover mb-0">
                     <thead class="thead-light">
                         <tr>
-                            <th>Import</th>
+                            <th class="text-nowrap"><input id="importRowsSelectAll" type="checkbox" class="mr-1"> {{ $batch->status === 'completed' ? 'Remove' : 'Import' }}</th>
                             <th>Row</th>
                             <th>Status</th>
                             <th style="min-width: 235px">Customer phone</th>
@@ -94,11 +99,18 @@
                             @php($phoneValue = $row->phone_override ?: (count($candidates) === 1 ? $candidates[0] : ''))
                             @php($phoneValue2 = $row->phone_override_2 ?: '')
                             <tr>
-                                <td><input type="checkbox" name="included[{{ $row->id }}]" value="1" {{ ($row->included || ($selectReadyByDefault && in_array($row->status, ['new','update','unchanged']))) ? 'checked' : '' }} {{ $batch->status === 'completed' || in_array($row->status, ['invalid','conflict']) ? 'disabled' : '' }}></td>
+                                <td>
+                                    @if($batch->status === 'completed')
+                                        <input class="import-row-checkbox" type="checkbox" name="rows[{{ $row->id }}]" value="1" {{ $row->status !== 'imported' || $row->import_action !== 'created' || !$row->shipment_id ? 'disabled' : '' }}>
+                                    @else
+                                        <input class="import-row-checkbox" type="checkbox" name="included[{{ $row->id }}]" value="1" {{ ($row->included || ($selectReadyByDefault && in_array($row->status, ['new','update','unchanged']))) ? 'checked' : '' }} {{ in_array($row->status, ['invalid','conflict']) ? 'disabled' : '' }}>
+                                    @endif
+                                </td>
                                 <td>{{ $row->spreadsheet_row }}</td>
                                 <td>
-                                    @php($statusColor = ['new'=>'success','update'=>'info','unchanged'=>'secondary','conflict'=>'warning','invalid'=>'danger','imported'=>'success'][$row->status] ?? 'secondary')
+                                    @php($statusColor = ['new'=>'success','update'=>'info','unchanged'=>'secondary','conflict'=>'warning','invalid'=>'danger','imported'=>'success','removed'=>'dark'][$row->status] ?? 'secondary')
                                     <span class="badge badge-{{ $statusColor }}">{{ ucfirst($row->status) }}</span>
+                                    @if($batch->status === 'completed' && $row->import_action)<small class="d-block text-muted">{{ ucfirst($row->import_action) }}</small>@endif
                                 </td>
                                 <td>
                                     @if($batch->status === 'completed')
@@ -141,7 +153,17 @@
                 <button type="submit" name="action" value="refresh" class="btn btn-outline-primary px-4 mr-2 mb-2">Apply phone corrections</button>
                 <button type="submit" class="btn btn-success px-4 mb-2" {{ $readyCount < 1 ? 'disabled' : '' }}>{{ $batch->mode === 'update' ? 'Confirm update' : 'Confirm import' }} ({{ $readyCount }} ready)</button>
             </div>
+        @elseif($removableCount > 0)
+            <div class="mt-3 d-flex flex-wrap justify-content-end">
+                <button type="submit" class="btn btn-danger px-4 mb-2">Remove selected imported rows</button>
+            </div>
+        @else
+            <div class="alert alert-secondary mt-3">This historical import has no rows that can be safely removed from here.</div>
         @endif
     </form>
 </div>
+@endsection
+
+@section('scripts')
+<script src="{{ asset('js/consignment-import-preview.js') }}" defer></script>
 @endsection

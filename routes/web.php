@@ -88,6 +88,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/consignments/imports/{uuid}/preview', [ConsignmentImportController::class, 'preview'])->name('consignment.import.preview');
     Route::post('/consignments/imports/{uuid}/preview', [ConsignmentImportController::class, 'updatePreview'])->name('consignment.import.preview.update');
     Route::post('/consignments/imports/{uuid}/confirm', [ConsignmentImportController::class, 'confirm'])->name('consignment.import.confirm');
+    Route::post('/consignments/imports/{uuid}/remove-rows', [ConsignmentImportController::class, 'removeImportedRows'])->name('consignment.import.rows.remove');
+    Route::post('/consignments/imports/{uuid}/remove-rows', [ConsignmentImportController::class, 'removeImportedRows'])->name('consignment.import.rows.remove');
     Route::post('/consignments/export', 'ConsignmentController@export')->name('consignment.export');
     Route::get('/consignment/{id}/tracker', 'ConsignmentController@editTracker')->name('consignment.tracker.edit');
     Route::patch('/consignment/tracker/update/{id}', 'ConsignmentController@updateTracker')->name('consignment.tracker.update');

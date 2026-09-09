@@ -231,6 +231,7 @@ class ConsignmentImportController extends Controller
                 $client = $this->resolveClient($data, $batch);
                 $shipment = Shipment::where('code', $data['hawb_number'])->first();
                 if ($shipment && (int) $shipment->consignment_id !== (int) $consignment->id) throw new \RuntimeException('A parcel code now belongs to another consignment. Review the preview again.');
+                $importAction = !$shipment ? 'created' : ($row->status === 'update' ? 'updated' : 'unchanged');
                 $shipmentData = ['consignment_id' => $consignment->id, 'code' => $data['hawb_number'], 'branch_id' => $pickupBranch->id, 'next_destination' => $destinationBranch->name,
                     'client_id' => $client->id, 'client_phone' => $data['phone'], 'client_phone_2' => $data['phone_2'] ?? null,
                     'reciver_name' => $data['consignee_name'], 'reciver_phone' => $data['phone'], 'reciver_phone_2' => $data['phone_2'] ?? null,
@@ -253,13 +254,61 @@ class ConsignmentImportController extends Controller
                 } else {
                     $unchanged++;
                 }
-                $row->update(['status' => 'imported']); $ids[] = $shipment->id;
+                $row->update(['status' => 'imported', 'shipment_id' => $shipment->id, 'import_action' => $importAction,
+                    'removed_at' => null, 'removed_by' => null]);
+                $ids[] = $shipment->id;
             }
             $batch->update(['status' => 'completed', 'confirmed_at' => now(), 'result' => ['consignment_id' => $consignment->id,
                 'shipment_ids' => $ids, 'imported' => count($ids), 'created' => $created, 'updated' => $updated, 'unchanged' => $unchanged]]);
         });
         $result = $batch->fresh()->result;
         return redirect()->route('consignment.import.preview', $batch->uuid)->with('success', 'Import completed: '.$result['created'].' added, '.$result['updated'].' updated, '.$result['unchanged'].' unchanged.');
+    }
+
+    public function removeImportedRows(Request $request, string $uuid)
+    {
+        $batch = $this->batch($uuid)->fresh();
+        abort_unless($batch->status === 'completed', 422, 'Rows can only be removed from a completed import.');
+        $request->validate(['rows' => ['required', 'array', 'min:1'], 'rows.*' => ['accepted']]);
+
+        $requestedIds = array_values(array_unique(array_map('intval', array_keys($request->input('rows', [])))));
+        $rows = $batch->rows()->whereIn('id', $requestedIds)->where('status', 'imported')->get();
+        if ($rows->count() !== count($requestedIds) || $rows->contains(fn($row) => $row->import_action !== 'created' || !$row->shipment_id)) {
+            throw ValidationException::withMessages(['rows' => 'Only shipments newly created by this exact import can be removed here. Updated and pre-existing shipments are protected.']);
+        }
+
+        $consignmentId = (int) ($batch->result['consignment_id'] ?? 0);
+        $shipments = Shipment::whereIn('id', $rows->pluck('shipment_id'))->get()->keyBy('id');
+        $blocked = [];
+        foreach ($rows as $row) {
+            $shipment = $shipments->get($row->shipment_id);
+            if (!$shipment || (int) $shipment->consignment_id !== $consignmentId || $this->shipmentHasOperationalActivity($shipment, $batch)) {
+                $blocked[] = $row->mapped_values['hawb_number'] ?? 'Spreadsheet row '.$row->spreadsheet_row;
+            }
+        }
+        if ($blocked) {
+            throw ValidationException::withMessages(['rows' => 'These shipments were not removed because they are missing or already have later activity: '.implode(', ', $blocked).'.']);
+        }
+
+        DB::transaction(function () use ($batch, $rows, $shipments) {
+            foreach ($rows as $row) {
+                $shipment = $shipments->get($row->shipment_id);
+                PackageShipment::where('shipment_id', $shipment->id)->delete();
+                $shipment->delete();
+                $row->update(['status' => 'removed', 'included' => false, 'removed_at' => now(), 'removed_by' => auth()->id()]);
+            }
+
+            $result = $batch->result ?: [];
+            $removedShipmentIds = $rows->pluck('shipment_id')->map(fn($id) => (int) $id)->all();
+            $result['shipment_ids'] = array_values(array_diff(array_map('intval', $result['shipment_ids'] ?? []), $removedShipmentIds));
+            $result['imported'] = max(0, (int) ($result['imported'] ?? 0) - count($removedShipmentIds));
+            $result['created'] = max(0, (int) ($result['created'] ?? 0) - count($removedShipmentIds));
+            $result['removed'] = (int) ($result['removed'] ?? 0) + count($removedShipmentIds);
+            $batch->update(['result' => $result]);
+        });
+
+        return redirect()->route('consignment.import.preview', $batch->uuid)
+            ->with('success', $rows->count().' wrongly imported row(s) removed. The customer profiles were retained.');
     }
 
     private function batch(string $uuid): ConsignmentImportBatch
@@ -319,6 +368,13 @@ class ConsignmentImportController extends Controller
             if (!empty($mapped['consignee_name'])) {
                 $mapped['consignee_name'] = $this->consigneeName($mapped['consignee_name']);
             }
+            if ($this->isSpreadsheetSummaryRow($row->raw_values, $mapped)) {
+                $row->update(['included'=>false,'status'=>'invalid','mapped_values'=>$mapped,
+                    'validation_errors'=>['row'=>'Totals and summary rows cannot be imported. Untick and correct the source file if this is a real shipment.'],
+                    'validation_warnings'=>[]]);
+                $counts['detected']++; $counts['invalid']++;
+                continue;
+            }
             if (empty($mapped['destination'])) $mapped['destination'] = $batch->default_destination ?? '';
             $counts['detected']++; $errors=[]; $warnings=[];
             foreach (self::FIELDS as $field=>$def) {
@@ -374,6 +430,30 @@ class ConsignmentImportController extends Controller
             $counts[$status]++; if ($row->included && in_array($status,['new','update','unchanged'])) $counts['selected']++;
         }
         $batch->update(['summary'=>$counts]);
+    }
+
+    private function isSpreadsheetSummaryRow(array $rawValues, array $mapped): bool
+    {
+        $labels = array_filter([
+            $this->normalise($mapped['hawb_number'] ?? ''),
+            $this->normalise(collect($rawValues)->first(fn($value) => trim((string) $value) !== '') ?? ''),
+        ]);
+        return collect($labels)->contains(fn($label) => (bool) preg_match('/^(grand )?(sub )?totals?$/', $label));
+    }
+
+    private function shipmentHasOperationalActivity(Shipment $shipment, ConsignmentImportBatch $batch): bool
+    {
+        if ((int) $shipment->status_id !== (int) Shipment::PENDING_STATUS) return true;
+        if ($batch->confirmed_at && $shipment->updated_at && $shipment->updated_at->gt($batch->confirmed_at->copy()->addSeconds(5))) return true;
+
+        $tables = ['shipment_log','client_shipment_logs','payments','transactions','shipment_mission','transxns',
+            'nwc_receipts','shipment_payment_receipts','refund_requests','shipment_charge_lines',
+            'customer_portal_returns','customer_portal_pickups'];
+        $schema = DB::connection()->getSchemaBuilder();
+        foreach ($tables as $table) {
+            if ($schema->hasTable($table) && DB::table($table)->where('shipment_id', $shipment->id)->exists()) return true;
+        }
+        return false;
     }
 
     private function shipmentChanges(Shipment $shipment, array $data, ConsignmentImportBatch $batch): array
