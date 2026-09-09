@@ -45,8 +45,14 @@ class FinancialTransactionScopeService
             return $query->whereRaw('1 = 0');
         }
 
-        return $query->whereHas('shipment', function (Builder $shipmentQuery) use ($branchId) {
-            $shipmentQuery->where('branch_id', $branchId);
+        return $query->where(function (Builder $branchQuery) use ($branchId) {
+            $branchQuery->where('collection_branch_id', $branchId)
+                ->orWhere(function (Builder $legacyQuery) use ($branchId) {
+                    $legacyQuery->whereNull('collection_branch_id')
+                        ->whereHas('shipment', function (Builder $shipmentQuery) use ($branchId) {
+                            $shipmentQuery->where('branch_id', $branchId);
+                        });
+                });
         });
     }
 }

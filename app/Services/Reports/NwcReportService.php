@@ -61,7 +61,14 @@ class NwcReportService
             $this->transactionScope->apply($transactions, $viewer);
         }
         if (!empty($filters['branch_id'])) {
-            $transactions->whereHas('shipment', fn ($shipment) => $shipment->where('branch_id', $filters['branch_id']));
+            $branchId = (int) $filters['branch_id'];
+            $transactions->where(function ($branchQuery) use ($branchId) {
+                $branchQuery->where('collection_branch_id', $branchId)
+                    ->orWhere(function ($legacyQuery) use ($branchId) {
+                        $legacyQuery->whereNull('collection_branch_id')
+                            ->whereHas('shipment', fn ($shipment) => $shipment->where('branch_id', $branchId));
+                    });
+            });
         }
         if (!empty($filters['user_id'])) {
             $transactions->where('cashier_user_id', $filters['user_id']);

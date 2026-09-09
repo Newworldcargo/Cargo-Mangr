@@ -13,6 +13,7 @@ class Transxn extends Model
     protected $fillable = [
         'shipment_id',
         'cashier_user_id',
+        'collection_branch_id',
         'receipt_number',
         'discount_type',
         'discount_value',

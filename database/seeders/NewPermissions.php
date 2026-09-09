@@ -55,6 +55,7 @@ class NewPermissions extends Seeder
             'export-shipment-invoices',
             'view-shipment-invoices',
             'confirm-shipment-payment',
+            'collect-cross-branch-payments',
             'print-shipment-invoice',
             'print-shipment-receipt',
             'refund-shipment-payment',

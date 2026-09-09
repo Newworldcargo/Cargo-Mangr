@@ -59,6 +59,7 @@ use Illuminate\Support\Facades\DB as FDB;
 use Modules\Cargo\Entities\Payment;
 use Modules\Cargo\Entities\ShipmentLog;
 use App\Services\AuditLogService;
+use Modules\Cargo\Services\BranchAccessService;
 use Modules\Cargo\Services\ShipmentOperationAccessService;
 
 class ShipmentController extends Controller
@@ -2024,6 +2025,7 @@ class ShipmentController extends Controller
 
         try {
             $oldValues = $shipment->only(['paid']);
+            $collectionBranchId = app(BranchAccessService::class)->branchIdFor(Auth::user());
 
             $discountType = $request->filled('discount_type') ? $request->discount_type : null;
             if ($discountType === 'percentage') {
@@ -2130,6 +2132,7 @@ class ShipmentController extends Controller
                     'total'          => $calculatedFinalTotal,
                     'currency'       => $paymentCurrency,
                     'status'         => $paymentStatus,
+                    'collection_branch_id' => $transaction->collection_branch_id ?: $collectionBranchId,
                 ]);
             } else {
                 $lastTransaction = Transxn::orderByDesc('id')->first();
@@ -2145,6 +2148,7 @@ class ShipmentController extends Controller
                     'total'          => $calculatedFinalTotal,
                     'currency'       => $paymentCurrency,
                     'status'         => $paymentStatus,
+                    'collection_branch_id' => $collectionBranchId,
                 ]);
             }
 
@@ -2168,6 +2172,7 @@ class ShipmentController extends Controller
                         'receipt_number' => $receiptNumber,
                         'cashier_name' => $cashierName,
                         'user_id' => $user?->id,
+                        'collection_branch_id' => $collectionBranchId,
                     ]);
                     
                     $paymentReceipts[] = $paymentReceipt;
@@ -2176,6 +2181,7 @@ class ShipmentController extends Controller
 
             $receiptAttributeKeys = [
                 'receipt_number',
+                'collection_branch_id',
                 'rate',
                 'bill_usd',
                 'bill_kwacha',
@@ -2224,6 +2230,7 @@ class ShipmentController extends Controller
                 'discount_value'    => $discountValue,
                 'cashier_name'      => $cashierName,
                 'user_id'           => $user?->id,
+                'collection_branch_id' => $collectionBranchId,
             ];
 
             $receipt = NwcReceipt::updateOrCreate(

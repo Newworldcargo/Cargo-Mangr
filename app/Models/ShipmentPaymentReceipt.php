@@ -13,6 +13,7 @@ class ShipmentPaymentReceipt extends Model
 
     protected $fillable = [
         'shipment_id',
+        'collection_branch_id',
         'method_of_payment',
         'amount',
         'currency',

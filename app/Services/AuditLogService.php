@@ -80,6 +80,10 @@ class AuditLogService
 
     private function branchIdForAuditable($auditable): ?int
     {
+        if (is_object($auditable) && !empty($auditable->collection_branch_id)) {
+            return (int) $auditable->collection_branch_id;
+        }
+
         if (is_object($auditable) && !empty($auditable->branch_id)) {
             return (int) $auditable->branch_id;
         }

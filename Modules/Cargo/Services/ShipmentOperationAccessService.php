@@ -88,7 +88,11 @@ class ShipmentOperationAccessService
             }
         }
 
-        if (!$assignedBranchId || !in_array($assignedBranchId, array_unique($operationalBranchIds), true)) {
+        $canCollectAcrossBranches = $permission === 'confirm-shipment-payment'
+            && $user->can('collect-cross-branch-payments');
+
+        if (!$assignedBranchId
+            || (!$canCollectAcrossBranches && !in_array($assignedBranchId, array_unique($operationalBranchIds), true))) {
             return false;
         }
 

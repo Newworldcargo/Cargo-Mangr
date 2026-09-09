@@ -13,6 +13,7 @@ class NwcReceipt extends Model
 
     protected $fillable = [
         'shipment_id',
+        'collection_branch_id',
         'receipt_number',
         'rate',
         'bill_usd',
