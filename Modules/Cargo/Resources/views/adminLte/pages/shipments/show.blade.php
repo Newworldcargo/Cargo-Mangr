@@ -1381,7 +1381,6 @@
                                 payment_amount: paymentAmounts,
                                 charge_description: chargeDescriptions,
                                 charge_amount: chargeAmounts,
-                                current_user: '{{ auth()->user()->name ?? 'System' }}',
                             })
                         })
                         .then(response => response.json())

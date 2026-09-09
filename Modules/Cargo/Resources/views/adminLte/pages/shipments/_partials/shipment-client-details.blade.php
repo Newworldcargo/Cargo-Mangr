@@ -59,10 +59,10 @@
             });
         $latestPaymentReceipt = $paymentReceipts->sortByDesc('created_at')->first();
         $paidAt = $latestPaymentReceipt?->created_at ?? $nwcReceipt?->created_at ?? $receipt?->created_at;
-        $cashierName = $latestPaymentReceipt?->cashier_name
-            ?? $nwcReceipt?->cashier_name
-            ?? optional($latestPaymentReceipt?->user)->name
+        $cashierName = optional($latestPaymentReceipt?->user)->name
             ?? optional($nwcReceipt?->user)->name
+            ?? $latestPaymentReceipt?->cashier_name
+            ?? $nwcReceipt?->cashier_name
             ?? null;
         $paymentRows = $paymentReceipts->isNotEmpty()
             ? $paymentReceipts

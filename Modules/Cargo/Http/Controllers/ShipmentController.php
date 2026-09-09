@@ -1983,7 +1983,6 @@ class ShipmentController extends Controller
             'method_of_payment.*' => 'string|max:255',
             'payment_amount'    => 'required|array',
             'payment_amount.*'  => 'numeric|min:0',
-            'current_user'      => 'nullable|string|max:255',
             'charge_description' => 'nullable|array',
             'charge_description.*' => 'nullable|string|max:255',
             'charge_amount'      => 'nullable|array',
@@ -2155,7 +2154,9 @@ class ShipmentController extends Controller
             // Create multiple payment receipt records
             $paymentReceipts = [];
             $user = Auth::user();
-            $cashierName = $request->current_user ?: ($user?->name ?? 'System');
+            // The authenticated user is authoritative. Never trust a
+            // browser-submitted display name for financial records.
+            $cashierName = $user?->name ?? 'System';
             $existingReceiptLineCount = ShipmentPaymentReceipt::where('shipment_id', $shipment->id)
                 ->where('receipt_number', 'like', $nextReceiptNumber . '-%')
                 ->count();

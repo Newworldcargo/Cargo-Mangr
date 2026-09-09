@@ -22,10 +22,10 @@
             : (strtoupper($nwcReceipt?->payment_currency ?? '') === 'USD'
             ? $nwcReceipt?->bill_usd
             : $nwcReceipt?->bill_kwacha));
-    $receiptUser = $latestPaymentReceipt?->cashier_name
-        ?? $nwcReceipt?->cashier_name
-        ?? optional($latestPaymentReceipt?->user)->name
+    $receiptUser = optional($latestPaymentReceipt?->user)->name
         ?? optional($nwcReceipt?->user)->name
+        ?? $latestPaymentReceipt?->cashier_name
+        ?? $nwcReceipt?->cashier_name
         ?? optional(auth()->user())->name
         ?? 'System';
 @endphp
