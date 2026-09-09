@@ -23,12 +23,7 @@ class AuditLogController extends Controller
 
         $viewer = $request->user();
         $scopeOptions = $this->scopeFilters->options($viewer, $viewer->can('view-audit-logs'));
-        $selectedScope = $this->scopeFilters->selected(
-            $viewer,
-            $scopeOptions,
-            (int) $request->input('branch_id') ?: null,
-            $request->input('scope') === 'self' ? $viewer->id : ((int) $request->input('user_id') ?: null),
-        );
+        $selectedScope = $this->scopeFilters->selectedFromRequest($viewer, $scopeOptions, $request);
         $logs = $this->auditLogService->getAllLogs($perPage, $selectedScope['selectedBranchId'], $selectedScope['selectedUserId']);
 
         if ($request->wantsJson()) {

@@ -33,9 +33,10 @@
             .operational-scope-filter .scope-filter-actions .btn { flex: 1; }
         }
     </style>
+    <script src="{{ asset('js/operational-scope-filter.js') }}" defer></script>
 @endonce
 
-<form method="GET" action="{{ $scopeFilterAction }}" class="operational-scope-filter">
+<form method="GET" action="{{ $scopeFilterAction }}" class="operational-scope-filter" data-operational-scope-filter>
     @foreach($scopeFilterHidden ?? [] as $name => $value)
         @if($value !== null && $value !== '')
             <input type="hidden" name="{{ $name }}" value="{{ $value }}">
@@ -47,7 +48,7 @@
         @if($scopeOptions['can_filter_branch'])
             <label class="scope-filter-field">
                 <span>Branch</span>
-                <select name="branch_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                <select name="branch_id" class="form-select form-select-sm" data-scope-branch>
                     <option value="">All branches I can access</option>
                     @foreach($scopeOptions['branches'] as $scopeBranch)
                         <option value="{{ $scopeBranch->id }}" {{ $selectedScope['selectedBranchId'] === $scopeBranch->id ? 'selected' : '' }}>{{ $scopeBranch->name }}</option>
@@ -58,7 +59,7 @@
         @if($scopeOptions['can_filter_user'])
             <label class="scope-filter-field">
                 <span>Team member</span>
-                <select name="user_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                <select name="user_id" class="form-select form-select-sm" data-scope-user>
                     <option value="">All team members I can access</option>
                     @foreach($scopeOptions['users'] as $scopeUser)
                         <option value="{{ $scopeUser->id }}" {{ $selectedScope['selectedUserId'] === $scopeUser->id && request('scope') !== 'self' ? 'selected' : '' }}>{{ $scopeUser->name }} ({{ $scopeUser->email }})</option>
@@ -68,7 +69,7 @@
         @endif
         <div class="scope-filter-actions">
             <label class="scope-filter-toggle" title="Turn this on to see only records you created or processed">
-                <input class="form-check-input" type="checkbox" role="switch" name="scope" value="self" {{ request('scope') === 'self' ? 'checked' : '' }} onchange="this.form.submit()">
+                <input class="form-check-input" type="checkbox" role="switch" name="scope" value="self" data-scope-self {{ request('scope') === 'self' && !request()->filled('branch_id') && !request()->filled('user_id') ? 'checked' : '' }}>
                 <span>{{ $scopeFilterSelfLabel ?? 'Only my records' }}</span>
             </label>
             @if(request()->hasAny(['branch_id', 'user_id', 'scope']))

@@ -42,10 +42,12 @@ class NwcReportService
         $transactions = Transxn::query()
             ->with([
                 'shipment.client',
+                'shipment.branch',
                 'shipment.consignment',
                 'shipment.nwcReceipt.user',
                 'nwcReceipt.user',
                 'cashier',
+                'collectionBranch',
                 'shipment.paymentReceipts' // Include payment receipts for multiple payment support
             ])
             ->whereBetween('created_at', [$start, $end])
@@ -92,22 +94,12 @@ class NwcReportService
             
             if ($multiplePaymentReceipts->count() > 0) {
                 // For multiple payments, aggregate them into a single row
-                $totalBillKwacha = $multiplePaymentReceipts->sum('amount'); // This is the actual Kwacha amount paid
-                
-                // Calculate the USD amount by using the rate from the receipt if available
-                if ($receipt && $receipt->rate && $receipt->rate > 0) {
-                    $totalBillUsd = round($totalBillKwacha / $receipt->rate, 2);
-                } else {
-                    // Fallback: if no rate available, try to calculate from receipt if it has both bill values
-                    if ($receipt && $receipt->bill_usd && $receipt->bill_kwacha && $receipt->bill_kwacha > 0) {
-                        $calculatedRate = $receipt->bill_kwacha / $receipt->bill_usd;
-                        $totalBillUsd = round($totalBillKwacha / $calculatedRate, 2);
-                    } else {
-                        // If no rate is available, we can't convert - so show Kwacha value in both as fallback
-                        // Though this isn't ideal, it maintains backward compatibility
-                        $totalBillUsd = $totalBillKwacha;
-                    }
-                }
+                $totalBillKwacha = round($multiplePaymentReceipts->sum(
+                    fn ($payment) => $this->paymentAmountInCurrency($payment, 'ZMW', $receipt)
+                ), 2);
+                $totalBillUsd = round($multiplePaymentReceipts->sum(
+                    fn ($payment) => $this->paymentAmountInCurrency($payment, 'USD', $receipt)
+                ), 2);
                 
                 // Combine all payment methods into a single string
                 $paymentMethods = $multiplePaymentReceipts->pluck('method_of_payment')->unique()->filter()->implode(', ');
@@ -125,7 +117,7 @@ class NwcReportService
 
                 $methodTotals = [];
                 foreach ($paymentMethodGroups as $key => $matches) {
-                    $methodTotals[$key] = $this->sumPaymentAmounts($multiplePaymentReceipts, $matches);
+                    $methodTotals[$key] = $this->sumPaymentAmounts($multiplePaymentReceipts, $matches, $receipt);
                 }
 
                 $totalAirtel = $methodTotals['airtel'];
@@ -171,6 +163,7 @@ class NwcReportService
                     'zamtel' => $totalZamtel,
                     'other_payment' => $totalOther,
                     'cashier_name' => $cashierName,
+                    'collection_branch_name' => $transaction->collectionBranch?->name ?: $shipment?->branch?->name,
                     'cargo_type' => $cargoType,
                     'shipment' => $shipment,
                     'consignment' => $consignment,
@@ -237,6 +230,7 @@ class NwcReportService
                     'zamtel' => $zamtel,
                     'other_payment' => $otherPayment,
                     'cashier_name' => $cashierName,
+                    'collection_branch_name' => $transaction->collectionBranch?->name ?: $shipment?->branch?->name,
                     'cargo_type' => $cargoType,
                     'shipment' => $shipment,
                     'consignment' => $consignment,
@@ -447,6 +441,7 @@ class NwcReportService
             'P1' => 'Card Payment',
             'Q1' => 'Zamtel',
             'R1' => 'Other',
+            'S1' => 'Collection Branch',
         ];
 
         foreach ($headers as $cell => $value) {
@@ -473,6 +468,7 @@ class NwcReportService
             $sheet->setCellValue("P{$rowPointer}", $row['card_payment']);
             $sheet->setCellValue("Q{$rowPointer}", $row['zamtel']);
             $sheet->setCellValue("R{$rowPointer}", $row['other_payment']);
+            $sheet->setCellValue("S{$rowPointer}", $row['collection_branch_name'] ?? 'Legacy / unassigned');
             $rowPointer++;
         }
 
@@ -494,7 +490,7 @@ class NwcReportService
         $sheet->setCellValue("F" . ($summaryStartRow + 1), $summary['average_rate']);
 
         $sheet->setAutoFilter($sheet->calculateWorksheetDimension());
-        foreach (range('A', 'R') as $columnID) {
+        foreach (range('A', 'S') as $columnID) {
             $sheet->getColumnDimension($columnID)->setAutoSize(true);
         }
 
@@ -512,7 +508,7 @@ class NwcReportService
         ];
     }
 
-    protected function sumPaymentAmounts(Collection $payments, array $methodMatches): float
+    protected function sumPaymentAmounts(Collection $payments, array $methodMatches, ?\App\Models\NwcReceipt $receipt = null): float
     {
         $normalizedTargets = collect($methodMatches)
             ->filter()
@@ -534,9 +530,31 @@ class NwcReportService
 
                 return in_array(Str::lower($method), $normalizedTargets, true);
             })
-            ->sum('amount');
+            ->sum(fn ($payment) => $this->paymentAmountInCurrency($payment, 'ZMW', $receipt));
 
         return round($totalKwacha, 2);
+    }
+
+    protected function paymentAmountInCurrency($payment, string $targetCurrency, ?\App\Models\NwcReceipt $receipt): float
+    {
+        $amount = (float) $payment->amount;
+        $sourceCurrency = strtoupper((string) ($payment->currency ?: $receipt?->payment_currency ?: 'ZMW'));
+        $targetCurrency = strtoupper($targetCurrency);
+        if ($sourceCurrency === $targetCurrency) return $amount;
+
+        $rate = (float) ($receipt?->rate ?? 0);
+        if ($rate > 0 && $sourceCurrency === 'USD' && $targetCurrency === 'ZMW') return $amount * $rate;
+        if ($rate > 0 && $sourceCurrency === 'ZMW' && $targetCurrency === 'USD') return $amount / $rate;
+
+        if (function_exists('convert_currency')) {
+            try {
+                return (float) convert_currency($amount, strtolower($sourceCurrency), strtolower($targetCurrency));
+            } catch (\Throwable $th) {
+                report($th);
+            }
+        }
+
+        return $amount;
     }
 
     protected function normalizeMethod(?string $method): ?string

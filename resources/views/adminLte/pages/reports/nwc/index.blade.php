@@ -374,6 +374,7 @@
                                 <th class="fw-bold"><b>Bill (ZMW)</b></th>
                                 <th class="fw-bold"><b>Method</b></th>
                                 <th class="fw-bold"><b>Cashier</b></th>
+                                <th class="fw-bold"><b>Collection Branch</b></th>
                                 <th class="bg-danger text-dark fw-bold">Airtel</th>
                                 <th class="bg-warning text-dark font-lg fw-bold">MTN</th>
                                 <th class="bg-success text-dark font-lg fw-bold">Cash Payments</th>
@@ -397,6 +398,7 @@
                                 <td>{{ $row['bill_kwacha'] !== null ? number_format($row['bill_kwacha'], 2) : '—' }}</td>
                                 <td>{{ $row['method_of_payment'] }}</td>
                                 <td>{{ $row['cashier_name'] ?? 'N/A' }}</td>
+                                <td>{{ $row['collection_branch_name'] ?? 'Legacy / unassigned' }}</td>
                                 @php
                                     $airtelAmount = $row['airtel'] ?? 0;
                                     $mtnAmount = $row['mtn'] ?? 0;

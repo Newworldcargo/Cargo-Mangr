@@ -115,6 +115,8 @@ $client = 4;
                     <th class="px-4 py-2">Shipment Code.</th>
                     <th class="px-4 py-2">Client</th>
                     <th class="px-4 py-2">Client Phone</th>
+                    <th class="px-4 py-2">Collected At</th>
+                    <th class="px-4 py-2">Processed By</th>
                     <th class="px-4 py-2">Amount</th>
                     <th class="px-4 py-2">Status</th>
                     <th class="px-4 py-2">Created At</th>
@@ -129,6 +131,8 @@ $client = 4;
                     <td class="px-4 py-2 font-medium text-gray-800">{{ $txn->shipment?->code }}</td>
                     <td class="px-4 py-2">{{ $txn?->shipment?->client?->name ?? 'N/A' }}</td>
                     <td class="px-4 py-2">{{ $txn?->shipment?->client_phone ?? 'Not placed' }}</td>
+                    <td class="px-4 py-2">{{ $txn->collectionBranch?->name ?? $txn->shipment?->branch?->name ?? 'Legacy / unassigned' }}</td>
+                    <td class="px-4 py-2">{{ $txn->cashier?->name ?? 'Legacy / unassigned' }}</td>
                     <td class="px-4 py-2 text-green-600 font-semibold">{{ currency_symbol_for($txn->display_currency ?? $branchCurrency ?? 'ZMW') }}{{ number_format($txn->display_total, 2) }} {{ $txn->display_currency ?? $branchCurrency ?? 'ZMW' }}</td>
                     <td class="px-4 py-2">
                         @if($txn->isRefunded())
@@ -147,7 +151,7 @@ $client = 4;
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="7" class="text-center py-4 text-gray-500">No transactions found.</td>
+                    <td colspan="11" class="text-center py-4 text-gray-500">No transactions found.</td>
                 </tr>
                 @endforelse
             </tbody>

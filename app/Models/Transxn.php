@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Modules\Cargo\Entities\Shipment;
 use App\Models\NwcReceipt;
+use Modules\Cargo\Entities\Branch;
 
 class Transxn extends Model
 {
@@ -43,6 +44,11 @@ class Transxn extends Model
     public function cashier()
     {
         return $this->belongsTo(User::class, 'cashier_user_id');
+    }
+
+    public function collectionBranch()
+    {
+        return $this->belongsTo(Branch::class, 'collection_branch_id');
     }
 
     public function isRefunded()

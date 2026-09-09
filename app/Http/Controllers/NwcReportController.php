@@ -308,12 +308,7 @@ class NwcReportController extends Controller
     {
         $viewer = $request->user();
         $options = $this->scopeFilters->options($viewer, $viewer->can('manage-transactions') || (int) $viewer->role === 3);
-        $selected = $this->scopeFilters->selected(
-            $viewer,
-            $options,
-            (int) $request->input('branch_id') ?: null,
-            $request->input('scope') === 'self' ? $viewer->id : ((int) $request->input('user_id') ?: null),
-        );
+        $selected = $this->scopeFilters->selectedFromRequest($viewer, $options, $request);
 
         return [$options, $selected];
     }

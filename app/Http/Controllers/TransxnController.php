@@ -65,12 +65,7 @@ class TransxnController extends Controller
 
         $viewer = auth()->user();
         $scopeOptions = $this->scopeFilters->options($viewer, $viewer->can('manage-transactions') || (int) $viewer->role === 3);
-        $selectedScope = $this->scopeFilters->selected(
-            $viewer,
-            $scopeOptions,
-            (int) $request->input('branch_id') ?: null,
-            $request->input('scope') === 'self' ? $viewer->id : ((int) $request->input('user_id') ?: null),
-        );
+        $selectedScope = $this->scopeFilters->selectedFromRequest($viewer, $scopeOptions, $request);
         $selectedBranch = $selectedScope['selectedBranchId'] ? Branch::find($selectedScope['selectedBranchId']) : null;
         $branchCurrency = $this->branchAccess->currencyFor($viewer, $selectedBranch, (bool) $selectedBranch);
 
@@ -92,7 +87,7 @@ class TransxnController extends Controller
             $refundedTotals[$key] = $p['refunded'];
         }
 
-        $listingQuery = $this->applyGlobalScope($this->transactionScope->apply(Transxn::with(['shipment.client', 'shipment']), $viewer), $selectedScope)
+        $listingQuery = $this->applyGlobalScope($this->transactionScope->apply(Transxn::with(['shipment.client', 'shipment.branch', 'cashier', 'collectionBranch']), $viewer), $selectedScope)
             ->orderBy('created_at', 'desc')
             ->limit(500);
         $transactions = $listingQuery->get();
@@ -117,7 +112,14 @@ class TransxnController extends Controller
     private function applyGlobalScope($query, array $scope)
     {
         if ($scope['selectedBranchId']) {
-            $query->whereHas('shipment', fn ($shipment) => $shipment->where('branch_id', $scope['selectedBranchId']));
+            $branchId = $scope['selectedBranchId'];
+            $query->where(function ($branchQuery) use ($branchId) {
+                $branchQuery->where('collection_branch_id', $branchId)
+                    ->orWhere(function ($legacyQuery) use ($branchId) {
+                        $legacyQuery->whereNull('collection_branch_id')
+                            ->whereHas('shipment', fn ($shipment) => $shipment->where('branch_id', $branchId));
+                    });
+            });
         }
 
         if ($scope['selectedUserId']) {

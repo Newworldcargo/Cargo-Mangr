@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\User;
 use App\Models\AuditLog;
 use App\Models\Transxn;
+use Illuminate\Http\Request;
 use Modules\Cargo\Entities\Branch;
 use Modules\Cargo\Entities\Driver;
 use Modules\Cargo\Entities\Staff;
@@ -58,6 +59,23 @@ class OperationalScopeFilterService
         }
 
         return compact('selectedBranchId', 'selectedUserId');
+    }
+
+    /**
+     * Branch, team-member and self are alternative views. Explicit branch or
+     * user selections must not be silently narrowed by a stale `scope=self`
+     * query parameter left in the URL by the filter switch.
+     */
+    public function selectedFromRequest(User $viewer, array $options, Request $request): array
+    {
+        $branchId = (int) $request->input('branch_id') ?: null;
+        $userId = (int) $request->input('user_id') ?: null;
+
+        if (!$branchId && !$userId && $request->input('scope') === 'self') {
+            $userId = $viewer->id;
+        }
+
+        return $this->selected($viewer, $options, $branchId, $userId);
     }
 
     private function branchUserIds(?int $branchId, int $viewerId)
