@@ -238,6 +238,11 @@ class ConsignmentImportController extends Controller
             $ids = []; $created = 0; $updated = 0; $unchanged = 0;
             foreach ($rows as $row) {
                 $data = $row->mapped_values;
+                // Spreadsheet weight cells are frequently blank or contain units (for example, "6.6kg").
+                // Both shipment weight columns are numeric and non-nullable, so persist the same normalized value.
+                $weight = $this->number($data['weight'] ?? null) ?? 0.0;
+                $amount = $this->number($data['amount'] ?? null) ?? 0.0;
+                $pieces = $this->number($data['pieces'] ?? null) ?? 1.0;
                 $client = $this->resolveClient($data, $batch);
                 $shipment = Shipment::where('code', $data['hawb_number'])->first();
                 if ($shipment && (int) $shipment->consignment_id !== (int) $consignment->id) throw new \RuntimeException('A parcel code now belongs to another consignment. Review the preview again.');
@@ -247,18 +252,18 @@ class ConsignmentImportController extends Controller
                     'reciver_name' => $data['consignee_name'], 'reciver_phone' => $data['phone'], 'reciver_phone_2' => $data['phone_2'] ?? null,
                     'reciver_address' => $data['destination'], 'from_country_id' => $batch->from_country_id, 'from_state_id' => $batch->from_state_id,
                     'to_country_id' => $batch->to_country_id, 'to_state_id' => $batch->to_state_id, 'payment_type' => Shipment::POSTPAID,
-                    'shipping_cost' => $this->number($data['amount'] ?? 0), 'amount_to_be_collected' => $this->number($data['amount'] ?? 0),
-                    'total_weight' => $this->number($data['weight'] ?? 0)];
+                    'shipping_cost' => $amount, 'amount_to_be_collected' => $amount,
+                    'total_weight' => $weight];
                 if (!$shipment) {
                     $shipment = Shipment::create($shipmentData + ['status_id' => Shipment::PENDING_STATUS, 'type' => Shipment::PICKUP,
                         'shipping_date' => now()->toDateString(), 'client_status' => Shipment::CLIENT_STATUS_CREATED]);
                     PackageShipment::create(['package_id' => $package->id, 'shipment_id' => $shipment->id, 'description' => $data['description'] ?? null,
-                        'weight' => $data['weight'] ?? 0, 'qty' => $data['pieces'] ?? 1]);
+                        'weight' => $weight, 'qty' => $pieces]);
                     $created++;
                 } elseif ($row->status === 'update') {
                     $shipment->update($shipmentData);
                     $packageRow = $shipment->packageShipments()->first();
-                    $packageData = ['description' => $data['description'] ?? null, 'weight' => $data['weight'] ?? 0, 'qty' => $data['pieces'] ?? 1];
+                    $packageData = ['description' => $data['description'] ?? null, 'weight' => $weight, 'qty' => $pieces];
                     $packageRow ? $packageRow->update($packageData) : PackageShipment::create($packageData + ['package_id' => $package->id, 'shipment_id' => $shipment->id]);
                     $updated++;
                 } else {
