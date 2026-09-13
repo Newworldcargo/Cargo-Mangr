@@ -34,4 +34,10 @@ return [
     'otp_sms_webhook_token' => env('CUSTOMER_PORTAL_OTP_SMS_WEBHOOK_TOKEN'),
 
     'otp_sms_from' => env('CUSTOMER_PORTAL_OTP_SMS_FROM', 'New WorldCargo'),
+
+    'payment_provider' => env('CUSTOMER_PORTAL_PAYMENT_PROVIDER'),
+
+    'payment_webhook_url' => env('CUSTOMER_PORTAL_PAYMENT_WEBHOOK_URL'),
+
+    'payment_webhook_token' => env('CUSTOMER_PORTAL_PAYMENT_WEBHOOK_TOKEN'),
 ];
