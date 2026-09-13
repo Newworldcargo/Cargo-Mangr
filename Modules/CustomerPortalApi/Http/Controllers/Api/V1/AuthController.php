@@ -15,6 +15,7 @@ use Illuminate\Support\Str;
 use Modules\Cargo\Entities\Client;
 use Modules\CustomerPortalApi\Http\Resources\AuthUserResource;
 use Modules\CustomerPortalApi\Services\Portal\PortalBffService;
+use Modules\CustomerPortalApi\Services\Portal\PortalOtpNotifier;
 
 class AuthController extends PortalController
 {
@@ -113,6 +114,7 @@ class AuthController extends PortalController
         $request->session()->regenerate();
         $request->session()->regenerateToken();
         $user->setRelation('portalClient', Client::where('user_id', $user->id)->first());
+        app(PortalOtpNotifier::class)->sendVerification($user);
 
         $response = $this->success($request, (new AuthUserResource($user))->resolve($request), 201);
         return $this->withBffSessionHeaders($request, $response, $user);
@@ -163,6 +165,7 @@ class AuthController extends PortalController
         $user->otp = random_int(100000, 999999);
         $user->otp_expires_at = now()->addMinutes(10);
         $user->save();
+        app(PortalOtpNotifier::class)->sendVerification($user);
         return $this->success($request, null);
     }
 

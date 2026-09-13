@@ -26,4 +26,12 @@ return [
     'bff_shared_secret' => env('CUSTOMER_PORTAL_BFF_SHARED_SECRET'),
 
     'bff_session_hours' => (int) env('CUSTOMER_PORTAL_BFF_SESSION_HOURS', 8),
+
+    'otp_email_enabled' => (bool) env('CUSTOMER_PORTAL_OTP_EMAIL_ENABLED', true),
+
+    'otp_sms_webhook_url' => env('CUSTOMER_PORTAL_OTP_SMS_WEBHOOK_URL'),
+
+    'otp_sms_webhook_token' => env('CUSTOMER_PORTAL_OTP_SMS_WEBHOOK_TOKEN'),
+
+    'otp_sms_from' => env('CUSTOMER_PORTAL_OTP_SMS_FROM', 'New WorldCargo'),
 ];
