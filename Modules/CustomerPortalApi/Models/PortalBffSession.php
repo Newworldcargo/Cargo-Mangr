@@ -20,5 +20,6 @@ class PortalBffSession extends Model
         'expires_at' => 'datetime',
         'last_used_at' => 'datetime',
         'revoked_at' => 'datetime',
+        'trusted_at' => 'datetime',
     ];
 }

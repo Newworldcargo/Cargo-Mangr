@@ -4,6 +4,7 @@ namespace Modules\CustomerPortalApi\Http\Controllers\Api\V1;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Modules\CustomerPortalApi\Http\Resources\WalletResource;
 use Modules\CustomerPortalApi\Models\PortalWallet;
 use Modules\CustomerPortalApi\Models\PortalWalletLedger;
@@ -43,6 +44,43 @@ class WalletController extends PortalController
             })->values()->all();
 
         return $this->success($request, $entries);
+    }
+
+    public function topUp(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'amount' => ['required', 'numeric', 'min:0.01'],
+        ]);
+
+        if ($validator->fails()) {
+            return $this->problem($request, 'VALIDATION_FAILED', 'Please correct the highlighted fields.', 422, $validator->errors()->toArray());
+        }
+
+        $wallet = $this->wallet();
+        $amountMinor = (int) round(((float) $request->input('amount')) * 100);
+
+        DB::transaction(function () use ($wallet, $amountMinor, $request) {
+            PortalWalletLedger::create([
+                'wallet_id' => $wallet->id,
+                'amount_minor' => $amountMinor,
+                'bucket' => 'available',
+                'type' => 'topup',
+                'status' => 'posted',
+                'reference_type' => 'customer_portal_topup',
+                'metadata' => [
+                    'source' => 'customer_portal_api',
+                    'request_id' => (string) $request->attributes->get('portal_request_id'),
+                ],
+            ]);
+
+            $wallet->revision = ((int) ($wallet->revision ?: 1)) + 1;
+            $wallet->save();
+        });
+
+        $wallet = $wallet->fresh();
+        $this->attachBalances($wallet);
+
+        return $this->success($request, (new WalletResource($wallet))->resolve($request), 201);
     }
 
     private function wallet()

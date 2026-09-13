@@ -2,13 +2,16 @@
 
 use Illuminate\Support\Facades\Route;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\AddressController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\AccountSettingsController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\AuthController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\HealthController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\InvoiceActionController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\InvoiceController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\DraftQuoteController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\FileController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\NotificationController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ReferenceDataController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\PaymentMethodController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ShipmentController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ProfileController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\PaymentController;
@@ -16,6 +19,7 @@ use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ShipmentActionController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ShipmentDeliveryController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\PickupController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ReturnController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\SavedPlaceController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\SupportController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\RecipientController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\SessionController;
@@ -54,11 +58,23 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
     Route::get('profile', [ProfileController::class, 'show']);
     Route::patch('profile', [ProfileController::class, 'update']);
 
+    Route::get('account/settings', [AccountSettingsController::class, 'show']);
+    Route::delete('account/devices/{device}', [AccountSettingsController::class, 'revokeDevice'])->whereNumber('device');
+    Route::patch('account/devices/{device}/trust', [AccountSettingsController::class, 'trustDevice'])->whereNumber('device');
+    Route::patch('account/marketing', [AccountSettingsController::class, 'marketing']);
+    Route::post('account/data-export', [AccountSettingsController::class, 'requestDataExport']);
+    Route::post('account/deletion-request', [AccountSettingsController::class, 'requestDeletion']);
+
     Route::get('addresses', [AddressController::class, 'index']);
     Route::post('addresses', [AddressController::class, 'store']);
     Route::get('addresses/{address}', [AddressController::class, 'show'])->whereNumber('address');
     Route::patch('addresses/{address}', [AddressController::class, 'update'])->whereNumber('address');
     Route::delete('addresses/{address}', [AddressController::class, 'destroy'])->whereNumber('address');
+
+    Route::get('saved-places', [SavedPlaceController::class, 'index']);
+    Route::post('saved-places', [SavedPlaceController::class, 'store']);
+    Route::patch('saved-places/{place}', [SavedPlaceController::class, 'update'])->whereNumber('place');
+    Route::delete('saved-places/{place}', [SavedPlaceController::class, 'destroy'])->whereNumber('place');
 
     Route::get('recipients', [RecipientController::class, 'index']);
     Route::post('recipients', [RecipientController::class, 'store']);
@@ -68,8 +84,11 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
 
     Route::get('invoices', [InvoiceController::class, 'index']);
     Route::get('invoices/{invoice}', [InvoiceController::class, 'show'])->whereNumber('invoice');
+    Route::patch('invoices/{invoice}/reminder', [InvoiceActionController::class, 'reminder'])->whereNumber('invoice');
+    Route::post('invoices/{invoice}/disputes', [InvoiceActionController::class, 'dispute'])->whereNumber('invoice');
     Route::get('wallet', [WalletController::class, 'show']);
     Route::get('wallet/transactions', [WalletController::class, 'transactions']);
+    Route::post('wallet/top-ups', [WalletController::class, 'topUp']);
 
     Route::post('files/upload-intents', [FileController::class, 'createIntent']);
     Route::put('files/{fileId}/content', [FileController::class, 'upload'])->whereUuid('fileId');
@@ -77,6 +96,10 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
     Route::get('files/{fileId}/download', [FileController::class, 'download'])->whereUuid('fileId');
     Route::post('payments/intents', [PaymentController::class, 'createIntent']);
     Route::get('payments/intents/{intent}', [PaymentController::class, 'showIntent']);
+    Route::get('payment-methods', [PaymentMethodController::class, 'index']);
+    Route::post('payment-methods', [PaymentMethodController::class, 'store']);
+    Route::delete('payment-methods/{method}', [PaymentMethodController::class, 'destroy'])->whereNumber('method');
+    Route::patch('payment-methods/{method}/default', [PaymentMethodController::class, 'makeDefault'])->whereNumber('method');
 
     Route::get('shipment-drafts', [DraftQuoteController::class, 'drafts']);
     Route::post('shipment-drafts', [DraftQuoteController::class, 'createDraft']);
@@ -103,6 +126,10 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
     Route::get('pickups/current', [PickupController::class, 'current']);
     Route::post('pickups', [PickupController::class, 'store']);
     Route::post('pickups/{pickup}/cancel', [PickupController::class, 'cancel'])->whereNumber('pickup');
+    Route::patch('pickups/by-shipment/{shipment}/reschedule', [PickupController::class, 'rescheduleByShipment'])->whereNumber('shipment');
+    Route::patch('pickups/by-shipment/{shipment}/cancel', [PickupController::class, 'cancelByShipment'])->whereNumber('shipment');
+    Route::patch('pickups/by-shipment/{shipment}/help', [PickupController::class, 'helpByShipment'])->whereNumber('shipment');
+    Route::patch('pickups/by-shipment/{shipment}/restore', [PickupController::class, 'restoreByShipment'])->whereNumber('shipment');
 
     Route::get('shipments', [ShipmentController::class, 'index']);
     Route::get('shipments/{shipment}', [ShipmentController::class, 'show'])->whereNumber('shipment');

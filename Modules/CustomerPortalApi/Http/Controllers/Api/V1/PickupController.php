@@ -3,6 +3,7 @@
 namespace Modules\CustomerPortalApi\Http\Controllers\Api\V1;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Validator;
 use Modules\Cargo\Entities\Shipment;
 use Modules\CustomerPortalApi\Http\Resources\PickupResource;
@@ -69,6 +70,94 @@ class PickupController extends PortalController
         $model->save();
 
         return $this->success($request, (new PickupResource($model->fresh()))->resolve($request));
+    }
+
+    public function rescheduleByShipment(Request $request, $shipment)
+    {
+        $validator = Validator::make($request->all(), [
+            'slotId' => ['required', 'string', 'in:today-pm,tomorrow-am,tomorrow-pm'],
+        ]);
+
+        if ($validator->fails()) {
+            return $this->problem($request, 'VALIDATION_FAILED', 'Please correct the highlighted fields.', 422, $validator->errors()->toArray());
+        }
+
+        $model = $this->pickupForShipment($shipment);
+        if (!$model) {
+            return $this->problem($request, 'NOT_FOUND', 'Pickup not found for this shipment.', 404);
+        }
+
+        [$date, $time] = $this->slotToDateTime($request->input('slotId'));
+        $model->status = 'rescheduled';
+        $model->scheduled_date = $date;
+        $model->scheduled_time = $time;
+        $model->revision = ((int) ($model->revision ?: 1)) + 1;
+        $model->save();
+
+        return $this->success($request, (new PickupResource($model->fresh()))->resolve($request));
+    }
+
+    public function cancelByShipment(Request $request, $shipment)
+    {
+        $model = $this->pickupForShipment($shipment);
+        if (!$model) {
+            return $this->problem($request, 'NOT_FOUND', 'Pickup not found for this shipment.', 404);
+        }
+
+        $model->status = 'cancelled';
+        $model->revision = ((int) ($model->revision ?: 1)) + 1;
+        $model->save();
+
+        return $this->success($request, (new PickupResource($model->fresh()))->resolve($request));
+    }
+
+    public function helpByShipment(Request $request, $shipment)
+    {
+        $model = $this->pickupForShipment($shipment);
+        if (!$model) {
+            return $this->problem($request, 'NOT_FOUND', 'Pickup not found for this shipment.', 404);
+        }
+
+        $model->status = 'needs-support';
+        $model->revision = ((int) ($model->revision ?: 1)) + 1;
+        $model->save();
+
+        return $this->success($request, (new PickupResource($model->fresh()))->resolve($request));
+    }
+
+    public function restoreByShipment(Request $request, $shipment)
+    {
+        $model = $this->pickupForShipment($shipment);
+        if (!$model) {
+            return $this->problem($request, 'NOT_FOUND', 'Pickup not found for this shipment.', 404);
+        }
+
+        $model->status = 'scheduled';
+        $model->revision = ((int) ($model->revision ?: 1)) + 1;
+        $model->save();
+
+        return $this->success($request, (new PickupResource($model->fresh()))->resolve($request));
+    }
+
+    private function pickupForShipment($shipment)
+    {
+        return PortalPickup::where('client_id', $this->customerContext->requireClient()->id)
+            ->where('shipment_id', $shipment)
+            ->with('shipment')
+            ->orderByDesc('created_at')
+            ->first();
+    }
+
+    private function slotToDateTime($slotId)
+    {
+        if ($slotId === 'tomorrow-am') {
+            return [Carbon::tomorrow()->format('Y-m-d'), '09:00–11:00'];
+        }
+        if ($slotId === 'tomorrow-pm') {
+            return [Carbon::tomorrow()->format('Y-m-d'), '14:00–16:00'];
+        }
+
+        return [Carbon::today()->format('Y-m-d'), '15:00–17:00'];
     }
 
     private function revisionConflict(Request $request, $model)
