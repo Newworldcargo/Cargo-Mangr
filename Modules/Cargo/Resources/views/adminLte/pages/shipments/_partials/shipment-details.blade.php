@@ -97,3 +97,40 @@
         @endif
     </div>
 </div>
+@php
+    $shipmentEvidence = collect(json_decode((string) $shipment->attachments_before_shipping, true) ?: [])
+        ->filter(fn ($item) => is_array($item) && !empty($item['file_id']))
+        ->values();
+@endphp
+@if($shipmentEvidence->isNotEmpty())
+    <div class="mt-8 bg-white rounded-lg shadow-sm p-6">
+        <div class="d-flex align-items-center justify-content-between flex-wrap mb-4">
+            <div>
+                <h2 class="text-lg font-bold text-gray-700 mb-1">Customer uploaded evidence</h2>
+                <p class="text-sm text-gray-500 mb-0">Photos and documents attached from the customer app before submission.</p>
+            </div>
+            <span class="badge badge-light text-dark">{{ $shipmentEvidence->count() }} file{{ $shipmentEvidence->count() === 1 ? '' : 's' }}</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            @foreach($shipmentEvidence as $file)
+                <a class="border rounded-lg p-4 d-flex align-items-center text-decoration-none hover:shadow-sm"
+                   href="{{ route('shipments.evidence.download', ['shipment' => $shipment->id, 'fileId' => $file['file_id']]) }}"
+                   target="_blank" rel="noopener">
+                    <span class="d-inline-flex align-items-center justify-content-center rounded-circle mr-3"
+                          style="width: 42px; height: 42px; background: #eef4ff; color: #1d4ed8;">
+                        <i class="{{ str_starts_with((string) ($file['content_type'] ?? ''), 'image/') ? 'fas fa-image' : 'fas fa-file-alt' }}"></i>
+                    </span>
+                    <span class="min-w-0">
+                        <span class="d-block font-medium text-gray-700 text-truncate">{{ $file['name'] ?? 'Shipment evidence' }}</span>
+                        <span class="d-block text-sm text-gray-500">
+                            {{ strtoupper((string) ($file['purpose'] ?? 'shipment-evidence')) }}
+                            @if(!empty($file['size_bytes']))
+                                · {{ number_format(((int) $file['size_bytes']) / 1024, 1) }} KB
+                            @endif
+                        </span>
+                    </span>
+                </a>
+            @endforeach
+        </div>
+    </div>
+@endif

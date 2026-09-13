@@ -222,6 +222,7 @@ if (\Illuminate\Support\Facades\Schema::hasTable('translations') && check_module
                 // Shipment Routes
                 Route::get('report','ShipmentController@shipmentsReport')->name('shipments.report');
                 Route::get('generate-token','ShipmentController@ajaxGgenerateToken')->name('shipments.generate-token');
+                Route::get('shipments/{shipment}/evidence/{fileId}', 'ShipmentController@downloadEvidence')->name('shipments.evidence.download');
                 Route::delete('/shipments-multi-destroy', 'ShipmentController@multiDestroy')->name('shipments.multi-destroy');
                 Route::resource('shipments','ShipmentController');
 
@@ -532,6 +533,7 @@ if (\Illuminate\Support\Facades\Schema::hasTable('translations') && check_module
             // Shipment Routes
             Route::get('report','ShipmentController@shipmentsReport')->name('shipments.report');
             Route::get('generate-token','ShipmentController@ajaxGgenerateToken')->name('shipments.generate-token');
+            Route::get('shipments/{shipment}/evidence/{fileId}', 'ShipmentController@downloadEvidence')->name('shipments.evidence.download');
             Route::delete('/shipments-multi-destroy', 'ShipmentController@multiDestroy')->name('shipments.multi-destroy');
             Route::resource('shipments','ShipmentController');
 

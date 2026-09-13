@@ -5,6 +5,7 @@ namespace Modules\Cargo\Http\Controllers;
 use Illuminate\Contracts\Support\Renderable;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Storage;
 
 use Modules\Cargo\Http\DataTables\ShipmentsDataTable;
 use Modules\Cargo\Http\Requests\ShipmentRequest;
@@ -44,6 +45,7 @@ use App\Models\Transxn;
 use App\Models\GeneralSettings;
 use App\Traits\Tracker;
 use App\Traits\HandlesCurrencyExchange;
+use Modules\CustomerPortalApi\Models\PortalFile;
 use App\Services\RefundService;
 use Modules\Cargo\Events\AddShipment;
 use Modules\Cargo\Events\CreateMission;
@@ -465,6 +467,46 @@ class ShipmentController extends Controller
         }
         $adminTheme = env('ADMIN_THEME', 'adminLte');
         return view('cargo::' . $adminTheme . '.pages.shipments.show', compact('shipment', 'auditLogs', 'pendingRefundRequest', 'remainingRefundAmount'));
+    }
+
+    public function downloadEvidence($shipmentId, $fileId)
+    {
+        $shipment = Shipment::findOrFail($shipmentId);
+        abort_unless($this->canViewShipmentEvidence(auth()->user(), $shipment), 403);
+
+        $evidence = collect(json_decode((string) $shipment->attachments_before_shipping, true) ?: []);
+        abort_unless($evidence->contains(fn ($item) => is_array($item) && (string) ($item['file_id'] ?? '') === (string) $fileId), 404);
+
+        $file = PortalFile::where('file_id', $fileId)
+            ->where('client_id', $shipment->client_id)
+            ->where('status', 'scan_pending')
+            ->firstOrFail();
+
+        $disk = Storage::disk(config('filesystems.portal_disk', config('filesystems.default', 'local')));
+        abort_unless($disk->exists($file->storage_key), 404);
+
+        $filename = str_replace(["\r", "\n", '"'], '', $file->original_name ?: 'shipment-evidence');
+
+        return $disk->response($file->storage_key, $filename, [
+            'Content-Type' => $file->content_type ?: 'application/octet-stream',
+            'Content-Disposition' => 'inline; filename="' . $filename . '"',
+        ]);
+    }
+
+    private function canViewShipmentEvidence(?User $user, Shipment $shipment): bool
+    {
+        if (!$user) return false;
+
+        $branchAccess = app(BranchAccessService::class);
+        if ($branchAccess->isTopAdmin($user)) return true;
+
+        if ((int) $user->role === 4) {
+            return (int) Client::where('user_id', $user->id)->value('id') === (int) $shipment->client_id;
+        }
+
+        $branchId = $branchAccess->branchIdFor($user);
+        return $branchId && (int) $branchId === (int) $shipment->branch_id
+            && ((int) $user->role === 3 || $user->can('view-shipments') || $user->can('manage-shipments'));
     }
 
     public function edit($id)
