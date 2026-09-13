@@ -81,7 +81,7 @@ if (\Illuminate\Support\Facades\Schema::hasTable('translations') && check_module
 
 
             Route::get('/settings/blog', 'SettingsController@index')->name('admin.blog_settings');
-            Route::put('/settings/blog', 'SettingsController@update')->name('setting.update');
+            Route::put('/settings/blog', 'SettingsController@update')->name('blog.setting.update');
         });
     });
 }else{
@@ -143,10 +143,9 @@ if (\Illuminate\Support\Facades\Schema::hasTable('translations') && check_module
 
 
         Route::get('/settings/blog', 'SettingsController@index')->name('admin.blog_settings');
-        Route::put('/settings/blog', 'SettingsController@update')->name('setting.update');
+        Route::put('/settings/blog', 'SettingsController@update')->name('blog.setting.update');
     });
 }
-
 
 
 

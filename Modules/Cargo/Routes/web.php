@@ -17,7 +17,7 @@ use Mcamara\LaravelLocalization\Facades\LaravelLocalization;
 Route::get('/paystack/payment/callback', 'PaystackController@handleGatewayCallback');
 Route::get('/instamojo/payment/pay-success', 'InstamojoController@success')->name('instamojo.success');
 Route::get('/payment/callback', 'PaymentCallbackController@store')->name('callback.success');
-Route::post('/payment/callback', 'PaymentCallbackController@store')->name('callback.success');
+Route::post('/payment/callback', 'PaymentCallbackController@store')->name('callback.success.post');
 Route::post('shipment-update-payment','ShipmentController@updatePaymentMeth')->name('shipments.payment.update');
 
 
@@ -99,7 +99,7 @@ if (\Illuminate\Support\Facades\Schema::hasTable('translations') && check_module
 
             //payhere below
             Route::get('/payhere/checkout/testing', 'PayhereController@checkout_testing')->name('payhere.checkout.testing');
-            Route::get('/payhere/wallet/testing', 'PayhereController@wallet_testing')->name('payhere.checkout.testing');
+            Route::get('/payhere/wallet/testing', 'PayhereController@wallet_testing')->name('payhere.wallet.testing');
             Route::get('/payhere/customer_package/testing', 'PayhereController@customer_package_testing')->name('payhere.customer_package.testing');
 
             Route::any('/payhere/checkout/notify', 'PayhereController@checkout_notify')->name('payhere.checkout.notify');
@@ -410,7 +410,7 @@ if (\Illuminate\Support\Facades\Schema::hasTable('translations') && check_module
 
         //payhere below
         Route::get('/payhere/checkout/testing', 'PayhereController@checkout_testing')->name('payhere.checkout.testing');
-        Route::get('/payhere/wallet/testing', 'PayhereController@wallet_testing')->name('payhere.checkout.testing');
+        Route::get('/payhere/wallet/testing', 'PayhereController@wallet_testing')->name('payhere.wallet.testing');
         Route::get('/payhere/customer_package/testing', 'PayhereController@customer_package_testing')->name('payhere.customer_package.testing');
 
         Route::any('/payhere/checkout/notify', 'PayhereController@checkout_notify')->name('payhere.checkout.notify');

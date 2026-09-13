@@ -10,6 +10,7 @@ use Modules\CustomerPortalApi\Http\Controllers\Api\V1\InvoiceController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\DraftQuoteController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\FileController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\NotificationController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\NotificationPreferenceController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ReferenceDataController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\PaymentMethodController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ShipmentController;
@@ -113,6 +114,10 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
     Route::get('notifications', [NotificationController::class, 'index']);
     Route::patch('notifications/{notification}/read', [NotificationController::class, 'read']);
     Route::post('notifications/read-all', [NotificationController::class, 'readAll']);
+    Route::get('notifications/preferences', [NotificationPreferenceController::class, 'show']);
+    Route::patch('notifications/preferences', [NotificationPreferenceController::class, 'update']);
+    Route::post('notifications/push-token', [NotificationPreferenceController::class, 'registerToken']);
+    Route::delete('notifications/push-token', [NotificationPreferenceController::class, 'revokeToken']);
 
     Route::get('support/cases', [SupportController::class, 'index']);
     Route::post('support/cases', [SupportController::class, 'store']);
