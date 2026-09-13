@@ -13,6 +13,8 @@ use Modules\CustomerPortalApi\Models\PortalShipmentDraft;
 use Modules\CustomerPortalApi\Http\Resources\ShipmentResource;
 use Modules\Cargo\Entities\Branch;
 use Modules\Cargo\Entities\Country;
+use Modules\Cargo\Entities\Package;
+use Modules\Cargo\Entities\PackageShipment;
 use Modules\Cargo\Entities\Shipment;
 use Modules\Cargo\Entities\ShipmentSetting;
 use Modules\Cargo\Entities\State;
@@ -95,9 +97,7 @@ class DraftQuoteController extends PortalController
 
         $payload = (array) $model->payload;
         $form = (array) ($payload['form'] ?? []);
-        $cargoRows = array_values(array_filter((array) ($payload['cargoRows'] ?? []), function ($row) {
-            return is_array($row) && trim((string) ($row['name'] ?? '')) !== '' && (int) ($row['quantity'] ?? 0) > 0;
-        }));
+        $cargoRows = $this->normaliseCargoRows((array) ($payload['cargoRows'] ?? []));
         $validator = Validator::make([
             'pickup' => $form['pickup'] ?? null,
             'recipient' => $form['recipient'] ?? null,
@@ -121,6 +121,7 @@ class DraftQuoteController extends PortalController
                 $origin = $this->locationProfile($branch->name . ' ' . $branch->address);
                 $destination = $this->locationProfile((string) ($form['destination'] ?? ''));
                 $evidence = $this->shipmentEvidenceFromPayload($payload, $client->id);
+                $totals = $this->cargoTotals($cargoRows);
                 $shipment = Shipment::create([
                     'code' => '-',
                     'status_id' => Shipment::REQUESTED_STATUS,
@@ -140,14 +141,15 @@ class DraftQuoteController extends PortalController
                     'to_state_id' => $destination['state']->id,
                     'payment_type' => Shipment::POSTPAID,
                     'order_id' => 'PORTAL-' . strtoupper(substr((string) \Illuminate\Support\Str::uuid(), 0, 12)),
-                    'total_weight' => count($cargoRows),
-                    'amount_to_be_collected' => 0,
+                    'total_weight' => $totals['weight'],
+                    'amount_to_be_collected' => $totals['amount'],
                     'attachments_before_shipping' => $evidence ? json_encode($evidence) : null,
                 ]);
                 $width = max(5, (int) (ShipmentSetting::getVal('shipment_code_count') ?: 5));
                 $shipment->barcode = str_pad((string) $shipment->id, $width, '0', STR_PAD_LEFT);
                 $shipment->code = (string) (ShipmentSetting::getVal('shipment_prefix') ?: 'NWC') . $shipment->barcode;
                 $shipment->save();
+                $this->createShipmentPackageRows($shipment, $cargoRows);
                 $payload['submittedShipmentId'] = $shipment->id;
                 $model->payload = $payload;
                 $model->status = 'submitted';
@@ -172,6 +174,62 @@ class DraftQuoteController extends PortalController
         $stateQuery = State::where('covered', 1)->where('country_id', $country->id);
         $state = $preferredState ? (clone $stateQuery)->where('name', 'like', '%' . $preferredState . '%')->first() : null;
         return ['country' => $country, 'state' => $state ?: $stateQuery->orderBy('id')->firstOrFail()];
+    }
+
+    private function normaliseCargoRows(array $rows): array
+    {
+        return collect($rows)
+            ->filter(fn ($row) => is_array($row) && trim((string) ($row['name'] ?? $row['description'] ?? '')) !== '')
+            ->map(function (array $row) {
+                $quantity = max(1, (int) ($row['quantity'] ?? $row['qty'] ?? 1));
+                $weight = $this->decimalFromMixed($row['weight'] ?? $row['totalWeight'] ?? null);
+                $amount = $this->decimalFromMixed($row['amount'] ?? $row['price'] ?? $row['bill'] ?? null);
+                return [
+                    'name' => trim((string) ($row['name'] ?? $row['description'] ?? 'Cargo item')),
+                    'quantity' => $quantity,
+                    'weight' => $weight,
+                    'amount' => $amount,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function cargoTotals(array $rows): array
+    {
+        $weight = collect($rows)->sum(fn ($row) => (float) ($row['weight'] ?? 0));
+        $amount = collect($rows)->sum(fn ($row) => (float) ($row['amount'] ?? 0));
+
+        return [
+            'weight' => $weight > 0 ? $weight : max(1, count($rows)),
+            'amount' => max(0, $amount),
+        ];
+    }
+
+    private function createShipmentPackageRows(Shipment $shipment, array $rows): void
+    {
+        $packageId = Package::orderBy('id')->value('id');
+        if (!$packageId) return;
+
+        foreach ($rows as $row) {
+            PackageShipment::create([
+                'package_id' => $packageId,
+                'shipment_id' => $shipment->id,
+                'description' => $row['name'],
+                'weight' => $row['weight'] ?: null,
+                'length' => 1,
+                'width' => 1,
+                'height' => 1,
+                'qty' => $row['quantity'],
+            ]);
+        }
+    }
+
+    private function decimalFromMixed($value): float
+    {
+        if ($value === null || $value === '') return 0.0;
+        $clean = preg_replace('/[^0-9.\-]/', '', (string) $value);
+        return is_numeric($clean) ? (float) $clean : 0.0;
     }
 
     private function shipmentEvidenceFromPayload(array $payload, int $clientId): array

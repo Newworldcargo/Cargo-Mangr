@@ -5,8 +5,12 @@ namespace Tests\Feature;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Modules\Cargo\Entities\Branch;
 use Modules\Cargo\Entities\Client;
+use Modules\Cargo\Entities\Country;
+use Modules\Cargo\Entities\Package;
 use Modules\Cargo\Entities\Shipment;
+use Modules\Cargo\Entities\State;
 use Tests\TestCase;
 
 class CustomerPortalApiTest extends TestCase
@@ -25,8 +29,8 @@ class CustomerPortalApiTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('data.id', (string) $user->id)
             ->assertJsonPath('data.email', $user->email)
-            ->assertJsonMissingPath('data.remember_token')
             ->assertHeader('X-Request-ID');
+        $this->assertArrayNotHasKey('remember_token', $response->json('data'));
     }
 
     public function test_customer_can_only_list_owned_shipments()
@@ -65,9 +69,9 @@ class CustomerPortalApiTest extends TestCase
         $response = $this->getJson('/api/v1/public/tracking/PUBLIC-123');
 
         $response->assertOk()
-            ->assertJsonMissingPath('data.customerId')
-            ->assertJsonMissingPath('data.price')
             ->assertJsonPath('data.trackingNumber', 'PUBLIC-123');
+        $this->assertArrayNotHasKey('customerId', $response->json('data'));
+        $this->assertArrayNotHasKey('price', $response->json('data'));
     }
 
     public function test_unsafe_authenticated_requests_require_the_portal_csrf_header()
@@ -78,6 +82,52 @@ class CustomerPortalApiTest extends TestCase
 
         $response->assertStatus(419)
             ->assertJsonPath('error.code', 'CSRF_TOKEN_MISMATCH');
+    }
+
+    public function test_customer_draft_submit_creates_pending_shipment_with_cargo_rows()
+    {
+        list($user, $client) = $this->createCustomer('draft-submit@example.test');
+        $branch = $this->createBranch();
+        Package::create(['name' => 'General cargo', 'cost' => 0]);
+
+        $draftResponse = $this->actingAs($user, 'web')
+            ->withSession(['_token' => 'test-csrf-token'])
+            ->withHeader('X-CSRF-Token', 'test-csrf-token')
+            ->postJson('/api/v1/shipment-drafts', [
+                'payload' => [
+                    'service' => 'import',
+                    'form' => [
+                        'pickup' => 'Guangzhou, China',
+                        'destination' => 'Lusaka',
+                        'pickupBranchId' => (string) $branch->id,
+                        'recipient' => 'George Munganga',
+                        'phone' => '+260971000000',
+                    ],
+                    'cargoRows' => [
+                        ['name' => 'Shoes', 'quantity' => 2, 'weight' => 3.5, 'amount' => '$42.50'],
+                        ['name' => 'Phone case', 'quantity' => 1, 'weight' => 0.5, 'amount' => '7.50'],
+                    ],
+                ],
+            ]);
+
+        $draftResponse->assertCreated();
+
+        $submitResponse = $this->actingAs($user, 'web')
+            ->withSession(['_token' => 'test-csrf-token'])
+            ->withHeader('X-CSRF-Token', 'test-csrf-token')
+            ->postJson('/api/v1/shipment-drafts/' . $draftResponse->json('data.id') . '/submit');
+
+        $submitResponse->assertCreated()
+            ->assertJsonPath('data.customerId', (string) $client->id)
+            ->assertJsonPath('data.status', 'pending')
+            ->assertJsonPath('data.packageName', 'Shoes');
+
+        $shipment = Shipment::where('client_id', $client->id)->where('order_id', 'like', 'PORTAL-%')->firstOrFail();
+        $this->assertSame($branch->id, (int) $shipment->branch_id);
+        $this->assertSame(Shipment::REQUESTED_STATUS, (int) $shipment->status_id);
+        $this->assertEquals(4.0, (float) $shipment->total_weight);
+        $this->assertEquals(50.0, (float) $shipment->amount_to_be_collected);
+        $this->assertCount(2, $shipment->packageShipments);
     }
 
     private function createCustomer($email)
@@ -120,5 +170,38 @@ class CustomerPortalApiTest extends TestCase
             'to_country_id' => 1,
             'to_state_id' => 1,
         ], $overrides));
+    }
+
+    private function createBranch()
+    {
+        $country = Country::create([
+            'name' => 'Zambia',
+            'iso3' => 'ZMB',
+            'iso2' => 'ZM',
+            'latitude' => 0,
+            'longitude' => 0,
+            'covered' => 1,
+        ]);
+        State::create([
+            'name' => 'Lusaka',
+            'country_id' => $country->id,
+            'covered' => 1,
+        ]);
+        $branchUser = User::create([
+            'name' => 'Lusaka Branch',
+            'email' => 'branch@example.test',
+            'password' => Hash::make('password'),
+            'role' => 3,
+            'verified' => true,
+        ]);
+
+        return Branch::create([
+            'code' => 1,
+            'user_id' => $branchUser->id,
+            'name' => 'Lusaka Branch',
+            'email' => 'lusaka@example.test',
+            'address' => 'Lusaka, Zambia',
+            'is_archived' => 0,
+        ]);
     }
 }
