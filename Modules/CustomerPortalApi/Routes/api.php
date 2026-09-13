@@ -7,6 +7,7 @@ use Modules\CustomerPortalApi\Http\Controllers\Api\V1\AuthController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\HealthController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\InvoiceActionController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\InvoiceController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\InvoiceDocumentController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\DraftQuoteController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\FileController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\NotificationController;
@@ -85,6 +86,7 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
 
     Route::get('invoices', [InvoiceController::class, 'index']);
     Route::get('invoices/{invoice}', [InvoiceController::class, 'show'])->whereNumber('invoice');
+    Route::get('invoices/{invoice}/receipt-document', [InvoiceDocumentController::class, 'receipt'])->whereNumber('invoice');
     Route::patch('invoices/{invoice}/reminder', [InvoiceActionController::class, 'reminder'])->whereNumber('invoice');
     Route::post('invoices/{invoice}/disputes', [InvoiceActionController::class, 'dispute'])->whereNumber('invoice');
     Route::get('wallet', [WalletController::class, 'show']);
@@ -142,4 +144,5 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
     Route::get('shipments/{shipment}/delivery', [ShipmentDeliveryController::class, 'show'])->whereNumber('shipment');
     Route::patch('shipments/{shipment}/delivery', [ShipmentDeliveryController::class, 'update'])->whereNumber('shipment');
     Route::get('shipments/{shipment}/proof-of-delivery', [ShipmentDeliveryController::class, 'proofOfDelivery'])->whereNumber('shipment');
+    Route::get('shipments/{shipment}/proof-of-delivery-document', [ShipmentDeliveryController::class, 'proofOfDeliveryDocument'])->whereNumber('shipment');
 });
