@@ -123,6 +123,29 @@
                 </li> --}}
 
 
+                @php
+                    $settingMenuPermissions = [
+                        'manage-users',
+                        'view-users',
+                        'create-users',
+                        'manage-setting',
+                        'manage-notifications-setting',
+                        'manage-google-setting',
+                        'manage-theme-setting',
+                        'update-system',
+                        'add-covered-countries',
+                        'manage-areas',
+                        'manage-delivery-time',
+                        'manage-packages',
+                        'shipping-rates',
+                        'shipping-settings',
+                        'twilio-settings',
+                        'manage-tracking-stages',
+                    ];
+                    $canSeeSettingsMenu = $user_role == 1 || collect($settingMenuPermissions)->contains(fn ($permission) => auth()->user()->can($permission));
+                @endphp
+
+                @if ($canSeeSettingsMenu)
                 <li
                     class="nav-item {{ areActiveRoutes(['countries.index','areas.index','deliveryTime.index','packages.index','shipments.settings.fees','shipments.settings','admin.settings','admin.settings.notifications','theme-setting.edit','languages.index','currencies.index','shipments.index','fees.index','admin.settings.google','default-theme.edit','backup.database'],'menu-is-opening menu-open active') }}">
 
@@ -277,6 +300,7 @@
                     </ul>
 
                 </li>
+                @endif
 
                 {{-- @if (auth()->user()->role == 1)
                     <li class="nav-item">

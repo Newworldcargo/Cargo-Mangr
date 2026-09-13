@@ -113,7 +113,7 @@
         <div class="flex justify-between items-center pb-5 border-b-2 border-primary mb-6 relative z-10">
             <div class="flex items-center">
                 <div class="w-20 h-20 rounded-full overflow-hidden bg-white mr-4 flex justify-center items-center">
-                    <img src="https://app.newworldcargo.com/assets/lte/cargo-logo.svg" alt="Newworld Cargo Logo" class="object-contain h-full w-full" />
+                    <img src="https://admin.newworldcargo.com/assets/lte/cargo-logo.svg" alt="Newworld Cargo Logo" class="object-contain h-full w-full" />
                 </div>
                 <div class="leading-relaxed">
                     <div class="text-xl font-bold text-primary">NEWWORLD CARGO LIMITED</div>

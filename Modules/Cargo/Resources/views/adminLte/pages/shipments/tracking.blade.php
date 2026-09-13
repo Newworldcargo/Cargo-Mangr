@@ -190,7 +190,7 @@
                 <div class="flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0">
                     <!-- Logo and Mobile Menu Button -->
                     <div class="">
-                        <img width="110" src="https://app.newworldcargo.com/assets/lte/cargo-logo.svg">
+                        <img width="110" src="https://admin.newworldcargo.com/assets/lte/cargo-logo.svg">
                     </div>
                     <!-- Search Bar -->
                     <div class="w-full md:w-2/3 lg:w-3/4">

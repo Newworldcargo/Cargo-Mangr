@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Modules\Cargo\Entities\Shipment;
 use Illuminate\Http\Request;
 use App\Models\Consignment;
+use App\Models\TrackingStage;
 use App\Models\Transxn;
 use DB;
 
@@ -143,6 +144,53 @@ class ShipmentController extends Controller
             'consignment_current_stage_name' => $shipment->consignment ? $shipment->consignment->getCurrentStageName() : null,
             'created_at' => $shipment->created_at,
             'updated_at' => $shipment->updated_at,
+        ]);
+    }
+
+    /**
+     * Public tracking contract for the React customer app.
+     * Returns a public-safe payload or null when the tracking number is unknown.
+     */
+    public function getPublicTrackingV1($tracking_number)
+    {
+        $shipment = Shipment::with(['client', 'consignment.trackingHistory'])
+            ->where('code', $tracking_number)
+            ->first();
+
+        if (!$shipment) {
+            return response()->json(null);
+        }
+
+        $consignment = $shipment->consignment;
+        $events = $this->buildPublicTrackingEvents($consignment);
+        $status = $this->mapShipmentStatusForPortal($shipment, $consignment);
+        $statusLabel = $this->statusLabelForPortal($status, $shipment, $consignment);
+        $etaAt = optional($consignment)->arrival_date
+            ?? optional($consignment)->eta
+            ?? optional($consignment)->eta_lun
+            ?? optional($consignment)->eta_dar;
+
+        return response()->json([
+            'id' => (string) $shipment->id,
+            'customerId' => (string) ($shipment->client_id ?? 'guest'),
+            'trackingNumber' => (string) $shipment->code,
+            'carrier' => 'New World Cargo',
+            'transportMode' => $this->transportModeForPortal($consignment),
+            'packageName' => $shipment->description ?: 'Shipment',
+            'origin' => $this->originForPortal($shipment, $consignment),
+            'destination' => $this->destinationForPortal($shipment, $consignment),
+            'etaAt' => optional($etaAt)->toISOString(),
+            'etaLabel' => $this->etaLabelForPortal($etaAt, $status),
+            'status' => $status,
+            'statusLabel' => $statusLabel,
+            'price' => [
+                'currency' => 'ZMW',
+                'amountMinor' => $this->moneyToMinor($shipment->amount_to_be_collected ?? $shipment->shipping_cost ?? 0),
+            ],
+            'progress' => $this->progressForPortal($events, $status),
+            'events' => $events,
+            'allowedActions' => [],
+            'revision' => (int) optional($shipment->updated_at)->timestamp ?: 0,
         ]);
     }
 
@@ -539,5 +587,165 @@ class ShipmentController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function buildPublicTrackingEvents($consignment)
+    {
+        if (!$consignment) {
+            return [[
+                'id' => 'tracking-created',
+                'label' => 'Tracking created',
+                'detail' => 'We have created your shipment reference.',
+                'occurredAt' => null,
+                'displayTime' => 'Pending',
+                'complete' => false,
+                'current' => true,
+            ]];
+        }
+
+        $stages = TrackingStage::where('cargo_type', $consignment->cargo_type)
+            ->orderBy('order')
+            ->get();
+        $history = $consignment->trackingHistory()
+            ->orderBy('stage_id')
+            ->get()
+            ->keyBy('stage_id');
+        $currentStageId = $consignment->getCurrentStage();
+        $events = [];
+
+        foreach ($stages as $stage) {
+            $completed = $history->get($stage->id);
+            $isCurrent = !$completed && $currentStageId === (int) $stage->id;
+            $events[] = [
+                'id' => 'stage-' . $stage->id,
+                'label' => $stage->name ?: $stage->description,
+                'detail' => $completed?->location ?: ($stage->description ?: 'Awaiting update'),
+                'occurredAt' => optional($completed?->completed_at)->toISOString(),
+                'displayTime' => $completed?->completed_at ? $completed->completed_at->format('d M Y, H:i') : ($isCurrent ? 'Current stage' : 'Pending'),
+                'complete' => (bool) $completed,
+                'current' => $isCurrent,
+            ];
+        }
+
+        if (empty($events)) {
+            $events[] = [
+                'id' => 'tracking-created',
+                'label' => 'Tracking created',
+                'detail' => 'We have created your shipment reference.',
+                'occurredAt' => optional($consignment->created_at)->toISOString(),
+                'displayTime' => optional($consignment->created_at)->format('d M Y, H:i') ?: 'Pending',
+                'complete' => true,
+                'current' => true,
+            ];
+        }
+
+        $hasCurrent = collect($events)->contains(fn ($event) => !empty($event['current']));
+        if (!$hasCurrent) {
+            foreach ($events as $index => $event) {
+                if (empty($event['complete'])) {
+                    $events[$index]['current'] = true;
+                    $hasCurrent = true;
+                    break;
+                }
+            }
+        }
+        if (!$hasCurrent && !empty($events)) {
+            $events[count($events) - 1]['current'] = true;
+        }
+
+        return $events;
+    }
+
+    private function mapShipmentStatusForPortal($shipment, $consignment)
+    {
+        $status = strtolower((string) ($consignment->status ?? $consignment->current_status ?? ''));
+        if ($status === 'in transit') {
+            $status = 'in_transit';
+        }
+
+        return match (true) {
+            in_array($status, ['pending', 'saved', 'requested', 'created'], true) => 'pending',
+            in_array($status, ['in_transit', 'in transit', 'processing', 'transfered', 'transferred'], true) => 'in_transit',
+            in_array($status, ['received_branch', 'received branch', 'at_destination'], true) => 'at_destination',
+            in_array($status, ['out_for_delivery', 'out for delivery'], true) => 'out_for_delivery',
+            in_array($status, ['delivered', 'supplied'], true) => 'delivered',
+            str_contains($status, 'return') => 'failed',
+            (int) $shipment->status_id === Shipment::DELIVERED_STATUS => 'delivered',
+            (int) $shipment->status_id === Shipment::SUPPLIED_STATUS => 'delivered',
+            (int) $shipment->status_id === Shipment::IN_STOCK_STATUS => 'in_transit',
+            (int) $shipment->status_id === Shipment::RECIVED_STATUS => 'in_transit',
+            default => 'pending',
+        };
+    }
+
+    private function statusLabelForPortal($status, $shipment, $consignment)
+    {
+        if ($consignment && !empty($consignment->current_status)) {
+            return ucwords(str_replace('_', ' ', strtolower((string) $consignment->current_status)));
+        }
+
+        if ($consignment && !empty($consignment->status)) {
+            return ucwords(str_replace('_', ' ', strtolower((string) $consignment->status)));
+        }
+
+        return match ($status) {
+            'in_transit' => 'In Transit',
+            'at_destination' => 'At Destination',
+            'out_for_delivery' => 'Out for Delivery',
+            'delivered' => 'Delivered',
+            'failed' => 'Update Required',
+            default => 'Pending',
+        };
+    }
+
+    private function transportModeForPortal($consignment)
+    {
+        return strtolower((string) optional($consignment)->cargo_type) === 'sea' ? 'sea' : 'air';
+    }
+
+    private function originForPortal($shipment, $consignment)
+    {
+        return optional($consignment)->source
+            ?? $shipment->from_address
+            ?? 'Origin pending';
+    }
+
+    private function destinationForPortal($shipment, $consignment)
+    {
+        return optional($consignment)->destination
+            ?? $shipment->to_address
+            ?? 'Destination pending';
+    }
+
+    private function etaLabelForPortal($etaAt, $status)
+    {
+        if ($status === 'delivered') {
+            return 'Delivered';
+        }
+
+        return $etaAt
+            ? 'Expected ' . $etaAt->format('d M Y')
+            : 'Awaiting schedule';
+    }
+
+    private function progressForPortal(array $events, $status)
+    {
+        if ($status === 'delivered') {
+            return 100;
+        }
+
+        $total = count($events);
+        if ($total === 0) {
+            return 0;
+        }
+
+        $completed = collect($events)->filter(fn ($event) => !empty($event['complete']))->count();
+
+        return (int) floor(($completed / $total) * 100);
+    }
+
+    private function moneyToMinor($amount)
+    {
+        return (int) round(((float) $amount) * 100);
     }
 }

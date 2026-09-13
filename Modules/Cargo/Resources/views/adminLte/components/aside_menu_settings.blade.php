@@ -78,7 +78,7 @@ $admin = 1;
     </li>
 @endif
 
-{{-- @if (auth()->user()->can('manage-tracking-stages') || $user_role == $admin) --}}
+@if (auth()->user()->can('manage-tracking-stages') || $user_role == $admin)
     <li class="nav-item {{ areActiveRoutes(['tracking-stages.index'], 'menu-is-opening menu-open active') }}">
         <a href="{{ fr_route('tracking-stages.index') }}"
             class="nav-link {{ areActiveRoutes(['tracking-stages.index'], 'menu-is-opening menu-open active') }}">
@@ -86,4 +86,4 @@ $admin = 1;
             <p>Tracking Stages</p>
         </a>
     </li>
-{{-- @endif --}}
+@endif

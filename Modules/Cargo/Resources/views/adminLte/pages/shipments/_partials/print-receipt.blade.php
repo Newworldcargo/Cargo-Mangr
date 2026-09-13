@@ -32,7 +32,7 @@
 <div id="receiptContent" style="display:none;">
     <div style="font-family: 'Poppins', sans-serif; width: 58mm; padding: 10px;">
         <div style="text-align: center;">
-            <img src="https://app.newworldcargo.com/assets/lte/cargo-logo.svg" alt="New World Cargo Logo" style="max-width: 100px; margin-bottom: 5px;">
+            <img src="https://admin.newworldcargo.com/assets/lte/cargo-logo.svg" alt="New World Cargo Logo" style="max-width: 100px; margin-bottom: 5px;">
             <h3 style="margin: 0;">Newworld Cargo Limited </h3>
             <p style="font-size: 11px; margin: 2px 0;">TPIN.: 2001344196</p>
             <p style="font-size: 11px; margin: 2px 0;">Shop 62/A, Carousel Shopping Centre</p>
