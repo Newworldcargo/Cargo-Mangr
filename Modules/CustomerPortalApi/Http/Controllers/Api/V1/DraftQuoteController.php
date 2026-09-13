@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Modules\CustomerPortalApi\Http\Resources\PortalQuoteResource;
 use Modules\CustomerPortalApi\Http\Resources\ShipmentDraftResource;
+use Modules\CustomerPortalApi\Models\PortalFile;
 use Modules\CustomerPortalApi\Models\PortalQuote;
 use Modules\CustomerPortalApi\Models\PortalShipmentDraft;
 use Modules\CustomerPortalApi\Http\Resources\ShipmentResource;
@@ -119,6 +120,7 @@ class DraftQuoteController extends PortalController
             $shipment = DB::transaction(function () use ($model, $payload, $form, $cargoRows, $client, $branch) {
                 $origin = $this->locationProfile($branch->name . ' ' . $branch->address);
                 $destination = $this->locationProfile((string) ($form['destination'] ?? ''));
+                $evidence = $this->shipmentEvidenceFromPayload($payload, $client->id);
                 $shipment = Shipment::create([
                     'code' => '-',
                     'status_id' => Shipment::REQUESTED_STATUS,
@@ -140,6 +142,7 @@ class DraftQuoteController extends PortalController
                     'order_id' => 'PORTAL-' . strtoupper(substr((string) \Illuminate\Support\Str::uuid(), 0, 12)),
                     'total_weight' => count($cargoRows),
                     'amount_to_be_collected' => 0,
+                    'attachments_before_shipping' => $evidence ? json_encode($evidence) : null,
                 ]);
                 $width = max(5, (int) (ShipmentSetting::getVal('shipment_code_count') ?: 5));
                 $shipment->barcode = str_pad((string) $shipment->id, $width, '0', STR_PAD_LEFT);
@@ -169,6 +172,32 @@ class DraftQuoteController extends PortalController
         $stateQuery = State::where('covered', 1)->where('country_id', $country->id);
         $state = $preferredState ? (clone $stateQuery)->where('name', 'like', '%' . $preferredState . '%')->first() : null;
         return ['country' => $country, 'state' => $state ?: $stateQuery->orderBy('id')->firstOrFail()];
+    }
+
+    private function shipmentEvidenceFromPayload(array $payload, int $clientId): array
+    {
+        $draft = (array) ($payload['draft'] ?? []);
+        $attachments = array_merge((array) ($draft['cargoPhotos'] ?? []), array_filter([$draft['supportingDocument'] ?? null]));
+        $fileIds = collect($attachments)
+            ->map(fn ($attachment) => is_array($attachment) ? ($attachment['fileId'] ?? null) : null)
+            ->filter()
+            ->unique()
+            ->values();
+        if ($fileIds->isEmpty()) return [];
+
+        return PortalFile::where('client_id', $clientId)
+            ->whereIn('file_id', $fileIds->all())
+            ->where('status', 'scan_pending')
+            ->get()
+            ->map(fn (PortalFile $file) => [
+                'file_id' => (string) $file->file_id,
+                'name' => (string) $file->original_name,
+                'content_type' => (string) $file->content_type,
+                'size_bytes' => (int) $file->size_bytes,
+                'purpose' => (string) $file->purpose,
+            ])
+            ->values()
+            ->all();
     }
 
     public function createQuote(Request $request)
