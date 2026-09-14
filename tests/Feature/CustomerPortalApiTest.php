@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Models\Transxn;
+use App\Mail\OTPMail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -117,6 +118,14 @@ class CustomerPortalApiTest extends TestCase
         $this->postJson('/api/v1/auth/password/reset', $payload)
             ->assertStatus(422)
             ->assertJsonPath('error.code', 'OTP_INVALID');
+    }
+
+    public function test_otp_email_renders_for_logged_out_password_recovery()
+    {
+        $html = (new OTPMail('482913', 'George Munganga'))->render();
+
+        $this->assertStringContainsString('Hello, George Munganga', $html);
+        $this->assertStringContainsString('482913', $html);
     }
 
     public function test_native_mobile_session_can_read_write_and_logout_without_browser_cookies()

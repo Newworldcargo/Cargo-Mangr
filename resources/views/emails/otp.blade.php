@@ -156,7 +156,7 @@
         </div>
 
         <div class="email-body">
-            <h1 class="greeting">Hello, {{ auth()->user()->name }}</h1>
+            <h1 class="greeting">Hello, {{ $customerName }}</h1>
 
             <p class="message">Thank you for using Newworld Cargo. To verify your identity, please use the verification code below:</p>
 

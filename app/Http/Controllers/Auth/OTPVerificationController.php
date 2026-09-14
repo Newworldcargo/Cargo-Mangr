@@ -104,13 +104,12 @@ class OTPVerificationController extends Controller
             $user->save();
 
             // Here, send OTP via email or SMS
-            Mail::to($user->email)->send(new OTPMail($user->otp));
+            Mail::to($user->email)->send(new OTPMail($user->otp, $user->name));
 
-            // Log OTP sent (for development)
+            // Never write the one-time code itself to application logs.
             Log::info('OTP resent to user', [
                 'user_id' => $user->id,
                 'email' => $user->email,
-                'otp' => $otp // Remove in production
             ]);
 
             if (request()->ajax()) {

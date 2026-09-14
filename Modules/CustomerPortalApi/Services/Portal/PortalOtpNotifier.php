@@ -28,7 +28,7 @@ class PortalOtpNotifier
         }
 
         try {
-            Mail::to($user->email)->send(new OTPMail($otp));
+            Mail::to($user->email)->send(new OTPMail($otp, $user->name));
         } catch (\Throwable $exception) {
             Log::warning('Customer portal OTP email could not be sent.', [
                 'user_id' => $user->id,
