@@ -52,23 +52,23 @@
                     <label class="form-label required">Pickup branch</label>
                     <select name="Shipment[branch_id]" class="form-select imported-select @error('Shipment.branch_id') is-invalid @enderror" required>
                         @foreach($editableBranches as $branch)
-                            <option value="{{ $branch->id }}" @selected((int) $field('branch_id', $model->branch_id) === (int) $branch->id)>{{ $branch->name }}</option>
+                            <option value="{{ $branch->id }}" {{ (int) $field('branch_id', $model->branch_id) === (int) $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>
                         @endforeach
                     </select>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label required">Handling type</label>
                     <select name="Shipment[type]" class="form-select" required>
-                        <option value="1" @selected($selectedType === 1)>Pickup</option>
-                        <option value="2" @selected($selectedType === 2)>Drop off</option>
+                        <option value="1" {{ $selectedType === 1 ? 'selected' : '' }}>Pickup</option>
+                        <option value="2" {{ $selectedType === 2 ? 'selected' : '' }}>Drop off</option>
                     </select>
                 </div>
                 <div class="col-12">
                     <label class="form-label required">Customer</label>
-                    <select name="Shipment[client_id]" class="form-select imported-select @error('Shipment.client_id') is-invalid @enderror" required>
-                        @foreach($editableClients as $client)
-                            <option value="{{ $client->id }}" @selected((int) $field('client_id', $model->client_id) === (int) $client->id)>{{ $client->name }}</option>
-                        @endforeach
+                    <select id="import-client" name="Shipment[client_id]" class="form-select @error('Shipment.client_id') is-invalid @enderror" required>
+                        @if($selectedClient)
+                            <option value="{{ $selectedClient->id }}" selected>{{ $selectedClient->name }}</option>
+                        @endif
                     </select>
                 </div>
                 <div class="col-md-6">
@@ -107,42 +107,42 @@
                     <label class="form-label required">Origin country</label>
                     <select id="import-from-country" name="Shipment[from_country_id]" class="form-select imported-select @error('Shipment.from_country_id') is-invalid @enderror" required>
                         <option value="">Select country</option>
-                        @foreach($editableCountries as $country)<option value="{{ $country->id }}" @selected((int) $field('from_country_id', $model->from_country_id) === (int) $country->id)>{{ $country->name }}</option>@endforeach
+                        @foreach($editableCountries as $country)<option value="{{ $country->id }}" {{ (int) $field('from_country_id', $model->from_country_id) === (int) $country->id ? 'selected' : '' }}>{{ $country->name }}</option>@endforeach
                     </select>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label required">Destination country</label>
                     <select id="import-to-country" name="Shipment[to_country_id]" class="form-select imported-select @error('Shipment.to_country_id') is-invalid @enderror" required>
                         <option value="">Select country</option>
-                        @foreach($editableCountries as $country)<option value="{{ $country->id }}" @selected((int) $field('to_country_id', $model->to_country_id) === (int) $country->id)>{{ $country->name }}</option>@endforeach
+                        @foreach($editableCountries as $country)<option value="{{ $country->id }}" {{ (int) $field('to_country_id', $model->to_country_id) === (int) $country->id ? 'selected' : '' }}>{{ $country->name }}</option>@endforeach
                     </select>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label required">Origin province/state</label>
                     <select id="import-from-state" name="Shipment[from_state_id]" class="form-select imported-select @error('Shipment.from_state_id') is-invalid @enderror" data-current="{{ $field('from_state_id', $model->from_state_id) }}" required>
                         <option value="">Select state</option>
-                        @foreach($fromStates as $state)<option value="{{ $state->id }}" @selected((int) $field('from_state_id', $model->from_state_id) === (int) $state->id)>{{ $state->name }}</option>@endforeach
+                        @foreach($fromStates as $state)<option value="{{ $state->id }}" {{ (int) $field('from_state_id', $model->from_state_id) === (int) $state->id ? 'selected' : '' }}>{{ $state->name }}</option>@endforeach
                     </select>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label required">Destination province/state</label>
                     <select id="import-to-state" name="Shipment[to_state_id]" class="form-select imported-select @error('Shipment.to_state_id') is-invalid @enderror" data-current="{{ $field('to_state_id', $model->to_state_id) }}" required>
                         <option value="">Select state</option>
-                        @foreach($toStates as $state)<option value="{{ $state->id }}" @selected((int) $field('to_state_id', $model->to_state_id) === (int) $state->id)>{{ $state->name }}</option>@endforeach
+                        @foreach($toStates as $state)<option value="{{ $state->id }}" {{ (int) $field('to_state_id', $model->to_state_id) === (int) $state->id ? 'selected' : '' }}>{{ $state->name }}</option>@endforeach
                     </select>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Origin area</label>
                     <select id="import-from-area" name="Shipment[from_area_id]" class="form-select imported-select @error('Shipment.from_area_id') is-invalid @enderror" data-current="{{ $field('from_area_id', $model->from_area_id) }}">
                         <option value="">Not specified</option>
-                        @foreach($fromAreas as $area)<option value="{{ $area->id }}" @selected((int) $field('from_area_id', $model->from_area_id) === (int) $area->id)>{{ $areaName($area) }}</option>@endforeach
+                        @foreach($fromAreas as $area)<option value="{{ $area->id }}" {{ (int) $field('from_area_id', $model->from_area_id) === (int) $area->id ? 'selected' : '' }}>{{ $areaName($area) }}</option>@endforeach
                     </select>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Destination area</label>
                     <select id="import-to-area" name="Shipment[to_area_id]" class="form-select imported-select @error('Shipment.to_area_id') is-invalid @enderror" data-current="{{ $field('to_area_id', $model->to_area_id) }}">
                         <option value="">Not specified</option>
-                        @foreach($toAreas as $area)<option value="{{ $area->id }}" @selected((int) $field('to_area_id', $model->to_area_id) === (int) $area->id)>{{ $areaName($area) }}</option>@endforeach
+                        @foreach($toAreas as $area)<option value="{{ $area->id }}" {{ (int) $field('to_area_id', $model->to_area_id) === (int) $area->id ? 'selected' : '' }}>{{ $areaName($area) }}</option>@endforeach
                     </select>
                 </div>
                 <div class="col-md-6"><label class="form-label">Destination branch/location</label><input name="Shipment[next_destination]" value="{{ $field('next_destination', $model->next_destination) }}" class="form-control"></div>
@@ -165,7 +165,7 @@
                     <select name="Package[{{ $index }}][package_id]" class="form-select imported-select @error("Package.$index.package_id") is-invalid @enderror" required>
                         @foreach($editablePackages as $package)
                             @php $packageLabel = json_decode($package->name, true); @endphp
-                            <option value="{{ $package->id }}" @selected((int) old("Package.$index.package_id", $parcel->package_id) === (int) $package->id)>{{ is_array($packageLabel) ? ($packageLabel[app()->getLocale()] ?? reset($packageLabel)) : $package->name }}</option>
+                            <option value="{{ $package->id }}" {{ (int) old("Package.$index.package_id", $parcel->package_id) === (int) $package->id ? 'selected' : '' }}>{{ is_array($packageLabel) ? ($packageLabel[app()->getLocale()] ?? reset($packageLabel)) : $package->name }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -215,6 +215,19 @@ document.addEventListener('DOMContentLoaded', function () {
     const saveButton = document.getElementById('save-imported-shipment');
     if (window.jQuery && jQuery.fn.select2) {
         jQuery('.imported-select').select2({ width: '100%' });
+        jQuery('#import-client').select2({
+            width: '100%',
+            placeholder: 'Search by customer name, phone or ID',
+            minimumInputLength: 2,
+            ajax: {
+                url: '{{ route('shipments.client-options') }}',
+                dataType: 'json',
+                delay: 250,
+                data: params => ({ q: params.term }),
+                processResults: data => data,
+                cache: true
+            }
+        });
     }
 
     const totalWeight = document.getElementById('shipment-total-weight');

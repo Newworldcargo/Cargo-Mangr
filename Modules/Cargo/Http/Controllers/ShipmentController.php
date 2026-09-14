@@ -540,6 +540,11 @@ class ShipmentController extends Controller
             $toCountryId = $oldShipment['to_country_id'] ?? $item->to_country_id;
             $fromStateId = $oldShipment['from_state_id'] ?? $item->from_state_id;
             $toStateId = $oldShipment['to_state_id'] ?? $item->to_state_id;
+            $selectedClientId = $oldShipment['client_id'] ?? $item->client_id;
+            $selectedClient = Client::query()
+                ->where('id', $selectedClientId)
+                ->when(!$branchAccess->isTopAdmin($user), fn ($query) => $query->where('branch_id', $branchId ?: -1))
+                ->first() ?: Client::find($item->client_id);
 
             $viewData += [
                 'editableBranches' => Branch::query()
@@ -547,11 +552,7 @@ class ShipmentController extends Controller
                     ->when(!$branchAccess->isTopAdmin($user), fn ($query) => $query->where('id', $branchId ?: $item->branch_id))
                     ->orderBy('name')
                     ->get(),
-                'editableClients' => Client::query()
-                    ->where(fn ($query) => $query->where('is_archived', 0)->orWhere('id', $item->client_id))
-                    ->when(!$branchAccess->isTopAdmin($user), fn ($query) => $query->where('branch_id', $branchId ?: $item->branch_id))
-                    ->orderBy('name')
-                    ->get(),
+                'selectedClient' => $selectedClient,
                 'editableCountries' => Country::query()
                     ->where(function ($query) use ($item) {
                         $query->where('covered', 1)
@@ -568,6 +569,50 @@ class ShipmentController extends Controller
         }
 
         return view('cargo::' . $adminTheme . '.pages.shipments.edit', $viewData);
+    }
+
+    public function clientOptions(Request $request)
+    {
+        $user = auth()->user();
+        abort_unless($user && in_array((int) $user->role, [0, 1, 3], true), 403);
+
+        $search = trim((string) $request->query('q', ''));
+        if (mb_strlen($search) < 2) {
+            return response()->json(['results' => []]);
+        }
+
+        $branchAccess = app(BranchAccessService::class);
+        $branchId = $branchAccess->branchIdFor($user);
+        if (!$branchAccess->isTopAdmin($user) && !$branchId) {
+            return response()->json(['results' => []]);
+        }
+
+        $escapedSearch = addcslashes($search, '%_\\');
+        $clients = Client::query()
+            ->select(['id', 'name', 'responsible_mobile'])
+            ->where('is_archived', 0)
+            ->when(!$branchAccess->isTopAdmin($user), fn ($query) => $query->where('branch_id', $branchId))
+            ->where(function ($query) use ($escapedSearch, $search) {
+                $query->where('name', 'like', '%' . $escapedSearch . '%')
+                    ->orWhere('responsible_mobile', 'like', '%' . $escapedSearch . '%');
+
+                if (ctype_digit($search)) {
+                    $query->orWhere('id', (int) $search);
+                }
+            })
+            ->orderBy('name')
+            ->limit(30)
+            ->get();
+
+        return response()->json([
+            'results' => $clients->map(function ($client) {
+                $phone = trim((string) $client->responsible_mobile);
+                return [
+                    'id' => $client->id,
+                    'text' => trim((string) $client->name) . ($phone !== '' ? ' — ' . $phone : ''),
+                ];
+            })->values(),
+        ]);
     }
 
     public function update(Request $request, $id)
@@ -693,7 +738,17 @@ class ShipmentController extends Controller
             ],
             'Shipment.shipping_date' => 'required|date',
             'Shipment.collection_time' => 'nullable|string|max:50',
-            'Shipment.client_id' => 'required|integer|exists:clients,id',
+            'Shipment.client_id' => [
+                'required',
+                'integer',
+                Rule::exists('clients', 'id')->where(function ($query) {
+                    $branchAccess = app(BranchAccessService::class);
+                    $user = auth()->user();
+                    if (!$branchAccess->isTopAdmin($user)) {
+                        $query->where('branch_id', $branchAccess->branchIdFor($user) ?: -1);
+                    }
+                }),
+            ],
             'Shipment.client_phone' => ['required', 'string', 'max:50', 'regex:/^\+?[0-9][0-9\s().-]{6,49}$/'],
             'Shipment.client_phone_2' => 'nullable|string|max:50',
             'Shipment.country_code' => 'nullable|string|max:20',
