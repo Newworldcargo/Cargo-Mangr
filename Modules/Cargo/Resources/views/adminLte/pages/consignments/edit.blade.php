@@ -327,6 +327,23 @@
                     <i class="fas fa-list mr-2"></i>Detailed shipment view
                 </a>
             </div>
+            <div class="px-6 py-4 border-b bg-white">
+                <div class="flex flex-col md:flex-row md:items-center gap-3">
+                    <div class="relative flex-1">
+                        <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                        <input id="consignment-shipment-search" type="search"
+                            class="w-full border border-gray-300 rounded-lg pl-10 pr-10 py-3 focus:border-yellow-400 focus:ring-yellow-400"
+                            placeholder="Search HAWB, customer, phone, recipient, goods or destination…"
+                            autocomplete="off">
+                        <button id="clear-consignment-shipment-search" type="button"
+                            class="hidden absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                            aria-label="Clear shipment search"><i class="fas fa-times"></i></button>
+                    </div>
+                    <div id="consignment-shipment-count" class="text-sm font-medium text-gray-600 whitespace-nowrap" aria-live="polite">
+                        {{ $consignment->shipments->count() }} shipment(s)
+                    </div>
+                </div>
+            </div>
             <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
@@ -341,9 +358,12 @@
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-100">
                         @forelse($consignment->shipments as $shipment)
-                            <tr>
+                            <tr class="consignment-shipment-row">
                                 <td class="px-5 py-3 font-semibold text-gray-800">{{ $shipment->code }}</td>
-                                <td class="px-5 py-3 text-gray-700">{{ optional($shipment->client)->name ?: $shipment->reciver_name ?: '—' }}</td>
+                                <td class="px-5 py-3 text-gray-700">
+                                    {{ optional($shipment->client)->name ?: $shipment->reciver_name ?: '—' }}
+                                    <span class="hidden shipment-search-extra">{{ $shipment->client_phone }} {{ $shipment->client_phone_2 }} {{ $shipment->reciver_name }} {{ $shipment->reciver_phone }} {{ $shipment->reciver_phone_2 }} {{ $shipment->reciver_address }} {{ $shipment->next_destination }} {{ $shipment->dest_port }}</span>
+                                </td>
                                 <td class="px-5 py-3 text-gray-700">
                                     {{ $shipment->packageShipments->pluck('description')->filter()->implode(', ') ?: '—' }}
                                     <span class="block text-xs text-gray-500">{{ number_format((float) $shipment->packageShipments->sum('qty'), 2) }} piece(s)</span>
@@ -362,6 +382,12 @@
                         @empty
                             <tr><td colspan="6" class="px-5 py-8 text-center text-gray-500">This consignment has no shipments yet.</td></tr>
                         @endforelse
+                        <tr id="consignment-shipment-no-results" class="hidden">
+                            <td colspan="6" class="px-5 py-10 text-center text-gray-500">
+                                <i class="fas fa-search text-2xl mb-3 block"></i>
+                                No shipments match your search.
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -412,6 +438,37 @@
                         }, 500);
                     });
                 }
+            });
+
+            const shipmentSearch = document.getElementById('consignment-shipment-search');
+            const clearShipmentSearch = document.getElementById('clear-consignment-shipment-search');
+            const shipmentRows = Array.from(document.querySelectorAll('.consignment-shipment-row'));
+            const shipmentCount = document.getElementById('consignment-shipment-count');
+            const noShipmentResults = document.getElementById('consignment-shipment-no-results');
+            const normalizeSearch = value => value.toLocaleLowerCase().trim().replace(/\s+/g, ' ');
+
+            const filterConsignmentShipments = () => {
+                const query = normalizeSearch(shipmentSearch.value);
+                let visible = 0;
+
+                shipmentRows.forEach(row => {
+                    const matches = query === '' || normalizeSearch(row.textContent).includes(query);
+                    row.classList.toggle('hidden', !matches);
+                    if (matches) visible++;
+                });
+
+                shipmentCount.textContent = query
+                    ? `${visible} of ${shipmentRows.length} shipment(s)`
+                    : `${shipmentRows.length} shipment(s)`;
+                clearShipmentSearch.classList.toggle('hidden', query === '');
+                noShipmentResults.classList.toggle('hidden', visible !== 0 || shipmentRows.length === 0);
+            };
+
+            shipmentSearch.addEventListener('input', filterConsignmentShipments);
+            clearShipmentSearch.addEventListener('click', () => {
+                shipmentSearch.value = '';
+                filterConsignmentShipments();
+                shipmentSearch.focus();
             });
         });
     </script>
