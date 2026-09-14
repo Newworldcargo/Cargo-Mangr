@@ -8,6 +8,11 @@ use Modules\CustomerPortalApi\Models\PortalBffSession;
 
 class PortalBffService
 {
+    public function isMobileRequest(Request $request)
+    {
+        return hash_equals('1', (string) $request->header('X-NWC-Mobile-Client', ''));
+    }
+
     public function configured()
     {
         return (string) config('customerportalapi.bff_service_token', '') !== ''
@@ -47,6 +52,66 @@ class PortalBffService
             'csrf' => $rawCsrf,
             'session' => $session,
         ];
+    }
+
+    public function issueMobileForUser($user, Request $request)
+    {
+        $rawToken = Str::random(96);
+        $rawCsrf = Str::random(64);
+        $session = PortalBffSession::create([
+            'user_id' => $user->id,
+            'token_hash' => hash('sha256', $rawToken),
+            'csrf_hash' => hash('sha256', $rawCsrf),
+            'expires_at' => now()->addHours((int) config('customerportalapi.mobile_session_hours', 720)),
+            'created_ip' => $request->ip(),
+            'user_agent' => substr((string) $request->userAgent(), 0, 1000),
+        ]);
+
+        return ['token' => $rawToken, 'csrf' => $rawCsrf, 'session' => $session];
+    }
+
+    public function authenticateMobileToken(Request $request)
+    {
+        if (!$this->isMobileRequest($request)) {
+            return null;
+        }
+
+        $session = $this->mobileSession($request);
+        if (!$session) {
+            return null;
+        }
+
+        $session->forceFill(['last_used_at' => now()])->save();
+        $user = $session->user;
+        return app(PortalCustomerAccess::class)->canAccess($user) ? $user : null;
+    }
+
+    public function validMobileCsrf(Request $request)
+    {
+        $provided = (string) $request->header(config('customerportalapi.csrf_header', 'X-CSRF-Token'), '');
+        $session = $this->mobileSession($request);
+
+        return $provided !== '' && $session
+            && hash_equals((string) $session->csrf_hash, hash('sha256', $provided));
+    }
+
+    public function revokeMobileToken(Request $request)
+    {
+        $session = $this->mobileSession($request);
+        return $session && $session->forceFill(['revoked_at' => now()])->save();
+    }
+
+    private function mobileSession(Request $request)
+    {
+        $rawToken = (string) $request->bearerToken();
+        if (!$this->isMobileRequest($request) || $rawToken === '') {
+            return null;
+        }
+
+        return PortalBffSession::where('token_hash', hash('sha256', $rawToken))
+            ->whereNull('revoked_at')
+            ->where('expires_at', '>', now())
+            ->first();
     }
 
     public function exchange(Request $request, $rawToken)

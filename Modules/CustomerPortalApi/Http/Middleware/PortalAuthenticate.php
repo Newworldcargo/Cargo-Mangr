@@ -14,7 +14,16 @@ class PortalAuthenticate
     public function handle(Request $request, Closure $next)
     {
         $bff = app(PortalBffService::class);
-        $hasBffHeaders = $request->bearerToken() !== null || (string) $request->header('X-NWC-Customer-Assertion', '') !== '';
+        $mobileUser = $bff->authenticateMobileToken($request);
+        if ($bff->isMobileRequest($request) && $request->bearerToken() !== null && !$mobileUser) {
+            return $this->problem($request, 'UNAUTHENTICATED', 'The mobile session is invalid or expired.', 401);
+        }
+        if ($mobileUser) {
+            Auth::guard('web')->setUser($mobileUser);
+        }
+
+        $hasBffHeaders = !$bff->isMobileRequest($request)
+            && ($request->bearerToken() !== null || (string) $request->header('X-NWC-Customer-Assertion', '') !== '');
         $bffUser = $bff->authenticateAssertion($request);
         if ($hasBffHeaders && !$bffUser) {
             return $this->problem($request, 'UNAUTHENTICATED', 'The server portal session is invalid or expired.', 401);

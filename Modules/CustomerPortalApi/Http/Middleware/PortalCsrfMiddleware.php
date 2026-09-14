@@ -14,6 +14,27 @@ class PortalCsrfMiddleware
     {
         $bff = app(PortalBffService::class);
         $unsafe = in_array(strtoupper($request->method()), ['POST', 'PUT', 'PATCH', 'DELETE'], true);
+        if ($bff->isMobileRequest($request)) {
+            $exempt = $request->is('api/v1/auth/login')
+                || $request->is('api/v1/auth/register')
+                || $request->is('api/v1/auth/password/forgot')
+                || $request->is('api/v1/auth/password/reset')
+                || $request->is('api/v1/telemetry/events');
+
+            if ($unsafe && !$exempt) {
+                $user = $bff->authenticateMobileToken($request);
+                if (!$user) {
+                    return $this->problem($request, 'UNAUTHENTICATED', 'The mobile session is invalid or expired.', 401);
+                }
+                if (!$bff->validMobileCsrf($request)) {
+                    return $this->problem($request, 'CSRF_TOKEN_MISMATCH', 'A valid CSRF token is required.', 419);
+                }
+                auth()->guard('web')->setUser($user);
+            }
+
+            return $next($request);
+        }
+
         if ($bff->isBffRequest($request)) {
             if ($unsafe && !$bff->validBffCsrf($request)) {
                 return $this->problem($request, 'CSRF_TOKEN_MISMATCH', 'A valid CSRF token is required.', 419);

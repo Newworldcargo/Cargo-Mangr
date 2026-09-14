@@ -63,8 +63,7 @@ class AuthController extends PortalController
         $request->session()->regenerateToken();
         $user->setRelation('portalClient', $client);
 
-        $response = $this->success($request, (new AuthUserResource($user))->resolve($request));
-        return $this->withBffSessionHeaders($request, $response, $user);
+        return $this->withClientSession($request, (new AuthUserResource($user))->resolve($request), $user);
     }
 
     public function register(Request $request)
@@ -116,8 +115,7 @@ class AuthController extends PortalController
         $user->setRelation('portalClient', Client::where('user_id', $user->id)->first());
         app(PortalOtpNotifier::class)->sendVerification($user);
 
-        $response = $this->success($request, (new AuthUserResource($user))->resolve($request), 201);
-        return $this->withBffSessionHeaders($request, $response, $user);
+        return $this->withClientSession($request, (new AuthUserResource($user))->resolve($request), $user, 201);
     }
 
     public function verify(Request $request)
@@ -231,9 +229,21 @@ class AuthController extends PortalController
         return $this->success($request, null);
     }
 
-    private function withBffSessionHeaders(Request $request, $response, $user)
+    private function withClientSession(Request $request, array $data, $user, $status = 200)
     {
         $bff = app(PortalBffService::class);
+        if ($bff->isMobileRequest($request)) {
+            $issued = $bff->issueMobileForUser($user, $request);
+            return $this->success($request, $data, $status, [
+                'mobileSession' => [
+                    'token' => $issued['token'],
+                    'csrfToken' => $issued['csrf'],
+                    'expiresAt' => $issued['session']->expires_at->toIso8601String(),
+                ],
+            ])->withHeaders(['Cache-Control' => 'no-store']);
+        }
+
+        $response = $this->success($request, $data, $status);
         if (!$bff->configured() || !$bff->authorizeServiceRequest($request)) {
             return $response;
         }
@@ -248,7 +258,12 @@ class AuthController extends PortalController
 
     public function logout(Request $request)
     {
-        app(PortalBffService::class)->revokeAssertion($request);
+        $bff = app(PortalBffService::class);
+        if ($bff->isMobileRequest($request)) {
+            $bff->revokeMobileToken($request);
+        } else {
+            $bff->revokeAssertion($request);
+        }
         Auth::guard('web')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();

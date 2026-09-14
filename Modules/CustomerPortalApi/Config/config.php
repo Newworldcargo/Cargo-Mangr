@@ -27,6 +27,8 @@ return [
 
     'bff_session_hours' => (int) env('CUSTOMER_PORTAL_BFF_SESSION_HOURS', 8),
 
+    'mobile_session_hours' => (int) env('CUSTOMER_PORTAL_MOBILE_SESSION_HOURS', 720),
+
     'otp_email_enabled' => (bool) env('CUSTOMER_PORTAL_OTP_EMAIL_ENABLED', true),
 
     'otp_sms_webhook_url' => env('CUSTOMER_PORTAL_OTP_SMS_WEBHOOK_URL'),

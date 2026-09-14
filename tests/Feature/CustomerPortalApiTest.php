@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\Transxn;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Modules\Cargo\Entities\Branch;
 use Modules\Cargo\Entities\Client;
 use Modules\Cargo\Entities\Country;
@@ -78,6 +79,69 @@ class CustomerPortalApiTest extends TestCase
             ->assertJsonPath('data.email', $user->email)
             ->assertHeader('X-Request-ID');
         $this->assertArrayNotHasKey('remember_token', $response->json('data'));
+    }
+
+    public function test_native_mobile_session_can_read_write_and_logout_without_browser_cookies()
+    {
+        list($user) = $this->createCustomer('native@example.test');
+
+        $login = $this->withHeader('X-NWC-Mobile-Client', '1')->postJson('/api/v1/auth/login', [
+            'identifier' => $user->email,
+            'password' => 'password',
+        ]);
+
+        $login->assertOk()
+            ->assertJsonStructure(['meta' => ['mobileSession' => ['token', 'csrfToken', 'expiresAt']]]);
+        $token = $login->json('meta.mobileSession.token');
+        $csrf = $login->json('meta.mobileSession.csrfToken');
+        $headers = ['X-NWC-Mobile-Client' => '1', 'Authorization' => 'Bearer ' . $token];
+
+        $this->withHeaders($headers)->getJson('/api/v1/profile')
+            ->assertOk()->assertJsonPath('data.email', $user->email);
+        $this->withHeaders($headers)->patchJson('/api/v1/profile', ['firstName' => 'Native'])
+            ->assertStatus(419)->assertJsonPath('error.code', 'CSRF_TOKEN_MISMATCH');
+        $this->withHeaders($headers + ['X-CSRF-Token' => $csrf])
+            ->patchJson('/api/v1/profile', ['firstName' => 'Native'])
+            ->assertOk()->assertJsonPath('data.firstName', 'Native');
+        $this->withHeaders($headers + ['X-CSRF-Token' => $csrf])
+            ->postJson('/api/v1/auth/logout')->assertNoContent();
+        $this->withHeaders($headers)->getJson('/api/v1/profile')
+            ->assertStatus(401)->assertJsonPath('error.code', 'UNAUTHENTICATED');
+    }
+
+    public function test_native_mobile_can_upload_and_apply_a_profile_photo()
+    {
+        Storage::fake(config('filesystems.portal_disk', config('filesystems.default', 'local')));
+        list($user) = $this->createCustomer('native-upload@example.test');
+        $login = $this->withHeader('X-NWC-Mobile-Client', '1')->postJson('/api/v1/auth/login', [
+            'identifier' => $user->email,
+            'password' => 'password',
+        ]);
+        $token = $login->json('meta.mobileSession.token');
+        $csrf = $login->json('meta.mobileSession.csrfToken');
+        $headers = ['X-NWC-Mobile-Client' => '1', 'Authorization' => 'Bearer ' . $token, 'X-CSRF-Token' => $csrf];
+
+        $intent = $this->withHeaders($headers)->postJson('/api/v1/files/upload-intents', [
+            'fileName' => 'avatar.jpg',
+            'contentType' => 'image/jpeg',
+            'sizeBytes' => 5,
+            'purpose' => 'profile-photo',
+        ]);
+        $intent->assertCreated()->assertJsonPath('data.requiresPortalAuth', true);
+        $fileId = $intent->json('data.fileId');
+
+        $this->call('PUT', '/api/v1/files/' . $fileId . '/content', [], [], [], [
+            'HTTP_ACCEPT' => 'application/json',
+            'HTTP_AUTHORIZATION' => 'Bearer ' . $token,
+            'HTTP_X_NWC_MOBILE_CLIENT' => '1',
+            'HTTP_X_CSRF_TOKEN' => $csrf,
+            'CONTENT_TYPE' => 'image/jpeg',
+        ], 'photo')->assertNoContent();
+        $this->withHeaders($headers)->postJson('/api/v1/files/' . $fileId . '/complete')
+            ->assertStatus(202)->assertJsonPath('data.fileId', $fileId);
+        $profile = $this->withHeaders($headers)->patchJson('/api/v1/profile', ['avatarFileId' => $fileId]);
+        $profile->assertOk();
+        $this->assertStringEndsWith('/api/v1/files/' . $fileId . '/download', $profile->json('data.avatar'));
     }
 
     public function test_customer_can_only_list_owned_shipments()
