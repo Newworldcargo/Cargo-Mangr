@@ -34,7 +34,11 @@
                 @method('PUT')
                 <!--begin::Card body-->
                 <div class="card-body border-top p-9">
-                    @include('cargo::adminLte.pages.shipments.form', ['typeForm' => 'edit'])
+                    @if($model->consignment_id)
+                        @include('cargo::adminLte.pages.shipments.imported-edit-form')
+                    @else
+                        @include('cargo::adminLte.pages.shipments.form', ['typeForm' => 'edit'])
+                    @endif
                 </div>
                 <!--end::Card body-->
                 <!--begin::Actions-->

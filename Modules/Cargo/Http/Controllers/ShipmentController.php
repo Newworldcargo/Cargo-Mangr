@@ -528,7 +528,40 @@ class ShipmentController extends Controller
         $item = Shipment::findOrFail($id);
         abort_unless(app(ShipmentOperationAccessService::class)->canOperate(auth()->user(), $item, 'edit-shipments'), 403);
         $adminTheme = env('ADMIN_THEME', 'adminLte');
-        return view('cargo::' . $adminTheme . '.pages.shipments.edit')->with(['model' => $item]);
+        $viewData = ['model' => $item];
+
+        if ($item->consignment_id) {
+            $branchAccess = app(BranchAccessService::class);
+            $user = auth()->user();
+            $branchId = $branchAccess->branchIdFor($user);
+
+            $viewData += [
+                'editableBranches' => Branch::query()
+                    ->where(fn ($query) => $query->where('is_archived', 0)->orWhere('id', $item->branch_id))
+                    ->when(!$branchAccess->isTopAdmin($user), fn ($query) => $query->where('id', $branchId ?: $item->branch_id))
+                    ->orderBy('name')
+                    ->get(),
+                'editableClients' => Client::query()
+                    ->where(fn ($query) => $query->where('is_archived', 0)->orWhere('id', $item->client_id))
+                    ->when(!$branchAccess->isTopAdmin($user), fn ($query) => $query->where('branch_id', $branchId ?: $item->branch_id))
+                    ->orderBy('name')
+                    ->get(),
+                'editableCountries' => Country::query()
+                    ->where(function ($query) use ($item) {
+                        $query->where('covered', 1)
+                            ->orWhereIn('id', array_filter([$item->from_country_id, $item->to_country_id]));
+                    })
+                    ->orderBy('name')
+                    ->get(),
+                'fromStates' => State::query()->where('country_id', $item->from_country_id)->orderBy('name')->get(),
+                'toStates' => State::query()->where('country_id', $item->to_country_id)->orderBy('name')->get(),
+                'fromAreas' => Area::query()->where('state_id', $item->from_state_id)->orderBy('name')->get(),
+                'toAreas' => Area::query()->where('state_id', $item->to_state_id)->orderBy('name')->get(),
+                'editablePackages' => Package::query()->orderBy('id')->get(),
+            ];
+        }
+
+        return view('cargo::' . $adminTheme . '.pages.shipments.edit', $viewData);
     }
 
     public function update(Request $request, $id)
