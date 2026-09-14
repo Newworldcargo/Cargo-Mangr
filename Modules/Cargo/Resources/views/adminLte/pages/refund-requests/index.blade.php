@@ -13,7 +13,7 @@
             <select name="status" class="form-select form-select-sm">
                 <option value="">All Statuses</option>
                 @foreach([App\Models\RefundRequest::STATUS_PENDING, App\Models\RefundRequest::STATUS_APPROVED, App\Models\RefundRequest::STATUS_DECLINED] as $filterStatus)
-                    <option value="{{ $filterStatus }}" @selected($status === $filterStatus)>{{ Str::headline($filterStatus) }}</option>
+                    <option value="{{ $filterStatus }}" {{ $status === $filterStatus ? 'selected' : '' }}>{{ Str::headline($filterStatus) }}</option>
                 @endforeach
             </select>
             <button type="submit" class="btn btn-sm btn-primary">Filter</button>

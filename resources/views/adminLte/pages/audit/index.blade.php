@@ -35,7 +35,7 @@
                                 @foreach(request()->except('per_page') as $name => $value)<input type="hidden" name="{{ $name }}" value="{{ $value }}">@endforeach
                                 <label for="per_page" class="text-muted small mb-0">Rows</label>
                                 <select id="per_page" name="per_page" class="form-select form-select-sm" style="width: 4.5rem;" onchange="this.form.submit()">
-                                    @foreach([10, 20, 50, 100] as $size)<option value="{{ $size }}" @selected((int) $perPage === $size)>{{ $size }}</option>@endforeach
+                                    @foreach([10, 20, 50, 100] as $size)<option value="{{ $size }}" {{ (int) $perPage === $size ? 'selected' : '' }}>{{ $size }}</option>@endforeach
                                 </select>
                             </form>
                         </div>
