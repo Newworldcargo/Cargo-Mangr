@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\Transxn;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Modules\Cargo\Entities\Branch;
 use Modules\Cargo\Entities\Client;
@@ -87,6 +88,35 @@ class CustomerPortalApiTest extends TestCase
             ->assertJsonPath('data.email', $user->email)
             ->assertHeader('X-Request-ID');
         $this->assertArrayNotHasKey('remember_token', $response->json('data'));
+    }
+
+    public function test_customer_can_reset_password_with_a_single_use_otp()
+    {
+        Mail::fake();
+        list($user) = $this->createCustomer('otp-reset@example.test');
+
+        $this->postJson('/api/v1/auth/password/forgot', [
+            'identifier' => $user->email,
+        ])->assertOk();
+
+        $code = (string) $user->fresh()->otp;
+        $this->assertMatchesRegularExpression('/^\d{6}$/', $code);
+
+        $payload = [
+            'identifier' => $user->email,
+            'code' => $code,
+            'password' => 'new-password-123',
+            'password_confirmation' => 'new-password-123',
+        ];
+        $this->postJson('/api/v1/auth/password/reset', $payload)->assertOk();
+
+        $user->refresh();
+        $this->assertTrue(Hash::check('new-password-123', $user->password));
+        $this->assertNull($user->otp);
+        $this->assertNull($user->otp_expires_at);
+        $this->postJson('/api/v1/auth/password/reset', $payload)
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'OTP_INVALID');
     }
 
     public function test_native_mobile_session_can_read_write_and_logout_without_browser_cookies()

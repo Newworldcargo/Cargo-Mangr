@@ -48,7 +48,12 @@ class PortalCsrfMiddleware
 
         $token = $request->session()->token();
         $unsafe = in_array(strtoupper($request->method()), ['POST', 'PUT', 'PATCH', 'DELETE'], true);
-        $exempt = $request->is('api/v1/auth/login') || $request->is('api/v1/auth/register') || $request->is('api/v1/auth/verify') || $request->is('api/v1/telemetry/events');
+        $exempt = $request->is('api/v1/auth/login')
+            || $request->is('api/v1/auth/register')
+            || $request->is('api/v1/auth/verify')
+            || $request->is('api/v1/auth/password/forgot')
+            || $request->is('api/v1/auth/password/reset')
+            || $request->is('api/v1/telemetry/events');
 
         if ($unsafe && !$exempt) {
             $provided = (string) $request->header(config('customerportalapi.csrf_header', 'X-CSRF-Token'));

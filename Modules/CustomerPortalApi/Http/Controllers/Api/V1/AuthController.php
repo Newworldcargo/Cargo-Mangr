@@ -3,13 +3,11 @@
 namespace Modules\CustomerPortalApi\Http\Controllers\Api\V1;
 
 use App\Models\User;
-use App\Notifications\PasswordResetRequest;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Modules\Cargo\Entities\Client;
@@ -169,13 +167,20 @@ class AuthController extends PortalController
 
     public function requestPasswordReset(Request $request)
     {
-        $validator = Validator::make($request->all(), ['email' => ['required', 'email', 'max:255']]);
-        if ($validator->fails()) return $this->problem($request, 'VALIDATION_FAILED', 'Enter a valid email address.', 422, $validator->errors()->toArray());
+        $validator = Validator::make($request->all(), ['identifier' => ['required', 'string', 'max:255']]);
+        if ($validator->fails()) return $this->problem($request, 'VALIDATION_FAILED', 'Enter your email address or phone number.', 422, $validator->errors()->toArray());
 
-        $user = User::where('email', strtolower(trim((string) $request->input('email'))))->first();
+        $identifier = strtolower(trim((string) $request->input('identifier')));
+        $user = User::whereRaw('LOWER(email) = ?', [$identifier])
+            ->orWhere('responsible_mobile', trim((string) $request->input('identifier')))
+            ->orWhere('secondary_mobile', trim((string) $request->input('identifier')))
+            ->first();
         $client = $user ? app(\Modules\CustomerPortalApi\Services\Portal\PortalCustomerAccess::class)->clientFor($user) : null;
         if ($user && $client) {
-            $user->notify(new PasswordResetRequest(Password::broker()->createToken($user)));
+            $user->otp = random_int(100000, 999999);
+            $user->otp_expires_at = now()->addMinutes(10);
+            $user->save();
+            app(PortalOtpNotifier::class)->sendVerification($user);
         }
 
         return $this->success($request, null);
@@ -184,18 +189,35 @@ class AuthController extends PortalController
     public function resetPassword(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'token' => ['required', 'string'],
-            'email' => ['required', 'email', 'max:255'],
+            'identifier' => ['required', 'string', 'max:255'],
+            'code' => ['required', 'digits:6'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
         ]);
         if ($validator->fails()) return $this->problem($request, 'VALIDATION_FAILED', 'Please correct the password fields.', 422, $validator->errors()->toArray());
 
-        $status = Password::reset($request->only('email', 'token', 'password', 'password_confirmation'), function ($user, $password) {
-            $user->forceFill(['password' => Hash::make($password), 'remember_token' => Str::random(60)])->save();
-            event(new PasswordReset($user));
-        });
+        $identifier = strtolower(trim((string) $request->input('identifier')));
+        $user = User::whereRaw('LOWER(email) = ?', [$identifier])
+            ->orWhere('responsible_mobile', trim((string) $request->input('identifier')))
+            ->orWhere('secondary_mobile', trim((string) $request->input('identifier')))
+            ->first();
+        $client = $user ? app(\Modules\CustomerPortalApi\Services\Portal\PortalCustomerAccess::class)->clientFor($user) : null;
+        if (!$user || !$client || !$user->otp) {
+            return $this->problem($request, 'OTP_INVALID', 'The verification code is invalid.', 422);
+        }
+        if (!$user->otp_expires_at || now()->greaterThan($user->otp_expires_at)) {
+            return $this->problem($request, 'OTP_EXPIRED', 'The verification code has expired. Request a new one.', 422);
+        }
+        if (!hash_equals((string) $user->otp, (string) $request->input('code'))) {
+            return $this->problem($request, 'OTP_INVALID', 'The verification code is invalid.', 422);
+        }
 
-        if ($status !== Password::PASSWORD_RESET) return $this->problem($request, 'PASSWORD_RESET_INVALID', 'This reset link is invalid or has expired. Request a new one.', 422);
+        $user->forceFill([
+            'password' => Hash::make($request->input('password')),
+            'remember_token' => Str::random(60),
+            'otp' => null,
+            'otp_expires_at' => null,
+        ])->save();
+        event(new PasswordReset($user));
         return $this->success($request, null);
     }
 
