@@ -63,8 +63,19 @@ class MobilePricingSettings
         $this->override($rates['import'], 'container_fee', $values['import_container_fee']);
 
         $service = (string) ($input['service'] ?? '');
-        if (in_array($service, ['intercity', 'import'], true)) {
-            $rates[$service] = $this->routeRates($service, $input, $rates[$service] ?? []);
+        if ($service === 'intercity') {
+            $rates['intercity'] = $this->routeRates('intercity', $input, $rates['intercity'] ?? []);
+        }
+        if ($service === 'import') {
+            $internationalLeg = $input;
+            $internationalLeg['destination'] = $input['receivingHub'] ?? $input['destination'] ?? [];
+            $rates['import'] = $this->routeRates('import', $internationalLeg, $rates['import'] ?? []);
+
+            if (($input['onwardDelivery'] ?? 'collection') === 'intercity' && isset($input['receivingHub'])) {
+                $onwardLeg = $input;
+                $onwardLeg['pickup'] = $input['receivingHub'];
+                $rates['intercity'] = $this->routeRates('intercity', $onwardLeg, $rates['intercity'] ?? []);
+            }
         }
 
         return $rates;

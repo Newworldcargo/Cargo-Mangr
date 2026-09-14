@@ -49,6 +49,26 @@ class MobileBookingQuoteCalculatorTest extends TestCase
         ], ['intercity' => ['per_km' => 0, 'per_kg' => 0]]);
     }
 
+    public function test_international_price_keeps_freight_and_adds_zambia_onward_delivery(): void
+    {
+        $result = (new MobileBookingQuoteCalculator())->calculate([
+            'service' => 'import',
+            'pickup' => ['branchId' => '10'],
+            'receivingHub' => ['branchId' => '1'],
+            'destination' => ['branchId' => '3'],
+            'transportMode' => 'air',
+            'onwardDelivery' => 'intercity',
+            'cargo' => ['totalWeight' => 2, 'fragile' => false, 'packageType' => 'standard'],
+        ], [
+            'import' => ['base_fee' => 200, 'per_km' => 0, 'per_kg' => 10],
+            'intercity' => ['base_fee' => 100, 'per_km' => 0, 'per_kg' => 5],
+        ]);
+
+        $this->assertSame(330.0, $result['total']);
+        $this->assertSame('International freight — Base service fee', $result['breakdown'][0]['label']);
+        $this->assertSame('Zambia City-to-City — Base service fee', $result['breakdown'][2]['label']);
+    }
+
     public function test_quote_signatures_are_stable_for_equivalent_payload_order(): void
     {
         $signer = new MobileBookingQuoteSigner();

@@ -9,6 +9,9 @@ class MobileBookingQuoteCalculator
     public function calculate(array $request, array $rates): array
     {
         $service = (string) ($request['service'] ?? '');
+        if ($service === 'import' && isset($request['receivingHub'])) {
+            return $this->calculateInternationalWithOnwardDelivery($request, $rates);
+        }
         $pickup = (array) ($request['pickup'] ?? []);
         $destination = (array) ($request['destination'] ?? []);
         $distanceKm = $this->distanceKm($pickup, $destination);
@@ -73,6 +76,46 @@ class MobileBookingQuoteCalculator
             'estimatedDurationMinutes' => $distanceKm > 0 ? max(15, (int) round($distanceKm * (float) ($serviceRates['minutes_per_km'] ?? 4))) : null,
             'pricingStatus' => 'priced',
             'breakdown' => $breakdown,
+        ];
+    }
+
+    private function calculateInternationalWithOnwardDelivery(array $request, array $rates): array
+    {
+        $hub = (array) $request['receivingHub'];
+        $internationalRequest = $request;
+        $internationalRequest['destination'] = $hub;
+        unset($internationalRequest['receivingHub'], $internationalRequest['onwardDelivery'], $internationalRequest['onwardVehicleType']);
+        $international = $this->calculate($internationalRequest, $rates);
+        $onwardType = (string) ($request['onwardDelivery'] ?? 'collection');
+
+        if ($onwardType === 'collection') {
+            return $international;
+        }
+
+        $onwardRequest = $request;
+        $onwardRequest['service'] = $onwardType === 'local' ? 'local' : 'intercity';
+        $onwardRequest['pickup'] = $hub;
+        $onwardRequest['vehicleType'] = $request['onwardVehicleType'] ?? $request['vehicleType'] ?? 'scooter';
+        unset($onwardRequest['receivingHub'], $onwardRequest['onwardDelivery'], $onwardRequest['onwardVehicleType'], $onwardRequest['transportMode']);
+        $onward = $this->calculate($onwardRequest, $rates);
+        $internationalBreakdown = array_map(function (array $charge) {
+            $charge['code'] = 'international_' . $charge['code'];
+            $charge['label'] = 'International freight — ' . $charge['label'];
+            return $charge;
+        }, $international['breakdown']);
+        $onwardBreakdown = array_map(function (array $charge) use ($onwardType) {
+            $charge['code'] = 'onward_' . $charge['code'];
+            $charge['label'] = ($onwardType === 'local' ? 'Zambia local delivery — ' : 'Zambia City-to-City — ') . $charge['label'];
+            return $charge;
+        }, $onward['breakdown']);
+        $durations = array_filter([$international['estimatedDurationMinutes'], $onward['estimatedDurationMinutes']], fn ($value) => $value !== null);
+
+        return [
+            'total' => round($international['total'] + $onward['total'], 2),
+            'distanceKm' => round($international['distanceKm'] + $onward['distanceKm'], 1),
+            'estimatedDurationMinutes' => $durations ? array_sum($durations) : null,
+            'pricingStatus' => 'priced',
+            'breakdown' => array_merge($internationalBreakdown, $onwardBreakdown),
         ];
     }
 

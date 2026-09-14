@@ -4,6 +4,18 @@
         These prices are used by the mobile booking API. Laravel calculates and signs the quote; the mobile app cannot override it. Only enabled branch routes can be booked.
     </div>
 
+    <div class="card border-primary mb-5">
+        <div class="card-header"><h5 class="mb-0 h6">International quote formula</h5></div>
+        <div class="card-body">
+            <h4 class="mb-4">International freight + Zambia onward delivery</h4>
+            <div class="row">
+                <div class="col-md-4"><strong>Collect at Zambia hub</strong><p class="pricing-help mb-0">International freight only. No onward delivery fee.</p></div>
+                <div class="col-md-4"><strong>Deliver within the hub city</strong><p class="pricing-help mb-0">International freight stays the same, then Local Delivery pricing is added.</p></div>
+                <div class="col-md-4"><strong>Deliver to another city</strong><p class="pricing-help mb-0">International freight stays the same, then the enabled City-to-City route is added.</p></div>
+            </div>
+        </div>
+    </div>
+
     @if ($errors->any())
         <div class="alert alert-danger">
             <strong>Pricing was not saved.</strong>
@@ -36,7 +48,7 @@
                 'intercity_per_kg' => 'Per kg', 'intercity_fragile_fee' => 'Fragile handling',
                 'intercity_container_fee' => 'Container handling',
             ],
-            'International defaults' => [
+            'International freight defaults' => [
                 'import_base_fee' => 'Default base fee', 'import_per_kg' => 'Per kg',
                 'import_fragile_fee' => 'Fragile handling', 'import_container_fee' => 'Container handling',
             ],
@@ -88,9 +100,9 @@
     </div>
 
     <div class="card mt-5">
-        <div class="card-header"><h5 class="mb-0 h6">International import routes — Air and Sea</h5></div>
+        <div class="card-header"><h5 class="mb-0 h6">International freight lanes — Air and Sea</h5></div>
         <div class="card-body">
-            <p class="pricing-help">Configure exact overseas-origin to Zambia-receiving branch routes. Air and Sea are enabled and priced independently.</p>
+            <p class="pricing-help">Configure each supported overseas branch or country office to its Zambia receiving hub. Air and Sea are enabled and priced independently. These rates price only the international leg; the customer's selected Zambia delivery is added from the Local or City-to-City sections above.</p>
             <div class="table-responsive">
                 <table class="table table-bordered pricing-table">
                     <thead><tr><th>Enabled</th><th>From</th><th>To</th><th>Method</th><th>Base</th><th>Per kg</th><th>Fragile</th><th>Container</th></tr></thead>
