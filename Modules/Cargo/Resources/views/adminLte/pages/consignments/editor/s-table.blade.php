@@ -143,6 +143,13 @@
                                 </td>
                                 <td>{{ $shipment->created_at->toFormattedDateString() }}</td>
                                 <td class="action-buttons">
+                                    @if(app(Modules\Cargo\Services\ShipmentOperationAccessService::class)->canOperate(auth()->user(), $shipment, 'edit-shipments'))
+                                    <a href="{{ fr_route('shipments.edit', ['shipment' => $shipment->id]) }}"
+                                        class="btn btn-icon btn-light text-warning btn-lg rounded me-2"
+                                        title="Edit this shipment and its parcels">
+                                        <i class="bi bi-pencil-square"></i>
+                                    </a>
+                                    @endif
                                     @can('view-shipment-invoices')
                                     <a href="{{ url('admin/shipments/shipments/' . $shipment->id) }}"
                                         class="btn btn-icon btn-light text-info btn-lg rounded me-2"
@@ -210,6 +217,9 @@
                                     <div class="text-muted small mt-1">{{ $shipment->created_at->toFormattedDateString() }}</div>
                                 </div>
                                 <div class="shipment-actions d-flex flex-column gap-1 align-items-end">
+                                    @if(app(Modules\Cargo\Services\ShipmentOperationAccessService::class)->canOperate(auth()->user(), $shipment, 'edit-shipments'))
+                                    <a href="{{ fr_route('shipments.edit', ['shipment' => $shipment->id]) }}" class="btn btn-outline-warning btn-sm p-1" title="Edit shipment"><i class="bi bi-pencil-square"></i></a>
+                                    @endif
                                     @can('view-shipment-invoices')
                                     <a href="{{ url('admin/shipments/shipments/' . $shipment->id) }}" class="btn btn-outline-info btn-sm p-1" title="View Invoice"><i class="bi bi-receipt"></i></a>
                                     @endcan
@@ -256,6 +266,9 @@
                                     <div class="d-flex justify-content-between align-items-center">
                                         <small class="text-muted">{{ $shipment->created_at->toFormattedDateString() }}</small>
                                         <div class="btn-group btn-group-sm gap-1">
+                                            @if(app(Modules\Cargo\Services\ShipmentOperationAccessService::class)->canOperate(auth()->user(), $shipment, 'edit-shipments'))
+                                            <a href="{{ fr_route('shipments.edit', ['shipment' => $shipment->id]) }}" class="btn btn-outline-warning btn-sm p-1" title="Edit shipment"><i class="bi bi-pencil-square"></i></a>
+                                            @endif
                                             @can('view-shipment-invoices')
                                             <a href="{{ url('admin/shipments/shipments/' . $shipment->id) }}" class="btn btn-outline-info btn-sm p-1" title="View Invoice"><i class="bi bi-receipt"></i></a>
                                             @endcan

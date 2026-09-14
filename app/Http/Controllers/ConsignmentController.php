@@ -1088,7 +1088,9 @@ class ConsignmentController extends Controller
     {
         $this->authorizeConsignmentMutation();
         $adminTheme = env('ADMIN_THEME', 'adminLte');
-        $consignment = $cons::where('id', $id)->first();
+        $consignment = $cons::with(['shipments.client', 'shipments.packageShipments'])
+            ->where('id', $id)
+            ->firstOrFail();
         return view('cargo::' . $adminTheme . '.pages.consignments.edit', compact('consignment'));
     }
 

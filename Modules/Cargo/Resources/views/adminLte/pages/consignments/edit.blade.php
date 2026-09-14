@@ -316,6 +316,56 @@
                 </form>
             </div>
         </div>
+
+        <div class="bg-white rounded-lg shadow-lg overflow-hidden mt-6 mb-6">
+            <div class="bg-gray-100 px-6 py-4 border-b flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                    <h2 class="text-lg font-bold text-gray-800"><i class="fas fa-boxes mr-2 text-yellow-500"></i>Shipments in this consignment</h2>
+                    <p class="text-sm text-gray-600 mt-1">Edit each imported shipment, its goods, weights and pricing independently.</p>
+                </div>
+                <a href="{{ route('consignment.show', $consignment->id) }}" class="inline-flex items-center px-4 py-2 rounded-md bg-gray-700 text-white hover:bg-gray-800">
+                    <i class="fas fa-list mr-2"></i>Detailed shipment view
+                </a>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase">HAWB</th>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Customer</th>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Goods</th>
+                            <th class="px-5 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Weight</th>
+                            <th class="px-5 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Price</th>
+                            <th class="px-5 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-100">
+                        @forelse($consignment->shipments as $shipment)
+                            <tr>
+                                <td class="px-5 py-3 font-semibold text-gray-800">{{ $shipment->code }}</td>
+                                <td class="px-5 py-3 text-gray-700">{{ optional($shipment->client)->name ?: $shipment->reciver_name ?: '—' }}</td>
+                                <td class="px-5 py-3 text-gray-700">
+                                    {{ $shipment->packageShipments->pluck('description')->filter()->implode(', ') ?: '—' }}
+                                    <span class="block text-xs text-gray-500">{{ number_format((float) $shipment->packageShipments->sum('qty'), 2) }} piece(s)</span>
+                                </td>
+                                <td class="px-5 py-3 text-right text-gray-700">{{ number_format((float) $shipment->total_weight, 2) }} kg</td>
+                                <td class="px-5 py-3 text-right font-semibold text-gray-800">{{ number_format((float) $shipment->shipping_cost, 2) }}</td>
+                                <td class="px-5 py-3 text-right">
+                                    @if(app(Modules\Cargo\Services\ShipmentOperationAccessService::class)->canOperate(auth()->user(), $shipment, 'edit-shipments'))
+                                        <a href="{{ fr_route('shipments.edit', ['shipment' => $shipment->id]) }}"
+                                            class="inline-flex items-center px-3 py-2 rounded-md bg-yellow-400 text-gray-900 hover:bg-yellow-500 font-semibold">
+                                            <i class="fas fa-edit mr-2"></i>Edit shipment
+                                        </a>
+                                    @endif
+                                </td>
+                            </tr>
+                        @empty
+                            <tr><td colspan="6" class="px-5 py-8 text-center text-gray-500">This consignment has no shipments yet.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
     <script>

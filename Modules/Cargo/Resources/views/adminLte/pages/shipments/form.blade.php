@@ -59,6 +59,75 @@
 <div class="row">
     <div class="col-lg-12">
 
+        @if($typeForm == 'edit' && $model->consignment_id)
+            <div class="alert alert-info d-flex align-items-start mb-6">
+                <i class="fas fa-info-circle mt-1 me-3"></i>
+                <div>
+                    <strong>Imported shipment details</strong>
+                    <div>Edit this parcel independently. Payment status is intentionally managed by the payment and receipt workflow.</div>
+                </div>
+            </div>
+            <div class="row mb-5">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label class="col-form-label fw-bold fs-6 required">HAWB / shipment code</label>
+                        <input type="text" name="Shipment[code]" class="form-control @error('Shipment.code') is-invalid @enderror"
+                            value="{{ old('Shipment.code', $model->code) }}" maxlength="255" required>
+                        @error('Shipment.code')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label class="col-form-label fw-bold fs-6">Salesperson</label>
+                        <input type="text" name="Shipment[salesman]" class="form-control"
+                            value="{{ old('Shipment.salesman', $model->salesman) }}" maxlength="255">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label class="col-form-label fw-bold fs-6">Destination branch / location</label>
+                        <input type="text" name="Shipment[next_destination]" class="form-control"
+                            value="{{ old('Shipment.next_destination', $model->next_destination) }}" maxlength="255">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label class="col-form-label fw-bold fs-6">Destination port</label>
+                        <input type="text" name="Shipment[dest_port]" class="form-control"
+                            value="{{ old('Shipment.dest_port', $model->dest_port) }}" maxlength="255">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label class="col-form-label fw-bold fs-6">Volume (m³)</label>
+                        <input type="number" min="0" step="0.001" name="Shipment[volume]" class="form-control"
+                            value="{{ old('Shipment.volume', $model->volume) }}">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label class="col-form-label fw-bold fs-6">Consignment</label>
+                        <input type="text" class="form-control" value="{{ optional($model->consignment)->consignment_code ?: '#'.$model->consignment_id }}" disabled>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label class="col-form-label fw-bold fs-6">Sender secondary phone</label>
+                        <input type="tel" name="Shipment[client_phone_2]" class="form-control"
+                            value="{{ old('Shipment.client_phone_2', $model->client_phone_2) }}" maxlength="50">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label class="col-form-label fw-bold fs-6">Receiver secondary phone</label>
+                        <input type="tel" name="Shipment[reciver_phone_2]" class="form-control"
+                            value="{{ old('Shipment.reciver_phone_2', $model->reciver_phone_2) }}" maxlength="50">
+                    </div>
+                </div>
+            </div>
+            <hr>
+        @endif
+
         <div class="form-group row">
             <label class="col-form-label fw-bold fs-6 required">{{ __('cargo::view.shipment_type') }}</label>
             <div class="col-9 col-form-label">
@@ -794,6 +863,7 @@
                     @elseif($typeForm == 'edit')
                         @foreach(Modules\Cargo\Entities\PackageShipment::where('shipment_id',$model->id)->get() as $pack)
                             <div data-repeater-item class="row align-items-center" style="margin-top: 15px;padding-bottom: 15px;padding-top: 15px;border-top:1px solid #ccc;border-bottom:1px solid #ccc;">
+                                <input type="hidden" name="id" value="{{ $pack->id }}">
                                 <div class="col-md-3">
                                     <label class="col-form-label fw-bold fs-6 required">{{ __('cargo::view.package_type') }}</label>
                                     <select
@@ -828,7 +898,7 @@
 
                                     <label class="col-form-label fw-bold fs-6 required">{{ __('cargo::view.weight') }}</label>
 
-                                    <input type="number" min="1" placeholder="{{ __('cargo::view.weight') }}" name="weight" class="form-control weight-listener kt_touchspin_weight" onchange="calcTotalWeight()" value="{{ $pack->qty }}" />
+                                    <input type="number" min="0" step="0.01" placeholder="{{ __('cargo::view.weight') }}" name="weight" class="form-control weight-listener kt_touchspin_weight" onchange="calcTotalWeight()" value="{{ $pack->weight }}" />
                                     <div class="mb-2 d-md-none"></div>
 
                                 </div>
@@ -850,9 +920,13 @@
                                 </div>
                                 <div class="col-md-4">
                                     <div>
-                                        <a href="javascript:;" data-repeater-delete="" class="btn btn-sm font-weight-bolder btn-light-danger delete_item">
-                                            <i class="la la-trash-o"></i>{{ __('cargo::view.delete') }}
-                                        </a>
+                                        @if($model->consignment_id)
+                                            <span class="form-text text-muted">Existing parcel rows are retained for audit safety.</span>
+                                        @else
+                                            <a href="javascript:;" data-repeater-delete="" class="btn btn-sm font-weight-bolder btn-light-danger delete_item">
+                                                <i class="la la-trash-o"></i>{{ __('cargo::view.delete') }}
+                                            </a>
+                                        @endif
                                     </div>
                                 </div>
 

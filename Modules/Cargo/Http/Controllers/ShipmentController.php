@@ -6,6 +6,7 @@ use Illuminate\Contracts\Support\Renderable;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 use Modules\Cargo\Http\DataTables\ShipmentsDataTable;
 use Modules\Cargo\Http\Requests\ShipmentRequest;
@@ -570,6 +571,10 @@ class ShipmentController extends Controller
         $shipmentToUpdate = Shipment::findOrFail($id);
         abort_unless(app(ShipmentOperationAccessService::class)->canOperate(auth()->user(), $shipmentToUpdate, 'edit-shipments'), 403);
 
+        if ($shipmentToUpdate->consignment_id) {
+            return $this->updateImportedShipment($request, $shipmentToUpdate);
+        }
+
         try {
             DB::beginTransaction();
             $model = $shipmentToUpdate;
@@ -614,6 +619,134 @@ class ShipmentController extends Controller
             print_r($e->getMessage());
             exit;
             return back();
+        }
+    }
+
+    /**
+     * Update one imported shipment without replacing its package rows.
+     *
+     * Imported consignments are operational records. In particular, payment
+     * state is deliberately excluded here and remains owned by receipts and
+     * payment actions. Existing packages omitted by the browser are retained;
+     * deleting cargo requires the separate explicit removal workflow.
+     */
+    private function updateImportedShipment(Request $request, Shipment $shipment)
+    {
+        $validated = $request->validate([
+            'Shipment.code' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('shipments', 'code')->ignore($shipment->id),
+            ],
+            'Shipment.type' => 'required|integer|in:1,2',
+            'Shipment.branch_id' => 'required|integer|exists:branches,id',
+            'Shipment.shipping_date' => 'nullable|date',
+            'Shipment.collection_time' => 'nullable|string|max:50',
+            'Shipment.client_id' => 'required|integer|exists:clients,id',
+            'Shipment.client_phone' => 'nullable|string|max:50',
+            'Shipment.client_phone_2' => 'nullable|string|max:50',
+            'Shipment.country_code' => 'nullable|string|max:20',
+            'Shipment.client_address' => 'nullable',
+            'Shipment.client_street_address_map' => 'nullable|string|max:1000',
+            'Shipment.client_lat' => 'nullable|numeric|between:-90,90',
+            'Shipment.client_lng' => 'nullable|numeric|between:-180,180',
+            'Shipment.client_url' => 'nullable|string|max:2000',
+            'Shipment.reciver_name' => 'nullable|string|max:255',
+            'Shipment.reciver_phone' => 'nullable|string|max:50',
+            'Shipment.reciver_phone_2' => 'nullable|string|max:50',
+            'Shipment.follow_up_country_code' => 'nullable|string|max:20',
+            'Shipment.reciver_address' => 'nullable|string|max:1000',
+            'Shipment.reciver_street_address_map' => 'nullable|string|max:1000',
+            'Shipment.reciver_lat' => 'nullable|numeric|between:-90,90',
+            'Shipment.reciver_lng' => 'nullable|numeric|between:-180,180',
+            'Shipment.reciver_url' => 'nullable|string|max:2000',
+            'Shipment.from_country_id' => 'nullable|integer|exists:countries,id',
+            'Shipment.to_country_id' => 'nullable|integer|exists:countries,id',
+            'Shipment.from_state_id' => 'nullable|integer|exists:states,id',
+            'Shipment.to_state_id' => 'nullable|integer|exists:states,id',
+            'Shipment.from_area_id' => 'nullable|integer|exists:areas,id',
+            'Shipment.to_area_id' => 'nullable|integer|exists:areas,id',
+            'Shipment.payment_type' => 'nullable|integer',
+            'Shipment.payment_method_id' => 'nullable|integer',
+            'Shipment.order_id' => 'nullable|string|max:255',
+            'Shipment.delivery_time' => 'nullable',
+            'Shipment.amount_to_be_collected' => 'nullable|numeric|min:0',
+            'Shipment.total_weight' => 'required|numeric|min:0',
+            'Shipment.tax' => 'nullable|numeric|min:0',
+            'Shipment.insurance' => 'nullable|numeric|min:0',
+            'Shipment.shipping_cost' => 'nullable|numeric|min:0',
+            'Shipment.return_cost' => 'nullable|numeric|min:0',
+            'Shipment.salesman' => 'nullable|string|max:255',
+            'Shipment.next_destination' => 'nullable|string|max:255',
+            'Shipment.dest_port' => 'nullable|string|max:255',
+            'Shipment.volume' => 'nullable|numeric|min:0',
+            'Package' => 'nullable|array',
+            'Package.*.id' => 'nullable|integer|exists:package_shipment,id',
+            'Package.*.package_id' => 'required|integer|exists:packages,id',
+            'Package.*.description' => 'nullable|string|max:2000',
+            'Package.*.qty' => 'required|numeric|min:0.01',
+            'Package.*.weight' => 'nullable|numeric|min:0',
+            'Package.*.length' => 'nullable|numeric|min:0',
+            'Package.*.width' => 'nullable|numeric|min:0',
+            'Package.*.height' => 'nullable|numeric|min:0',
+        ]);
+
+        $oldShipment = $shipment->only(array_keys($validated['Shipment']));
+        $oldPackages = $shipment->packageShipments()->get()->map->only([
+            'id', 'package_id', 'description', 'qty', 'weight', 'length', 'width', 'height',
+        ])->values()->all();
+
+        try {
+            DB::transaction(function () use ($shipment, $validated, $oldShipment, $oldPackages) {
+                $shipment->fill($validated['Shipment']);
+                $shipment->saveOrFail();
+
+                $seenPackageIds = [];
+                foreach ($validated['Package'] ?? [] as $packageData) {
+                    $packageId = isset($packageData['id']) ? (int) $packageData['id'] : null;
+                    $package = null;
+
+                    if ($packageId && !in_array($packageId, $seenPackageIds, true)) {
+                        $package = PackageShipment::where('shipment_id', $shipment->id)->find($packageId);
+                    }
+
+                    if (!$package) {
+                        $package = new PackageShipment(['shipment_id' => $shipment->id]);
+                    } else {
+                        $seenPackageIds[] = $packageId;
+                    }
+
+                    unset($packageData['id']);
+                    $package->fill($packageData);
+                    $package->shipment_id = $shipment->id;
+                    $package->saveOrFail();
+                }
+
+                $shipment->refresh();
+                $newPackages = $shipment->packageShipments()->get()->map->only([
+                    'id', 'package_id', 'description', 'qty', 'weight', 'length', 'width', 'height',
+                ])->values()->all();
+
+                app(AuditLogService::class)->createLog(
+                    'updated',
+                    $shipment,
+                    null,
+                    ['shipment' => $oldShipment, 'packages' => $oldPackages],
+                    ['shipment' => $shipment->only(array_keys($validated['Shipment'])), 'packages' => $newPackages],
+                    'Imported shipment and parcel details updated from the admin editor.'
+                );
+            });
+
+            return redirect()
+                ->route('shipments.edit', $shipment->id)
+                ->with('message_alert', __('cargo::messages.saved'));
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return back()
+                ->withInput()
+                ->withErrors(['shipment' => 'The shipment could not be saved. No changes were applied.']);
         }
     }
 

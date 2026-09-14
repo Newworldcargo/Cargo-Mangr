@@ -16,6 +16,13 @@
             <div class="card-title m-0">
                 <h3 class="fw-bolder m-0">{{ __('cargo::view.edit_shipment') }}</h3>
             </div>
+            @if($model->consignment_id)
+                <div class="card-toolbar">
+                    <a href="{{ route('consignment.show', $model->consignment_id) }}" class="btn btn-light">
+                        <i class="fas fa-arrow-left"></i> Back to consignment
+                    </a>
+                </div>
+            @endif
             <!--end::Card title-->
 
         </div>
