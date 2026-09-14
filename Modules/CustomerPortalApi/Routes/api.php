@@ -8,6 +8,7 @@ use Modules\CustomerPortalApi\Http\Controllers\Api\V1\HealthController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\InvoiceActionController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\InvoiceController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\InvoiceDocumentController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\MobileBookingQuoteController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\DraftQuoteController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\FileController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\NotificationController;
@@ -112,6 +113,7 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
     Route::post('shipment-drafts/{draft}/submit', [DraftQuoteController::class, 'submitDraft'])->whereNumber('draft');
     Route::post('quotes', [DraftQuoteController::class, 'createQuote']);
     Route::get('quotes/{quote}', [DraftQuoteController::class, 'showQuote'])->whereNumber('quote');
+    Route::post('bookings/quote', [MobileBookingQuoteController::class, 'store']);
 
     Route::get('notifications', [NotificationController::class, 'index']);
     Route::patch('notifications/{notification}/read', [NotificationController::class, 'read']);

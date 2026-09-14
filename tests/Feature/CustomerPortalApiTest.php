@@ -89,6 +89,25 @@ class CustomerPortalApiTest extends TestCase
         list($user, $client) = $this->createCustomer('draft-submit@example.test');
         $branch = $this->createBranch();
         Package::create(['name' => 'General cargo', 'cost' => 0]);
+        config([
+            'customerportalapi.booking_pricing.services.local.base_fee' => 55,
+            'customerportalapi.booking_pricing.services.local.per_km' => 6,
+            'customerportalapi.booking_pricing.services.local.per_kg' => 0,
+        ]);
+
+        $quoteRequest = [
+            'service' => 'local',
+            'bookingType' => 'local_delivery',
+            'pickup' => ['city' => 'Lusaka', 'area' => 'Roma', 'latitude' => -15.3665, 'longitude' => 28.3206],
+            'destination' => ['city' => 'Lusaka', 'area' => 'Longacres', 'latitude' => -15.4162, 'longitude' => 28.3074],
+            'vehicleType' => 'scooter',
+            'cargo' => ['items' => [], 'totalWeight' => 4, 'fragile' => false],
+        ];
+        $quoteResponse = $this->actingAs($user, 'web')
+            ->withSession(['_token' => 'test-csrf-token'])
+            ->withHeader('X-CSRF-Token', 'test-csrf-token')
+            ->postJson('/api/v1/bookings/quote', $quoteRequest);
+        $quoteResponse->assertCreated()->assertJsonPath('data.source', 'server');
 
         $draftResponse = $this->actingAs($user, 'web')
             ->withSession(['_token' => 'test-csrf-token'])
@@ -106,6 +125,12 @@ class CustomerPortalApiTest extends TestCase
                     'cargoRows' => [
                         ['name' => 'Shoes', 'quantity' => 2, 'weight' => 3.5, 'amount' => '$42.50'],
                         ['name' => 'Phone case', 'quantity' => 1, 'weight' => 0.5, 'amount' => '7.50'],
+                    ],
+                    'pricing' => [
+                        'request' => $quoteRequest,
+                        'quotePayload' => $quoteResponse->json('data.quotePayload'),
+                        'quoteSignature' => $quoteResponse->json('data.quoteSignature'),
+                        'quoteSource' => 'server',
                     ],
                 ],
             ]);
@@ -126,7 +151,8 @@ class CustomerPortalApiTest extends TestCase
         $this->assertSame($branch->id, (int) $shipment->branch_id);
         $this->assertSame(Shipment::REQUESTED_STATUS, (int) $shipment->status_id);
         $this->assertEquals(4.0, (float) $shipment->total_weight);
-        $this->assertEquals(50.0, (float) $shipment->amount_to_be_collected);
+        $this->assertEquals((float) $quoteResponse->json('data.total'), (float) $shipment->shipping_cost);
+        $this->assertEquals((float) $quoteResponse->json('data.total'), (float) $shipment->amount_to_be_collected);
         $this->assertCount(2, $shipment->packageShipments);
     }
 

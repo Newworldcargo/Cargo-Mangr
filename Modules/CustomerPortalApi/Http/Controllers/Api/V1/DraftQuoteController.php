@@ -10,6 +10,7 @@ use Modules\CustomerPortalApi\Http\Resources\ShipmentDraftResource;
 use Modules\CustomerPortalApi\Models\PortalFile;
 use Modules\CustomerPortalApi\Models\PortalQuote;
 use Modules\CustomerPortalApi\Models\PortalShipmentDraft;
+use Modules\CustomerPortalApi\Services\Pricing\MobileBookingQuoteSigner;
 use Modules\CustomerPortalApi\Http\Resources\ShipmentResource;
 use Modules\Cargo\Entities\Branch;
 use Modules\Cargo\Entities\Country;
@@ -112,12 +113,25 @@ class DraftQuoteController extends PortalController
         if ($validator->fails()) return $this->problem($request, 'VALIDATION_FAILED', 'Complete the shipment request before submitting it.', 422, $validator->errors()->toArray());
 
         $client = $this->customerContext->requireClient();
+        $quote = null;
+        if ((bool) config('customerportalapi.booking_pricing.require_signed_quote', true)) {
+            try {
+                $quote = app(MobileBookingQuoteSigner::class)->requireValidQuote(
+                    (array) ($payload['pricing'] ?? []),
+                    (int) $client->id,
+                    (string) ($payload['service'] ?? '')
+                );
+            } catch (\InvalidArgumentException $exception) {
+                return $this->problem($request, 'QUOTE_REQUIRED', 'Request a fresh server price before submitting this booking.', 422, [], true);
+            }
+        }
+        $quotedTotal = $quote ? ((int) $quote->amount_minor) / 100 : 0;
         $branch = Branch::where('is_archived', 0)->whereKey($form['pickupBranchId'] ?? null)->first()
             ?: Branch::where('is_archived', 0)->orderBy('id')->first();
         if (!$branch) return $this->problem($request, 'DEPENDENCY_UNAVAILABLE', 'No collection branch is available right now.', 503);
 
         try {
-            $shipment = DB::transaction(function () use ($model, $payload, $form, $cargoRows, $client, $branch) {
+            $shipment = DB::transaction(function () use ($model, $payload, $form, $cargoRows, $client, $branch, $quote, $quotedTotal) {
                 $origin = $this->locationProfile($branch->name . ' ' . $branch->address);
                 $destination = $this->locationProfile((string) ($form['destination'] ?? ''));
                 $evidence = $this->shipmentEvidenceFromPayload($payload, $client->id);
@@ -142,7 +156,8 @@ class DraftQuoteController extends PortalController
                     'payment_type' => Shipment::POSTPAID,
                     'order_id' => 'PORTAL-' . strtoupper(substr((string) \Illuminate\Support\Str::uuid(), 0, 12)),
                     'total_weight' => $totals['weight'],
-                    'amount_to_be_collected' => $totals['amount'],
+                    'shipping_cost' => $quotedTotal,
+                    'amount_to_be_collected' => $quotedTotal,
                     'attachments_before_shipping' => $evidence ? json_encode($evidence) : null,
                 ]);
                 $width = max(5, (int) (ShipmentSetting::getVal('shipment_code_count') ?: 5));
@@ -152,6 +167,7 @@ class DraftQuoteController extends PortalController
                 $this->createShipmentPackageRows($shipment, $cargoRows);
                 $payload['submittedShipmentId'] = $shipment->id;
                 $model->payload = $payload;
+                $model->quote_id = $quote ? $quote->id : null;
                 $model->status = 'submitted';
                 $model->revision = ((int) ($model->revision ?: 1)) + 1;
                 $model->save();
