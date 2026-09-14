@@ -168,6 +168,7 @@ class DraftQuoteController extends PortalController
                 $payload['submittedShipmentId'] = $shipment->id;
                 $model->payload = $payload;
                 $model->quote_id = $quote ? $quote->id : null;
+                $model->shipment_id = $shipment->id;
                 $model->status = 'submitted';
                 $model->revision = ((int) ($model->revision ?: 1)) + 1;
                 $model->save();

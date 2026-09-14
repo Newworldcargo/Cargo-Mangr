@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Models\Transxn;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Modules\Cargo\Entities\Branch;
@@ -11,11 +12,57 @@ use Modules\Cargo\Entities\Country;
 use Modules\Cargo\Entities\Package;
 use Modules\Cargo\Entities\Shipment;
 use Modules\Cargo\Entities\State;
+use Modules\CustomerPortalApi\Models\PortalPaymentIntent;
 use Tests\TestCase;
 
 class CustomerPortalApiTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_mobile_telemetry_accepts_allowlisted_redacted_events()
+    {
+        $this->postJson('/api/v1/telemetry/events', [
+            'event' => 'app_opened',
+            'appVersion' => '1.0.0',
+            'platform' => 'android',
+            'properties' => ['screen' => 'home'],
+        ])->assertStatus(202);
+    }
+
+    public function test_mobile_telemetry_rejects_sensitive_property_names()
+    {
+        $this->postJson('/api/v1/telemetry/events', [
+            'event' => 'api_error_occurred',
+            'properties' => ['email' => 'customer@example.test'],
+        ])->assertStatus(422)->assertJsonPath('error.code', 'SENSITIVE_TELEMETRY_REJECTED');
+    }
+
+    public function test_local_uat_payment_settles_once_and_reuses_the_intent()
+    {
+        list($user, $client) = $this->createCustomer('payment@example.test');
+        $shipment = $this->createShipment($client, 'PAYMENT-123');
+        $invoice = Transxn::create([
+            'shipment_id' => $shipment->id,
+            'receipt_number' => 'INV-UAT-1',
+            'total' => 125,
+            'currency' => 'ZMW',
+            'status' => 'pending',
+        ]);
+        config(['customerportalapi.payment_provider' => 'local-uat']);
+
+        $request = fn () => $this->actingAs($user, 'web')
+            ->withSession(['_token' => 'test-csrf-token'])
+            ->withHeader('X-CSRF-Token', 'test-csrf-token')
+            ->postJson('/api/v1/payments/intents', ['invoiceId' => $invoice->id, 'method' => 'mobile-money']);
+
+        $first = $request();
+        $first->assertCreated()->assertJsonPath('data.status', 'succeeded');
+        $this->actingAs($user, 'web')->getJson('/api/v1/invoices/' . $invoice->id)
+            ->assertOk()->assertJsonPath('data.total.currency', 'ZMW');
+        $request()->assertStatus(422)->assertJsonPath('error.code', 'INVOICE_NOT_PAYABLE');
+        $this->assertSame('completed', $invoice->fresh()->status);
+        $this->assertSame(1, PortalPaymentIntent::where('invoice_id', $invoice->id)->count());
+    }
 
     public function test_customer_can_login_and_receive_the_portal_user_contract()
     {
@@ -114,10 +161,10 @@ class CustomerPortalApiTest extends TestCase
             ->withHeader('X-CSRF-Token', 'test-csrf-token')
             ->postJson('/api/v1/shipment-drafts', [
                 'payload' => [
-                    'service' => 'import',
+                    'service' => 'local',
                     'form' => [
-                        'pickup' => 'Guangzhou, China',
-                        'destination' => 'Lusaka',
+                        'pickup' => 'Roma, Lusaka',
+                        'destination' => 'Longacres, Lusaka',
                         'pickupBranchId' => (string) $branch->id,
                         'recipient' => 'George Munganga',
                         'phone' => '+260971000000',

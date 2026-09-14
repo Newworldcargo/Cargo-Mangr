@@ -24,6 +24,7 @@ use Modules\CustomerPortalApi\Http\Controllers\Api\V1\PickupController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\ReturnController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\SavedPlaceController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\SupportController;
+use Modules\CustomerPortalApi\Http\Controllers\Api\V1\TelemetryController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\RecipientController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\SessionController;
 use Modules\CustomerPortalApi\Http\Controllers\Api\V1\WalletController;
@@ -35,6 +36,8 @@ Route::get('readyz', [HealthController::class, 'ready']);
 Route::get('reference-data', [ReferenceDataController::class, 'show'])
     ->middleware('throttle:customer-portal');
 Route::get('auth/csrf', [AuthController::class, 'csrf'])
+    ->middleware('throttle:customer-portal');
+Route::post('telemetry/events', [TelemetryController::class, 'store'])
     ->middleware('throttle:customer-portal');
 
 Route::post('auth/login', [AuthController::class, 'login'])

@@ -15,6 +15,12 @@ class ThemeServiceProvider extends ServiceProvider
      */
     public function boot()
     {
+        // Feature tests use a fresh in-memory database. Theme configuration may
+        // query installation tables before the test migrations have run.
+        if ($this->app->environment('testing')) {
+            return;
+        }
+
         if(env('INSTALLATION', false) == true){
             $active_theme = preg_replace('/[^A-Za-z0-9\-]/', '', get_general_setting('active_theme')); // Removes special chars.
             Theme::set($active_theme);

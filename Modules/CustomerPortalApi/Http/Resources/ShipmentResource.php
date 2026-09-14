@@ -4,16 +4,22 @@ namespace Modules\CustomerPortalApi\Http\Resources;
 
 use Carbon\Carbon;
 use App\Models\TrackingStage;
+use App\Models\Transxn;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Modules\Cargo\Entities\Shipment;
+use Modules\CustomerPortalApi\Models\PortalShipmentDraft;
+use Modules\CustomerPortalApi\Models\PortalQuote;
 
 class ShipmentResource extends JsonResource
 {
+    private $portalDraftResolved = false;
+    private $portalDraftCache;
+
     public function toArray($request)
     {
         $consignment = $this->consignment;
         $mode = strtolower((string) optional($consignment)->cargo_type);
-        $mode = in_array($mode, ['air', 'sea'], true) ? $mode : 'air';
+        $mode = in_array($mode, ['air', 'sea'], true) ? $mode : null;
         $status = $this->portalStatus();
 
         return [
@@ -23,6 +29,7 @@ class ShipmentResource extends JsonResource
             'consignmentCode' => optional($consignment)->consignment_code,
             'carrier' => optional($consignment)->shipping_line ?: 'New World Cargo',
             'transportMode' => $mode,
+            'service' => $this->portalService($mode),
             'packageName' => $this->packageName(),
             'parcelOwner' => (string) ($this->reciver_name ?: ''),
             'origin' => optional($consignment)->source ?: $this->originAddress(),
@@ -32,7 +39,7 @@ class ShipmentResource extends JsonResource
             'status' => $status['status'],
             'statusLabel' => $status['label'],
             'price' => [
-                'currency' => 'USD',
+                'currency' => $this->portalCurrency(),
                 'amountMinor' => max(0, (int) round(((float) ($this->amount_to_be_collected ?: $this->shipping_cost ?: 0)) * 100)),
             ],
             'imageUrl' => null,
@@ -41,7 +48,41 @@ class ShipmentResource extends JsonResource
             'nextAction' => $this->allowedActions()[0] ?? null,
             'allowedActions' => $this->allowedActions(),
             'revision' => (int) ($this->revision ?: 1),
+            'updatedAt' => $this->updated_at ? $this->updated_at->toIso8601String() : null,
         ];
+    }
+
+    private function portalService($mode)
+    {
+        $draft = $this->portalDraft();
+        $service = is_array(optional($draft)->payload) ? ($draft->payload['service'] ?? null) : null;
+        if (in_array($service, ['local', 'intercity', 'import', 'custom'], true)) {
+            return $service;
+        }
+
+        return $mode ? 'import' : 'local';
+    }
+
+    private function portalCurrency()
+    {
+        $draft = $this->portalDraft();
+        if ($draft && $draft->quote_id) {
+            $quoteCurrency = PortalQuote::whereKey($draft->quote_id)->value('currency');
+            if ($quoteCurrency) return strtoupper((string) $quoteCurrency);
+        }
+
+        $invoiceCurrency = Transxn::where('shipment_id', $this->id)->latest('id')->value('currency');
+        return strtoupper((string) ($invoiceCurrency ?: config('customerportalapi.booking_pricing.currency', 'ZMW')));
+    }
+
+    private function portalDraft()
+    {
+        if (!$this->portalDraftResolved) {
+            $this->portalDraftCache = PortalShipmentDraft::where('shipment_id', $this->id)->orderByDesc('id')->first();
+            $this->portalDraftResolved = true;
+        }
+
+        return $this->portalDraftCache;
     }
 
     private function packageName()

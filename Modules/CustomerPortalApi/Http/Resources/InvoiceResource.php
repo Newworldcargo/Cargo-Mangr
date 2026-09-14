@@ -11,6 +11,7 @@ class InvoiceResource extends JsonResource
         $shipment = $this->shipment;
         $paid = in_array($this->status, ['completed', 'refund_requested', 'partially_refunded'], true);
         $total = (float) $this->total;
+        $currency = strtoupper((string) ($this->currency ?: config('customerportalapi.booking_pricing.currency', 'ZMW')));
         $issuedAt = $this->created_at;
 
         return [
@@ -29,7 +30,7 @@ class InvoiceResource extends JsonResource
             'dueAtLabel' => null,
             'status' => $paid ? 'paid' : 'unpaid',
             'total' => [
-                'currency' => 'USD',
+                'currency' => $currency,
                 'amountMinor' => max(0, (int) round($total * 100)),
             ],
             'lineItems' => [[
@@ -37,11 +38,11 @@ class InvoiceResource extends JsonResource
                 'description' => 'Shipment ' . (optional($shipment)->code ?: $this->receipt_number),
                 'quantity' => 1,
                 'unitPrice' => [
-                    'currency' => 'USD',
+                    'currency' => $currency,
                     'amountMinor' => max(0, (int) round($total * 100)),
                 ],
                 'total' => [
-                    'currency' => 'USD',
+                    'currency' => $currency,
                     'amountMinor' => max(0, (int) round($total * 100)),
                 ],
             ]],

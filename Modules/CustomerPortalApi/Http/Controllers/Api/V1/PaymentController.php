@@ -30,12 +30,24 @@ class PaymentController extends PortalController
             return $this->problem($request, 'INVOICE_NOT_PAYABLE', 'This invoice is already settled.', 422);
         }
 
+        $existingIntent = PortalPaymentIntent::where('client_id', $client->id)
+            ->where('invoice_id', $invoice->id)
+            ->whereIn('status', ['requires_action', 'processing', 'pending', 'succeeded', 'confirmed', 'completed'])
+            ->latest('id')
+            ->first();
+        if ($existingIntent) {
+            return $this->success($request, (new PortalPaymentIntentResource($existingIntent))->resolve($request));
+        }
+
         $provider = trim((string) config('customerportalapi.payment_provider', ''));
         if ($provider === '') {
             return $this->problem($request, 'PAYMENT_PROVIDER_NOT_CONFIGURED', 'Payment processing is not enabled in this environment.', 503, [], true);
         }
 
         $amountMinor = max(0, (int) round(((float) $invoice->total) * 100));
+        if ($amountMinor < 1) {
+            return $this->problem($request, 'INVOICE_NOT_PAYABLE', 'This invoice does not have an outstanding amount.', 422);
+        }
         $currency = strtoupper((string) ($invoice->currency ?: 'USD'));
         $providerPayload = $this->createProviderIntent($provider, [
             'intentId' => (string) Str::uuid(),
@@ -61,6 +73,10 @@ class PaymentController extends PortalController
             'client_token' => $providerPayload['clientToken'],
             'revision' => 1,
         ]);
+        if (in_array($intent->status, ['succeeded', 'confirmed', 'completed'], true)) {
+            $invoice->status = 'completed';
+            $invoice->save();
+        }
         return $this->success($request, (new PortalPaymentIntentResource($intent))->resolve($request), 201);
     }
 
@@ -81,6 +97,15 @@ class PaymentController extends PortalController
             'providerReference' => null,
             'clientToken' => null,
         ];
+
+        if ($provider === 'local-uat' && app()->environment(['local', 'testing'])) {
+            return [
+                'intentId' => $payload['intentId'],
+                'status' => 'succeeded',
+                'providerReference' => 'LOCAL-UAT-' . strtoupper(substr(str_replace('-', '', $payload['intentId']), 0, 12)),
+                'clientToken' => null,
+            ];
+        }
 
         $webhookUrl = trim((string) config('customerportalapi.payment_webhook_url', ''));
         if ($webhookUrl === '') {
