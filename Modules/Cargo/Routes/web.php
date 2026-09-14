@@ -316,6 +316,7 @@ if (\Illuminate\Support\Facades\Schema::hasTable('translations') && check_module
 
             Route::get('shipments/settings/fees','ShipmentSettingController@feesSettings')->name('shipments.settings.fees');
             Route::post('shipments/settings/fees','ShipmentSettingController@storeFeesSettings')->name('shipments.settings.fees.store');
+            Route::post('shipments/settings/fees/mobile-pricing','ShipmentSettingController@storeMobilePricing')->name('shipments.settings.fees.mobile-pricing.store');
 
             // Route::get('/google-recaptcha', 'BusinessSettingsController@google_recaptcha')->name('google_recaptcha.index');
             // Route::post('/google_map', 'BusinessSettingsController@google_map_update')->name('google_map.update');
@@ -627,6 +628,7 @@ if (\Illuminate\Support\Facades\Schema::hasTable('translations') && check_module
 
         Route::get('shipments/settings/fees','ShipmentSettingController@feesSettings')->name('shipments.settings.fees');
         Route::post('shipments/settings/fees','ShipmentSettingController@storeFeesSettings')->name('shipments.settings.fees.store');
+        Route::post('shipments/settings/fees/mobile-pricing','ShipmentSettingController@storeMobilePricing')->name('shipments.settings.fees.mobile-pricing.store');
 
         Route::get('/google-recaptcha', 'BusinessSettingsController@google_recaptcha')->name('google_recaptcha.index');
         Route::post('/google_map', 'BusinessSettingsController@google_map_update')->name('google_map.update');

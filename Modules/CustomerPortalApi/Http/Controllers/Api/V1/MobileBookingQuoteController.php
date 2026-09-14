@@ -6,13 +6,15 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use InvalidArgumentException;
 use Modules\Cargo\Entities\ShipmentSetting;
+use Modules\Cargo\Services\MobilePricingSettings;
+use Modules\Cargo\Services\UnsupportedMobilePricingRoute;
 use Modules\CustomerPortalApi\Models\PortalQuote;
 use Modules\CustomerPortalApi\Services\Pricing\MobileBookingQuoteCalculator;
 use Modules\CustomerPortalApi\Services\Pricing\MobileBookingQuoteSigner;
 
 class MobileBookingQuoteController extends PortalController
 {
-    public function store(Request $request, MobileBookingQuoteCalculator $calculator, MobileBookingQuoteSigner $signer)
+    public function store(Request $request, MobileBookingQuoteCalculator $calculator, MobileBookingQuoteSigner $signer, MobilePricingSettings $pricingSettings)
     {
         $validator = Validator::make($request->all(), [
             'service' => ['required', 'in:local,intercity,import,custom'],
@@ -39,6 +41,7 @@ class MobileBookingQuoteController extends PortalController
             'cargo.totalWeight' => ['nullable', 'numeric', 'min:0', 'max:100000'],
             'cargo.declaredValue' => ['nullable', 'numeric', 'min:0'],
             'cargo.fragile' => ['required', 'boolean'],
+            'cargo.packageType' => ['nullable', 'in:standard,container'],
         ]);
 
         if ($validator->fails()) {
@@ -53,13 +56,15 @@ class MobileBookingQuoteController extends PortalController
         }
 
         try {
-            $calculation = $calculator->calculate($input, $this->pricingRates());
+            $calculation = $calculator->calculate($input, $pricingSettings->ratesFor($input, $this->pricingRates()));
+        } catch (UnsupportedMobilePricingRoute $exception) {
+            return $this->problem($request, 'UNSUPPORTED_ROUTE', $exception->getMessage(), 422, [], false);
         } catch (InvalidArgumentException $exception) {
             return $this->problem($request, 'PRICING_NOT_CONFIGURED', 'Pricing is not available for this service in the current environment.', 503, [], true);
         }
 
         $client = $this->customerContext->requireClient();
-        $currency = strtoupper((string) config('customerportalapi.booking_pricing.currency', 'ZMW'));
+        $currency = strtoupper((string) (ShipmentSetting::getVal('mobile_pricing_currency') ?: config('customerportalapi.booking_pricing.currency', 'ZMW')));
         $expiresAt = now()->addMinutes(max(1, (int) config('customerportalapi.booking_pricing.quote_minutes', 15)));
         $quote = PortalQuote::create([
             'client_id' => $client->id,

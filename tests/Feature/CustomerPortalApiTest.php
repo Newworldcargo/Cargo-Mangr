@@ -14,7 +14,9 @@ use Modules\Cargo\Entities\Client;
 use Modules\Cargo\Entities\Country;
 use Modules\Cargo\Entities\Package;
 use Modules\Cargo\Entities\Shipment;
+use Modules\Cargo\Entities\ShipmentSetting;
 use Modules\Cargo\Entities\State;
+use Modules\Cargo\Services\MobilePricingSettings;
 use Modules\CustomerPortalApi\Models\PortalPaymentIntent;
 use Tests\TestCase;
 
@@ -277,6 +279,104 @@ class CustomerPortalApiTest extends TestCase
 
         $response->assertStatus(419)
             ->assertJsonPath('error.code', 'CSRF_TOKEN_MISMATCH');
+    }
+
+    public function test_mobile_pricing_uses_enabled_branch_route_rates_and_rejects_reverse_route()
+    {
+        list($customer) = $this->createCustomer('route-pricing@example.test');
+        $origin = $this->createBranch();
+        $destinationUser = User::create([
+            'name' => 'Kitwe Branch',
+            'email' => 'kitwe-branch@example.test',
+            'password' => Hash::make('password'),
+            'role' => 3,
+            'verified' => true,
+        ]);
+        $destination = Branch::create([
+            'code' => 2,
+            'user_id' => $destinationUser->id,
+            'name' => 'Kitwe Branch',
+            'email' => 'kitwe@example.test',
+            'address' => 'Kitwe, Zambia',
+            'is_archived' => 0,
+        ]);
+        $pricing = app(MobilePricingSettings::class);
+        foreach ([
+            'enabled' => 1,
+            'base_fee' => 100,
+            'per_km' => 0,
+            'per_kg' => 5,
+            'fragile_fee' => 7,
+            'container_fee' => 20,
+        ] as $field => $value) {
+            ShipmentSetting::create([
+                'key' => $pricing->routeKey('intercity', $origin->id, $destination->id, $field),
+                'value' => $value,
+            ]);
+        }
+
+        $payload = [
+            'service' => 'intercity',
+            'bookingType' => 'city_to_city',
+            'pickup' => ['city' => 'Lusaka', 'branchId' => (string) $origin->id],
+            'destination' => ['city' => 'Kitwe', 'branchId' => (string) $destination->id],
+            'cargo' => ['items' => [], 'totalWeight' => 2, 'fragile' => true, 'packageType' => 'container'],
+        ];
+        $request = fn (array $body) => $this->actingAs($customer, 'web')
+            ->withSession(['_token' => 'test-csrf-token'])
+            ->withHeader('X-CSRF-Token', 'test-csrf-token')
+            ->postJson('/api/v1/bookings/quote', $body);
+
+        $request($payload)->assertCreated()
+            ->assertJsonPath('data.total', 137)
+            ->assertJsonPath('data.breakdown.pricingStatus', 'priced');
+
+        $payload['pickup']['branchId'] = (string) $destination->id;
+        $payload['destination']['branchId'] = (string) $origin->id;
+        $request($payload)->assertStatus(422)->assertJsonPath('error.code', 'UNSUPPORTED_ROUTE');
+    }
+
+    public function test_admin_can_store_mobile_pricing_without_schema_changes()
+    {
+        $admin = User::create([
+            'name' => 'Pricing Admin',
+            'email' => 'pricing-admin@example.test',
+            'password' => Hash::make('password'),
+            'role' => 1,
+            'verified' => true,
+        ]);
+        $origin = $this->createBranch();
+        $destinationUser = User::create([
+            'name' => 'Destination Branch',
+            'email' => 'destination-branch@example.test',
+            'password' => Hash::make('password'),
+            'role' => 3,
+            'verified' => true,
+        ]);
+        $destination = Branch::create([
+            'code' => 2,
+            'user_id' => $destinationUser->id,
+            'name' => 'Destination Branch',
+            'email' => 'destination@example.test',
+            'is_archived' => 0,
+        ]);
+
+        $this->actingAs($admin)->post(route('shipments.settings.fees.mobile-pricing.store'), [
+            'currency' => 'ZMW',
+            'pricing' => ['local_base_fee' => 55, 'local_per_km' => 6, 'local_per_kg' => 2],
+            'intercity_routes' => [
+                $origin->id => [
+                    $destination->id => ['enabled' => 1, 'base_fee' => 100, 'per_km' => 2, 'per_kg' => 5],
+                ],
+            ],
+        ])->assertRedirect();
+
+        $pricing = app(MobilePricingSettings::class);
+        $this->assertDatabaseHas('shipment_settings', ['key' => 'mobile_pricing_local_base_fee', 'value' => '55']);
+        $this->assertDatabaseHas('shipment_settings', [
+            'key' => $pricing->routeKey('intercity', $origin->id, $destination->id, 'enabled'),
+            'value' => '1',
+        ]);
     }
 
     public function test_customer_draft_submit_creates_pending_shipment_with_cargo_rows()

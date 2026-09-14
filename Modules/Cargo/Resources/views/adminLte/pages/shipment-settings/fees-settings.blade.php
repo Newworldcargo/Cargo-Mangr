@@ -27,6 +27,16 @@
                 </div>
             </div>
         </div>
+        <ul class="nav nav-tabs nav-tabs-line mb-5" role="tablist">
+            <li class="nav-item">
+                <a class="nav-link active" data-toggle="tab" href="#existing-rates" role="tab">Existing shipment rates</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#mobile-pricing" role="tab">Mobile app pricing</a>
+            </li>
+        </ul>
+        <div class="tab-content">
+            <div class="tab-pane fade show active" id="existing-rates" role="tabpanel">
         <form class="form-horizontal" action="{{ route('shipments.settings.fees.store') }}" id="kt_form_2" method="POST" enctype="multipart/form-data">
             @csrf
             <div class="card">
@@ -270,6 +280,11 @@
                 </div>
             </div>
         </form>
+            </div>
+            <div class="tab-pane fade" id="mobile-pricing" role="tabpanel">
+                @include('cargo::adminLte.pages.shipment-settings.mobile-pricing-settings')
+            </div>
+        </div>
     </div>
     <!--end::Card-->
 
@@ -288,6 +303,9 @@
         .form-control {
             margin-bottom: 15px !important;
         }
+        .pricing-table th, .pricing-table td { vertical-align: middle !important; white-space: nowrap; }
+        .pricing-table .form-control { min-width: 105px; margin-bottom: 0 !important; }
+        .pricing-help { color: #6c757d; line-height: 1.6; }
     </style>
 @endsection
 
@@ -320,6 +338,12 @@
         });
         $('.select-country').select2({
             placeholder: "Select country"
+        });
+        if (window.location.hash === '#mobile-pricing') {
+            $('a[href="#mobile-pricing"]').tab('show');
+        }
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (event) {
+            if (event.target.hash) history.replaceState(null, '', event.target.hash);
         });
         var inputs = document.getElementsByTagName('input');
 

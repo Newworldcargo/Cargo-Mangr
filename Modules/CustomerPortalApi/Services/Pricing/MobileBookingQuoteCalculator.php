@@ -61,6 +61,10 @@ class MobileBookingQuoteCalculator
             $this->addCharge($breakdown, 'fragile', 'Fragile cargo handling', (float) ($serviceRates['fragile_fee'] ?? 0));
         }
 
+        if (($cargo['packageType'] ?? 'standard') === 'container') {
+            $this->addCharge($breakdown, 'container', 'Container handling', (float) ($serviceRates['container_fee'] ?? 0));
+        }
+
         $total = round(array_sum(array_column($breakdown, 'amount')), 2);
 
         return [
