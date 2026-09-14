@@ -51,6 +51,11 @@ class CustomerPortalApiTest extends TestCase
         ]);
         config(['customerportalapi.payment_provider' => 'local-uat']);
 
+        $this->actingAs($user, 'web')->getJson('/api/v1/invoices/' . $invoice->id . '/document')
+            ->assertOk()
+            ->assertJsonPath('data.filename', 'new-worldcargo-invoice-inv-uat-1.html')
+            ->assertJsonPath('data.mimeType', 'text/html;charset=utf-8');
+
         $request = fn () => $this->actingAs($user, 'web')
             ->withSession(['_token' => 'test-csrf-token'])
             ->withHeader('X-CSRF-Token', 'test-csrf-token')
@@ -63,6 +68,9 @@ class CustomerPortalApiTest extends TestCase
         $request()->assertStatus(422)->assertJsonPath('error.code', 'INVOICE_NOT_PAYABLE');
         $this->assertSame('completed', $invoice->fresh()->status);
         $this->assertSame(1, PortalPaymentIntent::where('invoice_id', $invoice->id)->count());
+        $this->actingAs($user, 'web')->getJson('/api/v1/invoices/' . $invoice->id . '/receipt-document')
+            ->assertOk()
+            ->assertJsonPath('data.filename', 'new-worldcargo-receipt-inv-uat-1.html');
     }
 
     public function test_customer_can_login_and_receive_the_portal_user_contract()
@@ -183,6 +191,43 @@ class CustomerPortalApiTest extends TestCase
             ->assertJsonPath('data.trackingNumber', 'PUBLIC-123');
         $this->assertArrayNotHasKey('customerId', $response->json('data'));
         $this->assertArrayNotHasKey('price', $response->json('data'));
+    }
+
+    public function test_reference_data_exposes_configured_branch_geography_for_mobile_route_guards()
+    {
+        $branch = $this->createBranch();
+        $country = Country::where('name', 'Zambia')->firstOrFail();
+        $state = State::where('name', 'Lusaka')->firstOrFail();
+        $branch->update(['country_id' => $country->id, 'state_id' => $state->id]);
+
+        $this->getJson('/api/v1/reference-data')->assertOk()
+            ->assertJsonPath('data.offices.0.country', 'Zambia')
+            ->assertJsonPath('data.offices.0.countryCode', 'ZM')
+            ->assertJsonPath('data.offices.0.city', 'Lusaka');
+    }
+
+    public function test_saved_places_preserve_map_coordinates()
+    {
+        list($user) = $this->createCustomer('places@example.test');
+        $this->createBranch();
+
+        $response = $this->actingAs($user, 'web')
+            ->withSession(['_token' => 'test-csrf-token'])
+            ->withHeader('X-CSRF-Token', 'test-csrf-token')
+            ->postJson('/api/v1/saved-places', [
+                'label' => 'Home',
+                'detail' => 'Roma, Lusaka',
+                'city' => 'Lusaka',
+                'country' => 'Zambia',
+                'latitude' => -15.3665,
+                'longitude' => 28.3206,
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.city', 'Lusaka')
+            ->assertJsonPath('data.country', 'Zambia')
+            ->assertJsonPath('data.lat', -15.3665)
+            ->assertJsonPath('data.lng', 28.3206);
     }
 
     public function test_unsafe_authenticated_requests_require_the_portal_csrf_header()

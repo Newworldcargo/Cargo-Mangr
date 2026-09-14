@@ -9,16 +9,35 @@ class ReferenceDataController extends PortalController
 {
     public function show(Request $request)
     {
-        $offices = DB::table('branches')
-            ->where('is_archived', 0)
-            ->orderBy('name')
-            ->get(['id', 'name', 'address'])
+        $offices = DB::table('branches as branches')
+            ->leftJoin('countries as countries', 'countries.id', '=', 'branches.country_id')
+            ->leftJoin('states as states', 'states.id', '=', 'branches.state_id')
+            ->where('branches.is_archived', 0)
+            ->orderBy('branches.name')
+            ->get([
+                'branches.id',
+                'branches.name',
+                'branches.address',
+                'branches.country_code',
+                'countries.name as country',
+                'countries.iso2 as countryIso2',
+                'states.name as city',
+                'states.latitude as stateLatitude',
+                'states.longitude as stateLongitude',
+                'countries.latitude as countryLatitude',
+                'countries.longitude as countryLongitude',
+            ])
             ->map(function ($office) {
                 return [
                     'id' => (string) $office->id,
                     'name' => $office->name,
                     'address' => $office->address,
                     'detail' => $office->address,
+                    'country' => $office->country,
+                    'countryCode' => strtoupper((string) ($office->countryIso2 ?: $office->country_code)),
+                    'city' => $office->city,
+                    'latitude' => $office->stateLatitude !== null ? (float) $office->stateLatitude : ($office->countryLatitude !== null ? (float) $office->countryLatitude : null),
+                    'longitude' => $office->stateLongitude !== null ? (float) $office->stateLongitude : ($office->countryLongitude !== null ? (float) $office->countryLongitude : null),
                 ];
             })->values()->all();
 

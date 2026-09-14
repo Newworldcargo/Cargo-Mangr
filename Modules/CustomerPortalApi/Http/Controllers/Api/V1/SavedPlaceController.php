@@ -5,6 +5,7 @@ namespace Modules\CustomerPortalApi\Http\Controllers\Api\V1;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Schema;
 use Modules\Cargo\Entities\ClientAddress;
 use Modules\CustomerPortalApi\Http\Resources\AddressResource;
 
@@ -60,7 +61,9 @@ class SavedPlaceController extends PortalController
         }
 
         $this->fillPlace($model, $request, true);
-        $model->revision = ((int) ($model->revision ?: 1)) + 1;
+        if (Schema::hasColumn('client_addresses', 'revision')) {
+            $model->revision = ((int) ($model->revision ?: 1)) + 1;
+        }
         $model->save();
 
         return $this->success($request, $this->mobilePlace($model->fresh(), $request));
@@ -74,7 +77,9 @@ class SavedPlaceController extends PortalController
         }
 
         $model->is_archived = 1;
-        $model->revision = ((int) ($model->revision ?: 1)) + 1;
+        if (Schema::hasColumn('client_addresses', 'revision')) {
+            $model->revision = ((int) ($model->revision ?: 1)) + 1;
+        }
         $model->save();
 
         return response()->noContent(204)->withHeaders([
@@ -90,17 +95,38 @@ class SavedPlaceController extends PortalController
             'label' => [$required, 'string', 'max:255'],
             'detail' => [$required, 'string', 'max:1000'],
             'isDefault' => ['sometimes', 'boolean'],
+            'city' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'area' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'country' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
         ]);
     }
 
     private function fillPlace($model, Request $request, $partial = false)
     {
         if (!$partial || $request->has('label')) {
-            $model->label = $request->input('label');
+            if (Schema::hasColumn('client_addresses', 'label')) {
+                $model->label = $request->input('label');
+            } else {
+                $model->client_url = 'portal-label:' . base64_encode((string) $request->input('label'));
+            }
         }
         if (!$partial || $request->has('detail')) {
             $model->address = $request->input('detail');
             $model->client_street_address_map = $request->input('detail');
+        }
+        if (!$partial || $request->has('latitude')) {
+            $model->client_lat = $request->input('latitude');
+        }
+        if (!$partial || $request->has('longitude')) {
+            $model->client_lng = $request->input('longitude');
+        }
+        if ($request->filled('country')) {
+            $model->country_id = (int) (DB::table('countries')->where('name', $request->input('country'))->value('id') ?: $model->country_id);
+        }
+        if ($request->filled('city')) {
+            $model->state_id = (int) (DB::table('states')->where('country_id', $model->country_id ?: $this->defaultCountryId())->where('name', $request->input('city'))->value('id') ?: $model->state_id);
         }
         if (!$partial || $request->has('isDefault')) {
             $model->is_default = $request->boolean('isDefault');
@@ -109,7 +135,9 @@ class SavedPlaceController extends PortalController
         $model->is_archived = 0;
         $model->country_id = $model->country_id ?: $this->defaultCountryId();
         $model->state_id = $model->state_id ?: $this->defaultStateId($model->country_id);
-        $model->revision = $model->revision ?: 1;
+        if (Schema::hasColumn('client_addresses', 'revision')) {
+            $model->revision = $model->revision ?: 1;
+        }
     }
 
     private function mobilePlace($place, Request $request)
@@ -118,12 +146,27 @@ class SavedPlaceController extends PortalController
 
         return [
             'id' => $resource['id'],
-            'label' => $resource['label'] ?: 'Saved place',
+            'label' => $resource['label'] ?: $this->legacyLabel($place) ?: 'Saved place',
             'detail' => $resource['address'] ?: $resource['streetAddressMap'] ?: 'Saved location',
             'address' => $resource['address'],
+            'city' => optional($place->state)->name,
+            'area' => optional($place->area)->name,
+            'country' => optional($place->country)->name,
+            'lat' => $resource['lat'],
+            'lng' => $resource['lng'],
             'isDefault' => $resource['isDefault'],
             'revision' => $resource['revision'],
         ];
+    }
+
+    private function legacyLabel($place)
+    {
+        $value = (string) $place->client_url;
+        if (!str_starts_with($value, 'portal-label:')) {
+            return null;
+        }
+
+        return base64_decode(substr($value, strlen('portal-label:')), true) ?: null;
     }
 
     private function ownedPlace($id)

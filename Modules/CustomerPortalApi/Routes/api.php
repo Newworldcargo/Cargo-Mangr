@@ -91,6 +91,7 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
     Route::get('invoices', [InvoiceController::class, 'index']);
     Route::get('invoices/{invoice}', [InvoiceController::class, 'show'])->whereNumber('invoice');
     Route::get('invoices/{invoice}/receipt-document', [InvoiceDocumentController::class, 'receipt'])->whereNumber('invoice');
+    Route::get('invoices/{invoice}/document', [InvoiceDocumentController::class, 'invoice'])->whereNumber('invoice');
     Route::patch('invoices/{invoice}/reminder', [InvoiceActionController::class, 'reminder'])->whereNumber('invoice');
     Route::post('invoices/{invoice}/disputes', [InvoiceActionController::class, 'dispute'])->whereNumber('invoice');
     Route::get('wallet', [WalletController::class, 'show']);

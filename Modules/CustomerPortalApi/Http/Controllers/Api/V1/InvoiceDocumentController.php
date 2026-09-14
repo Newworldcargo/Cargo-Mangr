@@ -7,16 +7,37 @@ use Illuminate\Http\Request;
 
 class InvoiceDocumentController extends PortalController
 {
+    public function invoice(Request $request, $invoice)
+    {
+        $model = $this->ownedInvoice($invoice);
+        if (!$model) {
+            return $this->problem($request, 'NOT_FOUND', 'Invoice not found.', 404);
+        }
+
+        $shipment = $model->shipment;
+        $invoiceNumber = $model->receipt_number ?: ('INV-' . $model->id);
+        $content = $this->html('Invoice ' . $invoiceNumber, '
+            <div class="badge">' . e(strtoupper((string) $model->status)) . '</div>
+            <h1>Customer invoice</h1>
+            <p class="muted">' . e($invoiceNumber) . ' · Shipment ' . e(optional($shipment)->code ?: 'N/A') . '</p>
+            <div class="total"><span>Total amount</span>' . e($this->money((float) $model->total, $model->currency ?: 'USD')) . '</div>
+            <table>
+                <tr><td>Customer</td><td>' . e(optional($shipment)->reciver_name ?: optional($shipment)->client_name ?: 'Customer') . '</td></tr>
+                <tr><td>Route</td><td>' . e(trim((string) optional($shipment)->client_address)) . ' → ' . e(trim((string) optional($shipment)->reciver_address)) . '</td></tr>
+                <tr><td>Payment status</td><td>' . e(ucwords(str_replace('_', ' ', (string) $model->status))) . '</td></tr>
+            </table>
+        ');
+
+        return $this->success($request, [
+            'filename' => 'new-worldcargo-invoice-' . strtolower(preg_replace('/[^A-Za-z0-9\-]+/', '-', $invoiceNumber)) . '.html',
+            'mimeType' => 'text/html;charset=utf-8',
+            'content' => $content,
+        ]);
+    }
+
     public function receipt(Request $request, $invoice)
     {
-        $client = $this->customerContext->requireClient();
-        $model = Transxn::query()
-            ->whereKey($invoice)
-            ->whereHas('shipment', function ($shipmentQuery) use ($client) {
-                $shipmentQuery->where('client_id', $client->id);
-            })
-            ->with(['shipment', 'nwcReceipt'])
-            ->first();
+        $model = $this->ownedInvoice($invoice);
 
         if (!$model) {
             return $this->problem($request, 'NOT_FOUND', 'Invoice not found.', 404);
@@ -49,6 +70,18 @@ class InvoiceDocumentController extends PortalController
             'mimeType' => 'text/html;charset=utf-8',
             'content' => $content,
         ]);
+    }
+
+    private function ownedInvoice($invoice)
+    {
+        $client = $this->customerContext->requireClient();
+        return Transxn::query()
+            ->whereKey($invoice)
+            ->whereHas('shipment', function ($shipmentQuery) use ($client) {
+                $shipmentQuery->where('client_id', $client->id);
+            })
+            ->with(['shipment', 'nwcReceipt'])
+            ->first();
     }
 
     private function money(float $amount, string $currency): string
