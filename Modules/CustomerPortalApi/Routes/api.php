@@ -123,6 +123,7 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
 
     Route::get('support/cases', [SupportController::class, 'index']);
     Route::post('support/cases', [SupportController::class, 'store']);
+    Route::post('support/cases/{case}/evidence', [SupportController::class, 'attachEvidence'])->whereNumber('case');
     Route::get('support/cases/{case}', [SupportController::class, 'show'])->whereNumber('case');
 
     Route::get('returns', [ReturnController::class, 'index']);

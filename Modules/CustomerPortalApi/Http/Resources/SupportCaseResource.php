@@ -20,6 +20,7 @@ class SupportCaseResource extends JsonResource
             'createdAt' => $this->created_at ? $this->created_at->toIso8601String() : null,
             'displayCreatedAt' => $this->created_at ? $this->created_at->format('M j, Y') : null,
             'attachmentFileId' => isset($attachments[0]) ? (string) $attachments[0] : null,
+            'attachmentFileIds' => array_values(array_map('strval', $attachments)),
             'revision' => (int) ($this->portal_revision ?: 1),
         ];
     }

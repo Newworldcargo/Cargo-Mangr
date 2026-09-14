@@ -78,4 +78,46 @@ class SupportController extends PortalController
 
         return $this->success($request, (new SupportCaseResource($model))->resolve($request));
     }
+
+    public function attachEvidence(Request $request, $case)
+    {
+        $validator = Validator::make($request->all(), [
+            'fileId' => ['required', 'uuid'],
+        ]);
+
+        if ($validator->fails()) {
+            return $this->problem($request, 'VALIDATION_FAILED', 'Please correct the highlighted fields.', 422, $validator->errors()->toArray());
+        }
+
+        $client = $this->customerContext->requireClient();
+        $model = SupportCase::where('user_id', $this->customerContext->user()->id)
+            ->whereKey($case)
+            ->first();
+        if (!$model) {
+            return $this->problem($request, 'NOT_FOUND', 'Support case not found.', 404);
+        }
+
+        $fileId = $request->input('fileId');
+        $attachment = PortalFile::where('file_id', $fileId)
+            ->where('client_id', $client->id)
+            ->where('purpose', 'support-attachment')
+            ->where('status', 'scan_pending')
+            ->first();
+
+        if (!$attachment) {
+            return $this->problem($request, 'VALIDATION_FAILED', 'Please correct the highlighted fields.', 422, [
+                'fileId' => ['The selected evidence file is unavailable.'],
+            ]);
+        }
+
+        $attachments = is_array($model->attachments) ? $model->attachments : [];
+        if (!in_array($fileId, $attachments, true)) {
+            $attachments[] = $fileId;
+        }
+        $model->attachments = array_values($attachments);
+        $model->portal_revision = ((int) ($model->portal_revision ?: 1)) + 1;
+        $model->save();
+
+        return $this->success($request, (new SupportCaseResource($model->fresh()))->resolve($request));
+    }
 }
