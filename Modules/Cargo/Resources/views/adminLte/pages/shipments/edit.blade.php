@@ -1,7 +1,7 @@
 @extends('cargo::adminLte.layouts.master')
 
 @section('pageTitle')
-    {{ __('cargo::view.edit_shipment') }} - {{$model->name}}
+    {{ __('cargo::view.edit_shipment') }} - {{ $model->code }}
 @endsection
 
 

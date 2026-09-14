@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 use Modules\Cargo\Http\DataTables\ShipmentsDataTable;
 use Modules\Cargo\Http\Requests\ShipmentRequest;
@@ -534,6 +535,11 @@ class ShipmentController extends Controller
             $branchAccess = app(BranchAccessService::class);
             $user = auth()->user();
             $branchId = $branchAccess->branchIdFor($user);
+            $oldShipment = session()->getOldInput('Shipment', []);
+            $fromCountryId = $oldShipment['from_country_id'] ?? $item->from_country_id;
+            $toCountryId = $oldShipment['to_country_id'] ?? $item->to_country_id;
+            $fromStateId = $oldShipment['from_state_id'] ?? $item->from_state_id;
+            $toStateId = $oldShipment['to_state_id'] ?? $item->to_state_id;
 
             $viewData += [
                 'editableBranches' => Branch::query()
@@ -553,10 +559,10 @@ class ShipmentController extends Controller
                     })
                     ->orderBy('name')
                     ->get(),
-                'fromStates' => State::query()->where('country_id', $item->from_country_id)->orderBy('name')->get(),
-                'toStates' => State::query()->where('country_id', $item->to_country_id)->orderBy('name')->get(),
-                'fromAreas' => Area::query()->where('state_id', $item->from_state_id)->orderBy('name')->get(),
-                'toAreas' => Area::query()->where('state_id', $item->to_state_id)->orderBy('name')->get(),
+                'fromStates' => State::query()->where('country_id', $fromCountryId)->orderBy('name')->get(),
+                'toStates' => State::query()->where('country_id', $toCountryId)->orderBy('name')->get(),
+                'fromAreas' => Area::query()->where('state_id', $fromStateId)->orderBy('name')->get(),
+                'toAreas' => Area::query()->where('state_id', $toStateId)->orderBy('name')->get(),
                 'editablePackages' => Package::query()->orderBy('id')->get(),
             ];
         }
@@ -673,11 +679,22 @@ class ShipmentController extends Controller
                 Rule::unique('shipments', 'code')->ignore($shipment->id),
             ],
             'Shipment.type' => 'required|integer|in:1,2',
-            'Shipment.branch_id' => 'required|integer|exists:branches,id',
-            'Shipment.shipping_date' => 'nullable|date',
+            'Shipment.branch_id' => [
+                'required',
+                'integer',
+                'exists:branches,id',
+                function ($attribute, $value, $fail) use ($shipment) {
+                    $candidate = clone $shipment;
+                    $candidate->branch_id = (int) $value;
+                    if (!app(ShipmentOperationAccessService::class)->canOperate(auth()->user(), $candidate, 'edit-shipments')) {
+                        $fail('You cannot move this shipment to the selected branch.');
+                    }
+                },
+            ],
+            'Shipment.shipping_date' => 'required|date',
             'Shipment.collection_time' => 'nullable|string|max:50',
             'Shipment.client_id' => 'required|integer|exists:clients,id',
-            'Shipment.client_phone' => 'nullable|string|max:50',
+            'Shipment.client_phone' => ['required', 'string', 'max:50', 'regex:/^\+?[0-9][0-9\s().-]{6,49}$/'],
             'Shipment.client_phone_2' => 'nullable|string|max:50',
             'Shipment.country_code' => 'nullable|string|max:20',
             'Shipment.client_address' => 'nullable',
@@ -685,45 +702,70 @@ class ShipmentController extends Controller
             'Shipment.client_lat' => 'nullable|numeric|between:-90,90',
             'Shipment.client_lng' => 'nullable|numeric|between:-180,180',
             'Shipment.client_url' => 'nullable|string|max:2000',
-            'Shipment.reciver_name' => 'nullable|string|max:255',
-            'Shipment.reciver_phone' => 'nullable|string|max:50',
+            'Shipment.reciver_name' => 'required|string|max:255',
+            'Shipment.reciver_phone' => ['required', 'string', 'max:50', 'regex:/^\+?[0-9][0-9\s().-]{6,49}$/'],
             'Shipment.reciver_phone_2' => 'nullable|string|max:50',
             'Shipment.follow_up_country_code' => 'nullable|string|max:20',
-            'Shipment.reciver_address' => 'nullable|string|max:1000',
+            'Shipment.reciver_address' => 'required|string|max:1000',
             'Shipment.reciver_street_address_map' => 'nullable|string|max:1000',
             'Shipment.reciver_lat' => 'nullable|numeric|between:-90,90',
             'Shipment.reciver_lng' => 'nullable|numeric|between:-180,180',
             'Shipment.reciver_url' => 'nullable|string|max:2000',
-            'Shipment.from_country_id' => 'nullable|integer|exists:countries,id',
-            'Shipment.to_country_id' => 'nullable|integer|exists:countries,id',
-            'Shipment.from_state_id' => 'nullable|integer|exists:states,id',
-            'Shipment.to_state_id' => 'nullable|integer|exists:states,id',
-            'Shipment.from_area_id' => 'nullable|integer|exists:areas,id',
-            'Shipment.to_area_id' => 'nullable|integer|exists:areas,id',
+            'Shipment.from_country_id' => 'required|integer|exists:countries,id',
+            'Shipment.to_country_id' => 'required|integer|exists:countries,id|different:Shipment.from_country_id',
+            'Shipment.from_state_id' => [
+                'required', 'integer',
+                Rule::exists('states', 'id')->where(fn ($query) => $query->where('country_id', $request->input('Shipment.from_country_id'))),
+            ],
+            'Shipment.to_state_id' => [
+                'required', 'integer',
+                Rule::exists('states', 'id')->where(fn ($query) => $query->where('country_id', $request->input('Shipment.to_country_id'))),
+            ],
+            'Shipment.from_area_id' => [
+                'nullable', 'integer',
+                Rule::exists('areas', 'id')->where(fn ($query) => $query->where('state_id', $request->input('Shipment.from_state_id'))),
+            ],
+            'Shipment.to_area_id' => [
+                'nullable', 'integer',
+                Rule::exists('areas', 'id')->where(fn ($query) => $query->where('state_id', $request->input('Shipment.to_state_id'))),
+            ],
             'Shipment.payment_type' => 'nullable|integer',
             'Shipment.payment_method_id' => 'nullable|integer',
             'Shipment.order_id' => 'nullable|string|max:255',
             'Shipment.delivery_time' => 'nullable',
-            'Shipment.amount_to_be_collected' => 'nullable|numeric|min:0',
-            'Shipment.total_weight' => 'required|numeric|min:0',
+            'Shipment.amount_to_be_collected' => 'required|numeric|min:0',
+            'Shipment.total_weight' => 'required|numeric|gt:0',
             'Shipment.tax' => 'nullable|numeric|min:0',
             'Shipment.insurance' => 'nullable|numeric|min:0',
-            'Shipment.shipping_cost' => 'nullable|numeric|min:0',
+            'Shipment.shipping_cost' => 'required|numeric|min:0',
             'Shipment.return_cost' => 'nullable|numeric|min:0',
             'Shipment.salesman' => 'nullable|string|max:255',
             'Shipment.next_destination' => 'nullable|string|max:255',
             'Shipment.dest_port' => 'nullable|string|max:255',
             'Shipment.volume' => 'nullable|numeric|min:0',
-            'Package' => 'nullable|array',
-            'Package.*.id' => 'nullable|integer|exists:package_shipment,id',
+            'Package' => 'required|array|min:1',
+            'Package.*.id' => [
+                'required', 'integer',
+                Rule::exists('package_shipment', 'id')->where(fn ($query) => $query->where('shipment_id', $shipment->id)),
+            ],
             'Package.*.package_id' => 'required|integer|exists:packages,id',
-            'Package.*.description' => 'nullable|string|max:2000',
+            'Package.*.description' => 'required|string|max:2000',
             'Package.*.qty' => 'required|numeric|min:0.01',
-            'Package.*.weight' => 'nullable|numeric|min:0',
+            'Package.*.weight' => 'required|numeric|gt:0',
             'Package.*.length' => 'nullable|numeric|min:0',
             'Package.*.width' => 'nullable|numeric|min:0',
             'Package.*.height' => 'nullable|numeric|min:0',
         ]);
+
+        $packageWeight = collect($validated['Package'])->sum(fn ($package) => (float) $package['weight']);
+        if (abs($packageWeight - (float) $validated['Shipment']['total_weight']) > 0.01) {
+            throw ValidationException::withMessages([
+                'Shipment.total_weight' => sprintf(
+                    'Total weight must equal the parcel weight total (%s kg).',
+                    number_format($packageWeight, 2)
+                ),
+            ]);
+        }
 
         $oldShipment = $shipment->only(array_keys($validated['Shipment']));
         $oldPackages = $shipment->packageShipments()->get()->map->only([
