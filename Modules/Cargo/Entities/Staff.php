@@ -23,17 +23,20 @@ class Staff extends Model
     public function branch(){
         return $this->hasOne('Modules\Cargo\Entities\Branch', 'id', 'branch_id');
     }
+    public function accessibleBranches(){
+        return $this->belongsToMany(Branch::class, 'staff_branch_access', 'staff_id', 'branch_id')->withTimestamps();
+    }
     public function user(){
         return $this->hasOne('App\Models\User', 'id', 'user_id');
     }
     public function getStaff($query)
     {
         if(auth()->user()->role == 3){
-            $branch = Branch::where('user_id',auth()->user()->id)->pluck('id')->first();
-            $query = $query->where('is_archived', 0)->where('branch_id', $branch);
-        }elseif(auth()->user()->can('manage-staffs') && auth()->user()->role == 0){
-            $branch = Staff::where('user_id',auth()->user()->id)->pluck('branch_id')->first();
-            $query = $query->where('is_archived', 0)->where('branch_id', $branch);
+            $branchIds = app(\Modules\Cargo\Services\BranchAccessService::class)->branchIdsFor(auth()->user());
+            $query = $query->where('is_archived', 0)->whereIn('branch_id', $branchIds);
+        }elseif(auth()->user()->can('manage-staffs') && in_array((int) auth()->user()->role, [0, 2], true)){
+            $branchIds = app(\Modules\Cargo\Services\BranchAccessService::class)->branchIdsFor(auth()->user());
+            $query = $query->where('is_archived', 0)->whereIn('branch_id', $branchIds);
         }
         return $query;
     }

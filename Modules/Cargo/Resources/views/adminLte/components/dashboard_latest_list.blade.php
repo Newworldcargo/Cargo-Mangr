@@ -8,11 +8,12 @@
 
     $count = (Modules\Cargo\Entities\ShipmentSetting::getVal('latest_shipment_count') ? Modules\Cargo\Entities\ShipmentSetting::getVal('latest_shipment_count') : 10 );
     if($user_role == $admin || $user_role == $staff){
+        $branchIds = app(Modules\Cargo\Services\BranchAccessService::class)->branchIdsFor(auth()->user());
         if($user_role == $admin || auth()->user()->can('manage-shipments')){
-            $shipments = Modules\Cargo\Entities\Shipment::limit($count)->orderBy('id','desc')->get();
+            $shipments = Modules\Cargo\Entities\Shipment::whereIn('branch_id', $branchIds)->limit($count)->orderBy('id','desc')->get();
         }
         if($user_role == $admin || auth()->user()->can('manage-drivers')){
-            $captains  = Modules\Cargo\Entities\Driver::withCount(['transaction AS wallet' => function ($query) { $query->select(DB::raw("SUM(value)")); }])->get();
+            $captains = Modules\Cargo\Entities\Driver::whereIn('branch_id', $branchIds)->withCount(['transaction AS wallet' => function ($query) { $query->select(DB::raw("SUM(value)")); }])->get();
         }
     }elseif($user_role == $auth_branch){
         $branch_id = Modules\Cargo\Entities\Branch::where('user_id',auth()->user()->id)->pluck('id')->first();

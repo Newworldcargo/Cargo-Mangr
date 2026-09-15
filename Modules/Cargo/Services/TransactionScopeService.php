@@ -5,20 +5,22 @@ namespace Modules\Cargo\Services;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
-use Modules\Cargo\Entities\Branch;
 use Modules\Cargo\Entities\Client;
 use Modules\Cargo\Entities\Driver;
-use Modules\Cargo\Entities\Staff;
 
 /**
  * Applies the effective transaction visibility policy in one place.
  *
  * A staff user without manage-transactions is a cashier: they may only see
  * transactions they created. The management permission broadens visibility to
- * the staff member's assigned branch; it never grants global visibility.
+ * the staff member's assigned branches; it never grants global visibility.
  */
 class TransactionScopeService
 {
+    public function __construct(private readonly BranchAccessService $branchAccess)
+    {
+    }
+
     public function apply(Builder $query, ?User $user, ?Request $request = null): Builder
     {
         if (!$user) {
@@ -31,8 +33,7 @@ class TransactionScopeService
 
         switch ((int) $user->role) {
             case 3:
-                $branchId = Branch::where('user_id', $user->id)->value('id');
-                return $this->applyBranchScope($query, $branchId, $request);
+                return $this->applyBranchScope($query, $this->branchAccess->branchIdsFor($user), $request);
 
             case 4:
                 return $this->applyFilters($query->where('client_id', Client::where('user_id', $user->id)->value('id')), $request);
@@ -42,10 +43,9 @@ class TransactionScopeService
 
             case User::STAFF:
             case 2:
-                $staff = Staff::where('user_id', $user->id)->first();
-
-                if ($user->can('manage-transactions') && $staff?->branch_id) {
-                    return $this->applyBranchScope($query, (int) $staff->branch_id, $request);
+                $branchIds = $this->branchAccess->branchIdsFor($user);
+                if ($user->can('manage-transactions') && $branchIds->isNotEmpty()) {
+                    return $this->applyBranchScope($query, $branchIds, $request);
                 }
 
                 return $this->applyFilters($query->where('created_by', $user->id), $request);
@@ -55,15 +55,15 @@ class TransactionScopeService
         }
     }
 
-    private function applyBranchScope(Builder $query, ?int $branchId, ?Request $request): Builder
+    private function applyBranchScope(Builder $query, $branchIds, ?Request $request): Builder
     {
-        if (!$branchId) {
+        if ($branchIds->isEmpty()) {
             return $query->whereRaw('1 = 0');
         }
 
-        return $this->applyFilters($query->where(function (Builder $branchQuery) use ($branchId) {
-            $branchQuery->where('branch_id', $branchId)
-                ->orWhere('branch_owner_id', $branchId);
+        return $this->applyFilters($query->where(function (Builder $branchQuery) use ($branchIds) {
+            $branchQuery->whereIn('branch_id', $branchIds)
+                ->orWhereIn('branch_owner_id', $branchIds);
         }), $request);
     }
 

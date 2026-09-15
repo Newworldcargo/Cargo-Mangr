@@ -45,8 +45,9 @@ class Driver extends Model implements HasMedia
             return $query->where('is_archived', 0);
         }elseif(auth()->user()->role == 3){
             $branch = Branch::where('user_id',auth()->user()->id)->pluck('id')->first();
-        }elseif(auth()->user()->can('manage-drivers') && auth()->user()->role == 0){
-            $branch = Staff::where('user_id',auth()->user()->id)->pluck('branch_id')->first();
+        }elseif(in_array((int) auth()->user()->role, [0, 2], true)){
+            $branchIds = app(\Modules\Cargo\Services\BranchAccessService::class)->branchIdsFor(auth()->user());
+            return $query->where('is_archived', 0)->whereIn('branch_id', $branchIds);
         }
         return $query->where('is_archived', 0)->where('branch_id', $branch);
     }

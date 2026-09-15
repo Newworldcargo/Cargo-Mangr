@@ -7,17 +7,18 @@
     $driver = 5;
 
     if($user_role == $admin || $user_role == $staff){
+        $branchIds = app(Modules\Cargo\Services\BranchAccessService::class)->branchIdsFor(auth()->user());
         if($user_role == $admin || auth()->user()->can('manage-branches')){
-            $all_branchs   = Modules\Cargo\Entities\Branch::where('is_archived', 0)->count();
+            $all_branchs = Modules\Cargo\Entities\Branch::where('is_archived', 0)->whereIn('id', $branchIds)->count();
         }
         if($user_role == $admin || auth()->user()->can('manage-staffs')){
-            $all_staff     = Modules\Cargo\Entities\Staff::count();
+            $all_staff = Modules\Cargo\Entities\Staff::whereIn('branch_id', $branchIds)->count();
         }
         if($user_role == $admin || auth()->user()->can('manage-customers')){
-            $all_clients   = Modules\Cargo\Entities\Client::where('is_archived', 0)->count();
+            $all_clients = Modules\Cargo\Entities\Client::where('is_archived', 0)->whereIn('branch_id', $branchIds)->count();
         }
         if($user_role == $admin || auth()->user()->can('manage-drivers')){
-            $all_captains  = Modules\Cargo\Entities\Driver::where('is_archived', 0)->count();
+            $all_captains = Modules\Cargo\Entities\Driver::where('is_archived', 0)->whereIn('branch_id', $branchIds)->count();
         }
     }elseif($user_role == $branch){
         $branch_id = Modules\Cargo\Entities\Branch::where('user_id',auth()->user()->id)->pluck('id')->first();

@@ -30,7 +30,9 @@ class StaffRequest extends FormRequest
             'responsible_mobile' => 'required|min:5',
             'country_code' => 'required',
             // 'role_id'   => 'required',
-            'branch_id' => 'required'
+            'branch_id' => 'required|integer|exists:branches,id',
+            'branch_ids' => 'nullable|array',
+            'branch_ids.*' => 'integer|distinct|exists:branches,id',
         ];
     }
 

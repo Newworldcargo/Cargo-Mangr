@@ -9,7 +9,6 @@
     $auth_client = 4;
 
     $userBranch = Modules\Cargo\Entities\Branch::where('user_id',auth()->user()->id)->first();
-    $userStaff  = Modules\Cargo\Entities\Staff::where('user_id',auth()->user()->id)->first();
     $userClient = Modules\Cargo\Entities\Client::where('user_id',auth()->user()->id)->first();
     $userReciver = Modules\Cargo\Entities\Receiver::where('user_id',auth()->user()->id)->first();
 
@@ -21,9 +20,10 @@
         $clients  = Modules\Cargo\Entities\Client::where('branch_id', $userBranch->id )->get();
         $Recivers  = Modules\Cargo\Entities\Receiver::where('branch_id', $userBranch->id )->get();
     }elseif(auth()->user()->can('create-shipments') && $user_role == $auth_staff){
-        $branches = Modules\Cargo\Entities\Branch::where('id', $userStaff->branch_id )->get();
-        $clients  = Modules\Cargo\Entities\Client::where('branch_id', $userStaff->branch_id )->get();
-        $Recivers  = Modules\Cargo\Entities\Receiver::where('branch_id', $userStaff->branch_id )->get();
+        $branchIds = app(Modules\Cargo\Services\BranchAccessService::class)->branchIdsFor(auth()->user());
+        $branches = Modules\Cargo\Entities\Branch::whereIn('id', $branchIds)->get();
+        $clients  = Modules\Cargo\Entities\Client::whereIn('branch_id', $branchIds)->get();
+        $Recivers  = Modules\Cargo\Entities\Receiver::whereIn('branch_id', $branchIds)->get();
 
     }
 

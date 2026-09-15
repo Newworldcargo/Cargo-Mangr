@@ -64,7 +64,10 @@ class UserFilter
                 if ($key == 'branch_id' && !empty($filter['branch_id'])) {
                     $branchId = (int) $filter['branch_id'];
                     if ((int) auth()->user()->role !== \App\Models\User::ADMIN) {
-                        $branchId = (int) \Modules\Cargo\Entities\Staff::where('user_id', auth()->id())->value('branch_id');
+                        $access = app(\Modules\Cargo\Services\BranchAccessService::class);
+                        if (!$access->canAccessBranch(auth()->user(), $branchId)) {
+                            continue;
+                        }
                     }
                     if (!$branchId) {
                         continue;

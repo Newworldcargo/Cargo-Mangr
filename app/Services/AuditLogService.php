@@ -140,50 +140,50 @@ class AuditLogService
         //  - logs performed by users of the same branch
         $user = auth()->user();
         if ($user && !$this->branchAccess->isTopAdmin($user)) {
-            $branchId = $this->branchAccess->branchIdFor($user);
-            if ($user->can('view-audit-logs') && $branchId) {
-                $query->where(function ($q) use ($branchId) {
+            $branchIds = $this->branchAccess->branchIdsFor($user);
+            if ($user->can('view-audit-logs') && $branchIds->isNotEmpty()) {
+                $query->where(function ($q) use ($branchIds) {
                     // New audit events carry their branch at write time. Keep the
                     // legacy relationship lookups below while historical rows are
                     // backfilled in a separate, reviewable operation.
                     if ($this->supportsBranchScope()) {
-                        $q->orWhere('branch_id', $branchId);
+                        $q->orWhereIn('branch_id', $branchIds);
                     }
                     // Shipment audit entries (Modules\Cargo\Entities\Shipment)
-                    $q->orWhere(function ($sub) use ($branchId) {
+                    $q->orWhere(function ($sub) use ($branchIds) {
                         $sub->where('auditable_type', 'Modules\\Cargo\\Entities\\Shipment')
-                            ->whereIn('auditable_id', function ($inner) use ($branchId) {
-                                $inner->select('id')->from('shipments')->where('branch_id', $branchId);
+                            ->whereIn('auditable_id', function ($inner) use ($branchIds) {
+                                $inner->select('id')->from('shipments')->whereIn('branch_id', $branchIds);
                             });
                     });
                     // Receipt audit entries linked to shipments
-                    $q->orWhere(function ($sub) use ($branchId) {
+                    $q->orWhere(function ($sub) use ($branchIds) {
                         $sub->whereIn('auditable_type', [
                                 'App\\Models\\NwcReceipt',
                                 'App\\Models\\ShipmentPaymentReceipt',
                             ])
-                            ->whereIn('auditable_id', function ($inner) use ($branchId) {
+                            ->whereIn('auditable_id', function ($inner) use ($branchIds) {
                                 $inner->select('id')->from('nwc_receipts')
-                                    ->whereIn('shipment_id', function ($s) use ($branchId) {
-                                        $s->select('id')->from('shipments')->where('branch_id', $branchId);
+                                    ->whereIn('shipment_id', function ($s) use ($branchIds) {
+                                        $s->select('id')->from('shipments')->whereIn('branch_id', $branchIds);
                                     });
                             });
                     });
                     // Receipts stored in shipment_payment_receipts table if separate
-                    $q->orWhere(function ($sub) use ($branchId) {
+                    $q->orWhere(function ($sub) use ($branchIds) {
                         $sub->where('auditable_type', 'App\\Models\\ShipmentPaymentReceipt')
-                            ->whereIn('auditable_id', function ($inner) use ($branchId) {
+                            ->whereIn('auditable_id', function ($inner) use ($branchIds) {
                                 $inner->select('id')->from('shipment_payment_receipts')
-                                    ->whereIn('shipment_id', function ($s) use ($branchId) {
-                                        $s->select('id')->from('shipments')->where('branch_id', $branchId);
+                                    ->whereIn('shipment_id', function ($s) use ($branchIds) {
+                                        $s->select('id')->from('shipments')->whereIn('branch_id', $branchIds);
                                     });
                             });
                     });
                     // Logs performed by users belonging to this branch
-                    $q->orWhere(function ($sub) use ($branchId) {
+                    $q->orWhere(function ($sub) use ($branchIds) {
                         $sub->whereNotNull('user_id')
-                            ->whereIn('user_id', function ($inner) use ($branchId) {
-                                $inner->select('user_id')->from('branches')->where('id', $branchId);
+                            ->whereIn('user_id', function ($inner) use ($branchIds) {
+                                $inner->select('user_id')->from('branches')->whereIn('id', $branchIds);
                             });
                     });
                 });

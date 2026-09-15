@@ -6,6 +6,9 @@ use App\Models\User;
 use Modules\Cargo\Entities\Branch;
 use Modules\Cargo\Entities\Staff;
 use Modules\Currency\Entities\Currency;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * The Cargo module's single source of truth for branch access.
@@ -43,6 +46,46 @@ class BranchAccessService
         }
 
         return null;
+    }
+
+    /** Return every branch the user is allowed to manage. */
+    public function branchIdsFor(?User $user): Collection
+    {
+        if (!$user) {
+            return collect();
+        }
+
+        if ($this->isTopAdmin($user)) {
+            return Branch::where('is_archived', 0)->pluck('id')->map(fn ($id) => (int) $id);
+        }
+
+        $ownedBranchId = Branch::where('user_id', $user->id)->value('id');
+        if ($ownedBranchId) {
+            return collect([(int) $ownedBranchId]);
+        }
+
+        if (!in_array((int) $user->role, [User::STAFF, 2], true)) {
+            return collect();
+        }
+
+        $staff = Staff::where('user_id', $user->id)->first(['id', 'branch_id']);
+        if (!$staff) {
+            return collect();
+        }
+
+        $branchIds = collect([$staff->branch_id]);
+        if (Schema::hasTable('staff_branch_access')) {
+            $branchIds = $branchIds->merge(
+                DB::table('staff_branch_access')->where('staff_id', $staff->id)->pluck('branch_id')
+            );
+        }
+
+        return $branchIds->filter()->map(fn ($id) => (int) $id)->unique()->values();
+    }
+
+    public function canAccessBranch(?User $user, int $branchId): bool
+    {
+        return $this->branchIdsFor($user)->contains($branchId);
     }
 
     /**
@@ -101,6 +144,7 @@ class BranchAccessService
     {
         $branchId = $this->branchIdFor($user);
         $branch = $branchId ? Branch::find($branchId) : null;
+        $branches = Branch::whereIn('id', $this->branchIdsFor($user))->orderBy('name')->get(['id', 'name']);
 
         return [
             'user_id' => $user->id,
@@ -109,7 +153,9 @@ class BranchAccessService
             'role' => $user->userRole,
             'branch_id' => $branchId,
             'branch_name' => $branch?->name,
-            'scope' => $this->isTopAdmin($user) ? 'all_branches' : ($branchId ? 'assigned_branch' : 'no_branch_access'),
+            'branch_ids' => $branches->pluck('id')->all(),
+            'branch_names' => $branches->pluck('name')->all(),
+            'scope' => $this->isTopAdmin($user) ? 'all_branches' : ($branches->isNotEmpty() ? 'assigned_branches' : 'no_branch_access'),
             'permissions' => $user->getAllPermissions()->pluck('name')->sort()->values()->all(),
         ];
     }

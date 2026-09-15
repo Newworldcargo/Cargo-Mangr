@@ -11,7 +11,6 @@ use App\Models\User;
 use Illuminate\Http\Request;
 
 use Modules\Users\Http\Filter\UserFilter;
-use Modules\Cargo\Entities\Staff;
 
 class UsersDataTable extends DataTable
 {
@@ -97,9 +96,9 @@ class UsersDataTable extends DataTable
 
         $viewer = auth()->user();
         if (!$viewer || (int) $viewer->role !== User::ADMIN) {
-            $branchId = $viewer ? Staff::where('user_id', $viewer->id)->value('branch_id') : null;
-            if ($branchId) {
-                $this->applyBranchScope($query, (int) $branchId, $viewer->id);
+            $branchIds = $viewer ? app(\Modules\Cargo\Services\BranchAccessService::class)->branchIdsFor($viewer) : collect();
+            if ($branchIds->isNotEmpty()) {
+                $this->applyBranchScope($query, $branchIds->all(), $viewer->id);
             } else {
                 $query->whereKey($viewer?->id ?: 0);
             }
@@ -113,18 +112,18 @@ class UsersDataTable extends DataTable
         return $query;
     }
 
-    private function applyBranchScope($query, int $branchId, int $viewerId): void
+    private function applyBranchScope($query, array $branchIds, int $viewerId): void
     {
-        $query->where(function ($scope) use ($branchId, $viewerId) {
+        $query->where(function ($scope) use ($branchIds, $viewerId) {
             $scope->where('users.id', $viewerId)
-                ->orWhereExists(function ($sub) use ($branchId) {
-                    $sub->selectRaw('1')->from('branches')->whereColumn('branches.user_id', 'users.id')->where('branches.id', $branchId);
-                })->orWhereExists(function ($sub) use ($branchId) {
-                    $sub->selectRaw('1')->from('staffs')->whereColumn('staffs.user_id', 'users.id')->where('staffs.branch_id', $branchId);
-                })->orWhereExists(function ($sub) use ($branchId) {
-                    $sub->selectRaw('1')->from('clients')->whereColumn('clients.user_id', 'users.id')->where('clients.branch_id', $branchId);
-                })->orWhereExists(function ($sub) use ($branchId) {
-                    $sub->selectRaw('1')->from('drivers')->whereColumn('drivers.user_id', 'users.id')->where('drivers.branch_id', $branchId);
+                ->orWhereExists(function ($sub) use ($branchIds) {
+                    $sub->selectRaw('1')->from('branches')->whereColumn('branches.user_id', 'users.id')->whereIn('branches.id', $branchIds);
+                })->orWhereExists(function ($sub) use ($branchIds) {
+                    $sub->selectRaw('1')->from('staffs')->whereColumn('staffs.user_id', 'users.id')->whereIn('staffs.branch_id', $branchIds);
+                })->orWhereExists(function ($sub) use ($branchIds) {
+                    $sub->selectRaw('1')->from('clients')->whereColumn('clients.user_id', 'users.id')->whereIn('clients.branch_id', $branchIds);
+                })->orWhereExists(function ($sub) use ($branchIds) {
+                    $sub->selectRaw('1')->from('drivers')->whereColumn('drivers.user_id', 'users.id')->whereIn('drivers.branch_id', $branchIds);
                 });
         });
     }

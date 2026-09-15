@@ -270,9 +270,9 @@ class Shipment extends Model implements HasMedia
             }elseif($user_role == 4){ // User Client
                 $user = Client::where('user_id',auth()->user()->id)->pluck('id')->first();
                 $shipments = $shipments->where('client_id', $user);
-            }elseif(auth()->user()->can('manage-shipments') && $user_role == 0){ // User Staff
-                $user = Staff::where('user_id',auth()->user()->id)->pluck('branch_id')->first();
-                $shipments = $shipments->where('branch_id', $user);
+            }elseif(in_array((int) $user_role, [0, 2], true)){ // User Staff
+                $branchIds = app(\Modules\Cargo\Services\BranchAccessService::class)->branchIdsFor(auth()->user());
+                $shipments = $shipments->whereIn('branch_id', $branchIds);
             }
         }
 
