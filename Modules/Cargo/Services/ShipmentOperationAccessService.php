@@ -121,6 +121,13 @@ class ShipmentOperationAccessService
             return true;
         }
 
+        // Branch-owned login accounts are branch managers. Some historical
+        // accounts use the staff role code but have no Staff row, so ownership
+        // must be checked before applying the staff payment switch.
+        if (Branch::where('user_id', $user->id)->exists()) {
+            return true;
+        }
+
         $hasPermission = $user->can('confirm-shipment-payment') || $user->hasRole(['cashier', 'cashiers']);
         if (!$hasPermission) {
             return false;
