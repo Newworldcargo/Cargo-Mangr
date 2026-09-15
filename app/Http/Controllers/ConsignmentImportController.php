@@ -7,6 +7,7 @@ use App\Models\ConsignmentImportBatch;
 use App\Models\ConsignmentImportRow;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -126,7 +127,9 @@ class ConsignmentImportController extends Controller
     public function updatePreview(Request $request, string $uuid)
     {
         $batch = $this->batch($uuid);
-        abort_if($batch->status === 'completed', 422, 'This import has already been completed.');
+        if ($batch->status === 'completed') {
+            return $this->completedImportRedirect($batch);
+        }
         if ($request->filled('selected_header_row')) {
             $selectedHeaderRow = max(1, (int) $request->input('selected_header_row'));
             $request->merge(['header_row' => $selectedHeaderRow, 'data_start_row' => $selectedHeaderRow + 1]);
@@ -184,7 +187,22 @@ class ConsignmentImportController extends Controller
     public function confirm(Request $request, string $uuid)
     {
         $batch = $this->batch($uuid)->fresh();
-        abort_if($batch->status === 'completed', 422, 'This import has already been completed.');
+        if ($batch->status === 'completed') {
+            return $this->completedImportRedirect($batch);
+        }
+
+        $lock = Cache::lock('consignment-import-confirm-'.$batch->id, 300);
+        if (!$lock->get()) {
+            return redirect()->route('consignment.import.preview', $batch->uuid)
+                ->with('warning', 'This import is already being processed. Please wait for it to finish; do not confirm it again.');
+        }
+
+        try {
+            $batch = $batch->fresh();
+            if ($batch->status === 'completed') {
+                return $this->completedImportRedirect($batch);
+            }
+
         $request->validate([
             'phone_override' => ['nullable', 'array'],
             'phone_override.*' => ['nullable', 'string', 'max:100'],
@@ -218,15 +236,35 @@ class ConsignmentImportController extends Controller
         if ($selectedIds) $batch->rows()->whereIn('id',$selectedIds)->update(['included'=>true]);
         $this->validateRows($batch->fresh());
         $invalidSelected = $batch->rows()->where('included', true)->whereIn('status', ['invalid','conflict'])->count();
-        abort_if($invalidSelected > 0, 422, 'Fix or exclude every invalid and conflicting selected row before confirming.');
+        if ($invalidSelected > 0) {
+            throw ValidationException::withMessages([
+                'import_rows' => 'Fix or exclude every invalid and conflicting selected row before confirming.',
+            ]);
+        }
         $rows = $batch->rows()->where('included', true)->whereIn('status', ['new','update','unchanged'])->get();
-        abort_if($rows->isEmpty(), 422, 'There are no valid selected rows to import.');
+        if ($rows->isEmpty()) {
+            throw ValidationException::withMessages([
+                'import_rows' => 'There are no valid selected rows to import. Select at least one ready row and try again.',
+            ]);
+        }
         $first = $rows->first()->mapped_values;
         $consignment = $batch->mode === 'update' ? Consignment::find($batch->target_consignment_id) : null;
-        abort_if($batch->mode === 'update' && !$consignment, 422, 'The existing consignment could not be found. Refresh the preview.');
-        abort_if($batch->mode === 'create' && Consignment::where('consignment_code', $batch->consignment_code)->exists(), 422, 'This consignment now exists. Refresh the preview to enter update mode.');
+        if ($batch->mode === 'update' && !$consignment) {
+            throw ValidationException::withMessages([
+                'consignment' => 'The existing consignment could not be found. Refresh the preview.',
+            ]);
+        }
+        if ($batch->mode === 'create' && Consignment::where('consignment_code', $batch->consignment_code)->exists()) {
+            throw ValidationException::withMessages([
+                'consignment' => 'This consignment now exists. Save and refresh the preview to enter update mode.',
+            ]);
+        }
         $package = Package::query()->orderBy('id')->first();
-        abort_unless($package, 422, 'No package type is configured. Create a package type before importing.');
+        if (!$package) {
+            throw ValidationException::withMessages([
+                'package' => 'No package type is configured. Create a package type before importing.',
+            ]);
+        }
 
         $pickupBranch = Branch::findOrFail($batch->pickup_branch_id);
         $destinationBranch = Branch::findOrFail($batch->destination_branch_id);
@@ -250,7 +288,11 @@ class ConsignmentImportController extends Controller
                 $pieces = $this->number($data['pieces'] ?? null) ?? 1.0;
                 $client = $this->resolveClient($data, $batch);
                 $shipment = Shipment::where('code', $data['hawb_number'])->first();
-                if ($shipment && (int) $shipment->consignment_id !== (int) $consignment->id) throw new \RuntimeException('A parcel code now belongs to another consignment. Review the preview again.');
+                if ($shipment && (int) $shipment->consignment_id !== (int) $consignment->id) {
+                    throw ValidationException::withMessages([
+                        'hawb_number' => 'A parcel code now belongs to another consignment. Save and review the preview again.',
+                    ]);
+                }
                 $importAction = !$shipment ? 'created' : ($row->status === 'update' ? 'updated' : 'unchanged');
                 $shipmentData = ['consignment_id' => $consignment->id, 'code' => $data['hawb_number'], 'branch_id' => $pickupBranch->id, 'next_destination' => $destinationBranch->name,
                     'client_id' => $client->id, 'client_phone' => $data['phone'], 'client_phone_2' => $data['phone_2'] ?? null,
@@ -283,16 +325,23 @@ class ConsignmentImportController extends Controller
         });
         $result = $batch->fresh()->result;
         return redirect()->route('consignment.import.preview', $batch->uuid)->with('success', 'Import completed: '.$result['created'].' added, '.$result['updated'].' updated, '.$result['unchanged'].' unchanged.');
+        } finally {
+            $lock->release();
+        }
     }
 
     public function removeImportedRows(Request $request, string $uuid)
     {
         $batch = $this->batch($uuid)->fresh();
-        abort_unless($batch->status === 'completed', 422, 'Rows can only be removed from a completed import.');
+        if ($batch->status !== 'completed') {
+            throw ValidationException::withMessages([
+                'rows' => 'Rows can only be removed after an import has completed.',
+            ]);
+        }
         $request->validate(['rows' => ['required', 'array', 'min:1'], 'rows.*' => ['accepted']]);
 
         $requestedIds = array_values(array_unique(array_map('intval', array_keys($request->input('rows', [])))));
-        $rows = $batch->rows()->whereIn('id', $requestedIds)->where('status', 'imported')->get();
+        $rows = $batch->rows()->whereIn('id', $requestedIds)->where('status', '!=', 'removed')->get();
         if ($rows->count() !== count($requestedIds) || $rows->contains(fn($row) => $row->import_action !== 'created' || !$row->shipment_id)) {
             throw ValidationException::withMessages(['rows' => 'Only shipments newly created by this exact import can be removed here. Updated and pre-existing shipments are protected.']);
         }
@@ -335,6 +384,15 @@ class ConsignmentImportController extends Controller
     {
         $this->authorizeImport();
         return ConsignmentImportBatch::where('uuid', $uuid)->where('created_by', auth()->id())->firstOrFail();
+    }
+    private function completedImportRedirect(ConsignmentImportBatch $batch)
+    {
+        $result = $batch->result ?: [];
+        return redirect()->route('consignment.import.preview', $batch->uuid)->with(
+            'success',
+            'This import was already completed successfully: '.(int) ($result['created'] ?? 0).' added, '
+                .(int) ($result['updated'] ?? 0).' updated and '.(int) ($result['unchanged'] ?? 0).' unchanged. Nothing was imported twice.'
+        );
     }
     private function authorizeImport(): void { abort_unless(auth()->check() && auth()->user()->can('import-consignments'), 403); }
     private function allowedBranches() { return Branch::where('is_archived', 0)->orderBy('name')->get(); }

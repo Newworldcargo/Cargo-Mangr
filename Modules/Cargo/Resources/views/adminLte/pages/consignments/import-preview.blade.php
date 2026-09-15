@@ -8,8 +8,9 @@
     </div>
     @if(isset($errors) && $errors->any())<div class="alert alert-danger"><strong>Please correct these items:</strong><ul class="mb-0 mt-2">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
     @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
+    @if(session('warning'))<div class="alert alert-warning">{{ session('warning') }}</div>@endif
     @if($batch->status === 'completed')
-        <div class="alert alert-success"><strong>{{ $batch->mode === 'update' ? 'Update completed.' : 'Import completed.' }}</strong> {{ $batch->result['created'] ?? $batch->result['imported'] ?? 0 }} added, {{ $batch->result['updated'] ?? 0 }} updated and {{ $batch->result['unchanged'] ?? 0 }} unchanged.</div>
+        <div class="alert alert-success"><strong>{{ $batch->mode === 'update' ? 'Update completed.' : 'Import completed.' }}</strong> {{ $batch->result['created'] ?? $batch->result['imported'] ?? 0 }} added, {{ $batch->result['updated'] ?? 0 }} updated and {{ $batch->result['unchanged'] ?? 0 }} unchanged. @if(!empty($batch->result['consignment_id']))<a class="alert-link ml-1" href="{{ route('consignment.edit', $batch->result['consignment_id']) }}">Open consignment</a>@endif</div>
     @elseif($batch->mode === 'update' && $targetConsignment)
         <div class="alert alert-warning border-warning"><h5 class="alert-heading"><i class="fas fa-exclamation-triangle mr-2"></i>Updating existing consignment {{ $targetConsignment->consignment_code }}</h5><p class="mb-0">This consignment already has {{ $targetConsignment->shipments_count }} shipment(s). The preview will show what will be added, updated or left unchanged. Existing shipments missing from this file will not be deleted.</p></div>
     @else
@@ -64,13 +65,17 @@
     @php($readyCount = ($batch->summary['new'] ?? 0) + ($batch->summary['update'] ?? 0) + ($batch->summary['unchanged'] ?? 0))
     @php($selectReadyByDefault = ($batch->summary['selected'] ?? 0) < 1)
     @php($setupComplete = $batch->consignment_code && $batch->consignment_status && $batch->consignment_date && $batch->pickup_branch_id && $batch->destination_branch_id && $batch->from_country_id && $batch->from_state_id && $batch->to_country_id && $batch->to_state_id)
-    @php($removableCount = $batch->status === 'completed' ? $rows->filter(fn($row) => $row->status === 'imported' && $row->import_action === 'created' && $row->shipment_id)->count() : 0)
-    <form method="POST" action="{{ $batch->status === 'completed' ? route('consignment.import.rows.remove', $batch->uuid) : route('consignment.import.confirm', $batch->uuid) }}" @if($batch->status === 'completed') data-confirm-message="Remove the selected shipments? Only newly created, unused shipments will be deleted. This cannot be undone." @endif>
+    @php($removableCount = $batch->status === 'completed' ? $rows->filter(fn($row) => $row->status !== 'removed' && $row->import_action === 'created' && $row->shipment_id)->count() : 0)
+    <form id="importActionForm" method="POST" action="{{ $batch->status === 'completed' ? route('consignment.import.rows.remove', $batch->uuid) : route('consignment.import.confirm', $batch->uuid) }}" @if($batch->status === 'completed') data-confirm-message="Remove the selected shipments? Only newly created, unused shipments will be deleted. This cannot be undone." @else data-import-submit="true" @endif>
         @csrf
         <div class="card">
             <div class="card-header d-flex flex-wrap justify-content-between">
                 <strong>4. Data preview</strong>
-                <span>New: {{ $batch->summary['new'] ?? 0 }} · Updating: {{ $batch->summary['update'] ?? 0 }} · Unchanged: {{ $batch->summary['unchanged'] ?? 0 }} · Invalid: {{ $batch->summary['invalid'] ?? 0 }} · Conflicts: {{ $batch->summary['conflict'] ?? 0 }}</span>
+                @if($batch->status === 'completed')
+                    <span>Imported: {{ $batch->result['imported'] ?? 0 }} · Removed: {{ $batch->result['removed'] ?? 0 }}</span>
+                @else
+                    <span>New: {{ $batch->summary['new'] ?? 0 }} · Updating: {{ $batch->summary['update'] ?? 0 }} · Unchanged: {{ $batch->summary['unchanged'] ?? 0 }} · Invalid: {{ $batch->summary['invalid'] ?? 0 }} · Conflicts: {{ $batch->summary['conflict'] ?? 0 }}</span>
+                @endif
             </div>
             <div class="card-body border-bottom py-2">
                 <div class="alert alert-info mb-0 py-2">
@@ -103,15 +108,16 @@
                             <tr>
                                 <td>
                                     @if($batch->status === 'completed')
-                                        <input class="import-row-checkbox" type="checkbox" name="rows[{{ $row->id }}]" value="1" {{ $row->status !== 'imported' || $row->import_action !== 'created' || !$row->shipment_id ? 'disabled' : '' }}>
+                                        <input class="import-row-checkbox" type="checkbox" name="rows[{{ $row->id }}]" value="1" {{ $row->status === 'removed' || $row->import_action !== 'created' || !$row->shipment_id ? 'disabled' : '' }}>
                                     @else
                                         <input class="import-row-checkbox" type="checkbox" name="included[{{ $row->id }}]" value="1" {{ ($row->included || ($selectReadyByDefault && in_array($row->status, ['new','update','unchanged']))) ? 'checked' : '' }} {{ in_array($row->status, ['invalid','conflict']) ? 'disabled' : '' }}>
                                     @endif
                                 </td>
                                 <td>{{ $row->spreadsheet_row }}</td>
                                 <td>
-                                    @php($statusColor = ['new'=>'success','update'=>'info','unchanged'=>'secondary','conflict'=>'warning','invalid'=>'danger','imported'=>'success','removed'=>'dark'][$row->status] ?? 'secondary')
-                                    <span class="badge badge-{{ $statusColor }}">{{ ucfirst($row->status) }}</span>
+                                    @php($displayStatus = $batch->status === 'completed' && $row->shipment_id && $row->status !== 'removed' ? 'imported' : $row->status)
+                                    @php($statusColor = ['new'=>'success','update'=>'info','unchanged'=>'secondary','conflict'=>'warning','invalid'=>'danger','imported'=>'success','removed'=>'dark'][$displayStatus] ?? 'secondary')
+                                    <span class="badge badge-{{ $statusColor }}">{{ ucfirst($displayStatus) }}</span>
                                     @if($batch->status === 'completed' && $row->import_action)<small class="d-block text-muted">{{ ucfirst($row->import_action) }}</small>@endif
                                 </td>
                                 <td>
@@ -141,7 +147,8 @@
                                 @foreach($header as $column => $heading)
                                     @if(trim((string) $heading) !== '')<td>{{ $row->raw_values[$column] ?? '' }}</td>@endif
                                 @endforeach
-                                <td class="small {{ !empty($row->validation_errors) ? 'text-danger' : (!empty($row->validation_warnings) ? 'text-warning' : 'text-muted') }}">{{ implode(' ', $row->validation_errors ?? []) ?: implode(' ', $row->validation_warnings ?? []) }}</td>
+                                @php($showImportIssues = !($batch->status === 'completed' && $row->shipment_id && $row->status !== 'removed'))
+                                <td class="small {{ $showImportIssues && !empty($row->validation_errors) ? 'text-danger' : ($showImportIssues && !empty($row->validation_warnings) ? 'text-warning' : 'text-muted') }}">{{ $showImportIssues ? (implode(' ', $row->validation_errors ?? []) ?: implode(' ', $row->validation_warnings ?? [])) : 'Imported successfully.' }}</td>
                             </tr>
                         @empty
                             <tr><td colspan="99" class="text-center text-muted py-4">No data rows exist below the selected title row.</td></tr>
@@ -155,8 +162,8 @@
                 <div class="alert alert-warning mt-3 mb-2"><strong>Save the consignment details first.</strong> Enter the container code and choose both branches in section 2, then click “Save consignment details & refresh preview”.</div>
             @endif
             <div class="mt-3 d-flex flex-wrap justify-content-end">
-                <button type="submit" name="action" value="refresh" class="btn btn-outline-primary px-4 mr-2 mb-2">Apply phone corrections</button>
-                <button type="submit" class="btn btn-success px-4 mb-2" {{ $readyCount < 1 || !$setupComplete ? 'disabled' : '' }}>{{ $batch->mode === 'update' ? 'Confirm update' : 'Confirm import' }} ({{ $readyCount }} ready)</button>
+                <button type="submit" name="action" value="refresh" class="btn btn-outline-primary px-4 mr-2 mb-2" data-processing-label="Applying…">Apply phone corrections</button>
+                <button type="submit" class="btn btn-success px-4 mb-2" data-processing-label="Importing… please wait" {{ $readyCount < 1 || !$setupComplete ? 'disabled' : '' }}>{{ $batch->mode === 'update' ? 'Confirm update' : 'Confirm import' }} ({{ $readyCount }} ready)</button>
             </div>
         @elseif($removableCount > 0)
             <div class="mt-3 d-flex flex-wrap justify-content-end">
@@ -170,5 +177,5 @@
 @endsection
 
 @section('scripts')
-<script src="{{ asset('js/consignment-import-preview.js') }}" defer></script>
+<script src="{{ asset('js/consignment-import-preview.js') }}?v={{ filemtime(public_path('js/consignment-import-preview.js')) }}" defer></script>
 @endsection
