@@ -33,6 +33,7 @@ class StaffRequest extends FormRequest
             'branch_id' => 'required|integer|exists:branches,id',
             'branch_ids' => 'nullable|array',
             'branch_ids.*' => 'integer|distinct|exists:branches,id',
+            'can_collect_payments' => 'required|boolean',
         ];
     }
 

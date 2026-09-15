@@ -15,7 +15,7 @@
     $canDirectRefund = $refundEnabled && $canApproveRefundRequests;
     $canRequestRefund = $refundEnabled && (
         ($user_role == 4 && $allowClientRefunds)
-        || ($user_role != 4 && (auth()->user()->can('confirm-shipment-payment') || auth()->user()->hasRole(['cashier', 'cashiers'])))
+        || ($user_role != 4 && app(\Modules\Cargo\Services\ShipmentOperationAccessService::class)->canCollectPayments(auth()->user()))
     );
     $pendingRefundRequest = $pendingRefundRequest ?? null;
     $viewerCurrencyContext = app(\Modules\Cargo\Services\BranchAccessService::class)->currencyContextFor(auth()->user(), $shipment->branch);
@@ -213,7 +213,7 @@
                                 @php
                                     $user = auth()->user();
                                     $hasCashierRole = $user->hasRole(['cashier', 'cashiers']);
-                                    $hasPermission = $user->can('confirm-shipment-payment');
+                                    $hasPermission = app(\Modules\Cargo\Services\ShipmentOperationAccessService::class)->canCollectPayments($user);
                                 @endphp
 
                                 @if($hasPermission)

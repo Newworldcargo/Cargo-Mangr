@@ -72,7 +72,7 @@ class StaffController extends Controller
     public function store(StaffRequest $request)
     {
 
-        $data = $request->only(['name', 'email', 'password', 'country_code', 'responsible_mobile','national_id','branch_id','roles','permissions']);
+        $data = $request->only(['name', 'email', 'password', 'country_code', 'responsible_mobile','national_id','branch_id','can_collect_payments','roles','permissions']);
         $Userdata['name']     = $data['name'];
         $Userdata['email']    = $data['email'];
         $Userdata['password'] = $data['password'];
@@ -236,7 +236,7 @@ class StaffController extends Controller
 
         $model = Staff::findOrFail($id);
 
-        $data = $request->only(['responsible_mobile', 'country_code','national_id','branch_id']);
+        $data = $request->only(['responsible_mobile', 'country_code','national_id','branch_id','can_collect_payments']);
         $Userdata = $request->only(['name', 'email', 'password' , 'image']);
 
 
