@@ -37,6 +37,9 @@ class Branch extends Model implements HasMedia
         if(auth()->user()->role == 3){
             $branch = Branch::where('user_id',auth()->user()->id)->pluck('id')->first();
             return $query->where('is_archived', 0)->where('id', $branch);
+        }elseif(in_array((int) auth()->user()->role, [0, 2], true)){
+            $branchIds = app(\Modules\Cargo\Services\BranchAccessService::class)->branchIdsFor(auth()->user());
+            return $query->where('is_archived', 0)->whereIn('id', $branchIds);
         }
         return $query->where('is_archived', 0);
     }

@@ -211,6 +211,37 @@
 </div>
 <!--end::Input group-->
 
+<!--begin::Input group -- Accessible branches -->
+<div class="row mb-6">
+    <label class="col-lg-4 col-form-label fw-bold fs-6">Accessible branches</label>
+    <div class="col-lg-8 fv-row">
+        @php
+            $selectedBranchIds = old('branch_ids', isset($model) ? $model->accessibleBranches->pluck('id')->all() : []);
+        @endphp
+        <select
+            class="form-control @error('branch_ids') is-invalid @enderror"
+            name="branch_ids[]"
+            data-control="select2"
+            data-placeholder="Choose all branches this staff member can manage"
+            multiple
+        >
+            @foreach($branches as $branch)
+                <option value="{{ $branch->id }}" {{ in_array($branch->id, $selectedBranchIds) ? 'selected' : '' }}>
+                    {{ $branch->name }}
+                </option>
+            @endforeach
+        </select>
+        <div class="form-text">The primary branch is always included.</div>
+        @error('branch_ids')
+            <div class="invalid-feedback">{{ $message }}</div>
+        @enderror
+        @error('branch_ids.*')
+            <div class="invalid-feedback d-block">{{ $message }}</div>
+        @enderror
+    </div>
+</div>
+<!--end::Input group-->
+
 <!--begin::Card body-->
 <div class="card-body border-top p-9">
 

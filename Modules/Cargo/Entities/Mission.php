@@ -49,6 +49,10 @@ class Mission extends Model
                 $branch    = Branch::where('user_id',auth()->user()->id)->pluck('id')->first();
                 $mission_ids_by_branch_shipments = Shipment::where('branch_id',$branch)->pluck('mission_id');
                 $missions = $missions->whereIn('id',$mission_ids_by_branch_shipments);
+            }elseif(in_array((int) $user_role, [0, 2], true)){ // User Staff
+                $branchIds = app(\Modules\Cargo\Services\BranchAccessService::class)->branchIdsFor(auth()->user());
+                $missionIds = Shipment::whereIn('branch_id', $branchIds)->whereNotNull('mission_id')->pluck('mission_id');
+                $missions = $missions->whereIn('id', $missionIds);
             }
         }
 

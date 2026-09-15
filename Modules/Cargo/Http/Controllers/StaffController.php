@@ -103,6 +103,7 @@ class StaffController extends Controller
         if (!$model->save()){
             throw new \Exception();
         }
+        $this->syncBranchAccess($model, $request->input('branch_ids', []));
         event(new UserCreatedEvent($response['user']));
         return redirect()->route('staffs.index')->with(['message_alert' => __('cargo::messages.created')]);
 
@@ -241,8 +242,8 @@ class StaffController extends Controller
 
         $Userdata['role']     = 0;
 
-        $roles = isset($data['roles']) && is_array($data['roles']) ? $data['roles'] : [];
-        $permissions = isset($data['permissions']) && is_array($data['permissions']) ? $data['permissions'] : [];
+        $roles = $request->input('roles', []);
+        $permissions = $request->input('permissions', []);
 
         $userRegistrationHelper  = new UserRegistrationHelper($model->user_id);
 		$response = $userRegistrationHelper->NewUser($Userdata, $roles, $permissions);
@@ -257,8 +258,17 @@ class StaffController extends Controller
         if (!$model->save()){
             throw new \Exception();
         }
+        $this->syncBranchAccess($model, $request->input('branch_ids', []));
         event(new UserUpdatedEvent($response['user']));
         return redirect()->back()->with(['message_alert' => __('cargo::messages.saved')]);
+    }
+
+    private function syncBranchAccess(Staff $staff, array $branchIds): void
+    {
+        $branchIds[] = (int) $staff->branch_id;
+        $staff->accessibleBranches()->sync(
+            collect($branchIds)->filter()->map(fn ($id) => (int) $id)->unique()->values()->all()
+        );
     }
 
     /**

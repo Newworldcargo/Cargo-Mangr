@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\AuditLog;
 use App\Models\Transxn;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Modules\Cargo\Entities\Branch;
 use Modules\Cargo\Entities\Driver;
 use Modules\Cargo\Entities\Staff;
@@ -23,17 +24,17 @@ class OperationalScopeFilterService
 
     public function options(User $viewer, bool $mayManageBranch): array
     {
-        $branchId = $this->branches->branchIdFor($viewer);
+        $branchIds = $this->branches->branchIdsFor($viewer);
         $isTopAdmin = $this->branches->isTopAdmin($viewer);
-        $canFilterBranch = $isTopAdmin || ($branchId && $mayManageBranch);
+        $canFilterBranch = $isTopAdmin || ($branchIds->isNotEmpty() && $mayManageBranch);
 
         $branchOptions = $isTopAdmin
             ? Branch::orderBy('name')->get(['id', 'name'])
-            : ($canFilterBranch ? Branch::whereKey($branchId)->get(['id', 'name']) : collect());
+            : ($canFilterBranch ? Branch::whereIn('id', $branchIds)->orderBy('name')->get(['id', 'name']) : collect());
 
         $users = $isTopAdmin
             ? $this->activeOperationalUsers($viewer->id)
-            : User::whereIn('id', $this->branchUserIds($branchId, $viewer->id))->orderBy('name')->get(['id', 'name', 'email']);
+            : User::whereIn('id', $this->branchUserIds($branchIds, $viewer->id))->orderBy('name')->get(['id', 'name', 'email']);
 
         return [
             'can_filter_branch' => (bool) $canFilterBranch,
@@ -78,16 +79,16 @@ class OperationalScopeFilterService
         return $this->selected($viewer, $options, $branchId, $userId);
     }
 
-    private function branchUserIds(?int $branchId, int $viewerId)
+    private function branchUserIds(Collection $branchIds, int $viewerId)
     {
-        if (!$branchId) {
+        if ($branchIds->isEmpty()) {
             return collect([$viewerId]);
         }
 
         return collect([$viewerId])
-            ->merge(Branch::whereKey($branchId)->pluck('user_id'))
-            ->merge(Staff::where('branch_id', $branchId)->pluck('user_id'))
-            ->merge(Driver::where('branch_id', $branchId)->pluck('user_id'))
+            ->merge(Branch::whereIn('id', $branchIds)->pluck('user_id'))
+            ->merge(Staff::whereIn('branch_id', $branchIds)->pluck('user_id'))
+            ->merge(Driver::whereIn('branch_id', $branchIds)->pluck('user_id'))
             ->filter()
             ->unique()
             ->values();

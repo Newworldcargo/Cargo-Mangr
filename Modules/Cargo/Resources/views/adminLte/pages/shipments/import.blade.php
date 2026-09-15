@@ -15,8 +15,8 @@
         $userBranch = Modules\Cargo\Entities\Branch::where('user_id',auth()->user()->id)->first();
         $clients    = Modules\Cargo\Entities\Client::where('branch_id', $userBranch->id )->get();
     }elseif(auth()->user()->can('import-shipments')  && $user_role == $auth_staff){
-        $userStaff  = Modules\Cargo\Entities\Staff::where('user_id',auth()->user()->id)->first();
-        $clients    = Modules\Cargo\Entities\Client::where('branch_id', $userStaff->branch_id )->get();
+        $branchIds = app(Modules\Cargo\Services\BranchAccessService::class)->branchIdsFor(auth()->user());
+        $clients    = Modules\Cargo\Entities\Client::whereIn('branch_id', $branchIds)->get();
     }elseif($user_role == $auth_client){
         $file_name = 'import_shipment_customer.csv';
         $userClient = Modules\Cargo\Entities\Client::where('user_id',auth()->user()->id)->first();

@@ -5,12 +5,15 @@ namespace App\Services;
 use App\Models\Transxn;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
-use Modules\Cargo\Entities\Branch;
-use Modules\Cargo\Entities\Staff;
+use Modules\Cargo\Services\BranchAccessService;
 
 /** Applies the visibility policy for the finance screen at /transactions. */
 class FinancialTransactionScopeService
 {
+    public function __construct(private readonly BranchAccessService $branchAccess)
+    {
+    }
+
     public function apply(Builder $query, ?User $user): Builder
     {
         if (!$user) {
@@ -22,13 +25,13 @@ class FinancialTransactionScopeService
         }
 
         if ((int) $user->role === 3) {
-            return $this->forBranch($query, Branch::where('user_id', $user->id)->value('id'));
+            return $this->forBranches($query, $this->branchAccess->branchIdsFor($user));
         }
 
         if (in_array((int) $user->role, [User::STAFF, 2], true)) {
-            $branchId = Staff::where('user_id', $user->id)->value('branch_id');
-            if ($user->can('manage-transactions') && $branchId) {
-                return $this->forBranch($query, $branchId);
+            $branchIds = $this->branchAccess->branchIdsFor($user);
+            if ($user->can('manage-transactions') && $branchIds->isNotEmpty()) {
+                return $this->forBranches($query, $branchIds);
             }
 
             // Legacy rows lack reliable cashier attribution, so ordinary staff
@@ -39,18 +42,18 @@ class FinancialTransactionScopeService
         return $query->whereRaw('1 = 0');
     }
 
-    private function forBranch(Builder $query, ?int $branchId): Builder
+    private function forBranches(Builder $query, $branchIds): Builder
     {
-        if (!$branchId) {
+        if ($branchIds->isEmpty()) {
             return $query->whereRaw('1 = 0');
         }
 
-        return $query->where(function (Builder $branchQuery) use ($branchId) {
-            $branchQuery->where('collection_branch_id', $branchId)
-                ->orWhere(function (Builder $legacyQuery) use ($branchId) {
+        return $query->where(function (Builder $branchQuery) use ($branchIds) {
+            $branchQuery->whereIn('collection_branch_id', $branchIds)
+                ->orWhere(function (Builder $legacyQuery) use ($branchIds) {
                     $legacyQuery->whereNull('collection_branch_id')
-                        ->whereHas('shipment', function (Builder $shipmentQuery) use ($branchId) {
-                            $shipmentQuery->where('branch_id', $branchId);
+                        ->whereHas('shipment', function (Builder $shipmentQuery) use ($branchIds) {
+                            $shipmentQuery->whereIn('branch_id', $branchIds);
                         });
                 });
         });

@@ -12,7 +12,7 @@ use Modules\Cargo\Entities\Shipment;
  * Authorizes writes to a shipment without changing its shared read visibility.
  *
  * A branch account is the manager for its assigned branch. Staff need the
- * relevant Cargo permission (or manage-shipments) as well as that assignment.
+ * relevant Cargo permission (or manage-shipments) as well as a branch assignment.
  * This makes URL/API requests obey the same boundary as the intended UI.
  */
 class ShipmentOperationAccessService
@@ -38,10 +38,10 @@ class ShipmentOperationAccessService
         }
 
         if ((int) $user->role === 3) {
-            return $this->branches->branchIdFor($user) === $branchId;
+            return $this->branches->canAccessBranch($user, $branchId);
         }
 
-        return $this->branches->branchIdFor($user) === $branchId
+        return $this->branches->canAccessBranch($user, $branchId)
             && $this->hasPermission($user, 'create-shipments');
     }
 
@@ -74,7 +74,7 @@ class ShipmentOperationAccessService
                 && in_array($permission, ['received-shipments', 'deliverd-shipments'], true);
         }
 
-        $assignedBranchId = $this->branches->branchIdFor($user);
+        $assignedBranchIds = $this->branches->branchIdsFor($user);
         $operationalBranchIds = [(int) $shipment->branch_id];
 
         // A payment may be collected at the branch where cargo originated or
@@ -91,8 +91,8 @@ class ShipmentOperationAccessService
         $canCollectAcrossBranches = $permission === 'confirm-shipment-payment'
             && $user->can('collect-cross-branch-payments');
 
-        if (!$assignedBranchId
-            || (!$canCollectAcrossBranches && !in_array($assignedBranchId, array_unique($operationalBranchIds), true))) {
+        if ($assignedBranchIds->isEmpty()
+            || (!$canCollectAcrossBranches && !$assignedBranchIds->intersect(array_unique($operationalBranchIds))->count())) {
             return false;
         }
 
@@ -113,7 +113,7 @@ class ShipmentOperationAccessService
         }
 
         return $this->branches->isTopAdmin($user)
-            || ($this->branches->branchIdFor($user) === (int) $shipment->branch_id
+            || ($this->branches->canAccessBranch($user, (int) $shipment->branch_id)
                 && $user->can('view-audit-logs'));
     }
 

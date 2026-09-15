@@ -9,11 +9,11 @@
 
 
     $userBranch = Modules\Cargo\Entities\Branch::where('user_id',auth()->user()->id)->first();
-    $userStaff  = Modules\Cargo\Entities\Staff::where('user_id',auth()->user()->id)->first();
     $branches = Modules\Cargo\Entities\Branch::where('is_archived', 0)->get();
 
     if(auth()->user()->can('manage-branches') && $user_role == $auth_staff){
-        $branches = Modules\Cargo\Entities\Branch::where('id', $userStaff->branch_id )->get();
+        $branchIds = app(Modules\Cargo\Services\BranchAccessService::class)->branchIdsFor(auth()->user());
+        $branches = Modules\Cargo\Entities\Branch::whereIn('id', $branchIds)->get();
     }
 
 
@@ -89,5 +89,4 @@
 
 
 {{-- @if(auth()->user()->can('export-table-branches') || $user_role == $admin) @endif --}}
-
 

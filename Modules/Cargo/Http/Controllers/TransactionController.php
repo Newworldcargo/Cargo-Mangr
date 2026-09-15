@@ -60,24 +60,18 @@ class TransactionController extends Controller
             ],
         ]);
 
-        if(auth()->user()->role == 3 || auth()->user()->role == 0){
-            if(auth()->user()->role == 0){
-                $user = Staff::where('user_id',auth()->user()->id)->first();
-                $branch_id = $user->branch_id;
-            }else {
-                $user = Branch::where('user_id',auth()->user()->id)->first();
-                $branch_id = $user->id;
-            }
-
-            $clients = Client::where('is_archived', 0)->where('branch_id', $branch_id)->get();
-            $captains = Driver::where('is_archived', 0)->where('branch_id',$branch_id)->get();
+        if(in_array((int) auth()->user()->role, [0, 2, 3], true)){
+            $branchIds = app(\Modules\Cargo\Services\BranchAccessService::class)->branchIdsFor(auth()->user());
+            $clients = Client::where('is_archived', 0)->whereIn('branch_id', $branchIds)->get();
+            $captains = Driver::where('is_archived', 0)->whereIn('branch_id', $branchIds)->get();
+            $branches = Branch::where('is_archived', 0)->whereIn('id', $branchIds)->get();
         }else {
             $clients = Client::where('is_archived', 0)->get();
             $captains = Driver::where('is_archived', 0)->get();
+            $branches = Branch::where('is_archived', 0)->get();
 
             $types[Transaction::BRANCH] = ["name"=> __('cargo::view.table.branch'),"key"=> "branch"];
         }
-        $branches = Branch::where('is_archived', 0)->get();
         $types[Transaction::CAPTAIN] = ["name"=> __('cargo::view.driver'),"key"=> "captain"];
         $types[Transaction::CLIENT] = ["name"=> __('cargo::view.client'),"key"=> "client"];
 

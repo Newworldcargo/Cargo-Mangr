@@ -506,8 +506,7 @@ class ShipmentController extends Controller
             return (int) Client::where('user_id', $user->id)->value('id') === (int) $shipment->client_id;
         }
 
-        $branchId = $branchAccess->branchIdFor($user);
-        return $branchId && (int) $branchId === (int) $shipment->branch_id
+        return $branchAccess->canAccessBranch($user, (int) $shipment->branch_id)
             && ((int) $user->role === 3 || $user->can('view-shipments') || $user->can('manage-shipments'));
     }
 
@@ -534,7 +533,7 @@ class ShipmentController extends Controller
         if ($item->consignment_id) {
             $branchAccess = app(BranchAccessService::class);
             $user = auth()->user();
-            $branchId = $branchAccess->branchIdFor($user);
+            $branchIds = $branchAccess->branchIdsFor($user);
             $oldShipment = session()->getOldInput('Shipment', []);
             $fromCountryId = $oldShipment['from_country_id'] ?? $item->from_country_id;
             $toCountryId = $oldShipment['to_country_id'] ?? $item->to_country_id;
@@ -543,13 +542,13 @@ class ShipmentController extends Controller
             $selectedClientId = $oldShipment['client_id'] ?? $item->client_id;
             $selectedClient = Client::query()
                 ->where('id', $selectedClientId)
-                ->when(!$branchAccess->isTopAdmin($user), fn ($query) => $query->where('branch_id', $branchId ?: -1))
+                ->when(!$branchAccess->isTopAdmin($user), fn ($query) => $query->whereIn('branch_id', $branchIds))
                 ->first() ?: Client::find($item->client_id);
 
             $viewData += [
                 'editableBranches' => Branch::query()
                     ->where(fn ($query) => $query->where('is_archived', 0)->orWhere('id', $item->branch_id))
-                    ->when(!$branchAccess->isTopAdmin($user), fn ($query) => $query->where('id', $branchId ?: $item->branch_id))
+                    ->when(!$branchAccess->isTopAdmin($user), fn ($query) => $query->whereIn('id', $branchIds))
                     ->orderBy('name')
                     ->get(),
                 'selectedClient' => $selectedClient,
@@ -582,8 +581,8 @@ class ShipmentController extends Controller
         }
 
         $branchAccess = app(BranchAccessService::class);
-        $branchId = $branchAccess->branchIdFor($user);
-        if (!$branchAccess->isTopAdmin($user) && !$branchId) {
+        $branchIds = $branchAccess->branchIdsFor($user);
+        if (!$branchAccess->isTopAdmin($user) && $branchIds->isEmpty()) {
             return response()->json(['results' => []]);
         }
 
@@ -591,7 +590,7 @@ class ShipmentController extends Controller
         $clients = Client::query()
             ->select(['id', 'name', 'responsible_mobile'])
             ->where('is_archived', 0)
-            ->when(!$branchAccess->isTopAdmin($user), fn ($query) => $query->where('branch_id', $branchId))
+            ->when(!$branchAccess->isTopAdmin($user), fn ($query) => $query->whereIn('branch_id', $branchIds))
             ->where(function ($query) use ($escapedSearch, $search) {
                 $query->where('name', 'like', '%' . $escapedSearch . '%')
                     ->orWhere('responsible_mobile', 'like', '%' . $escapedSearch . '%');
@@ -745,7 +744,7 @@ class ShipmentController extends Controller
                     $branchAccess = app(BranchAccessService::class);
                     $user = auth()->user();
                     if (!$branchAccess->isTopAdmin($user)) {
-                        $query->where('branch_id', $branchAccess->branchIdFor($user) ?: -1);
+                        $query->whereIn('branch_id', $branchAccess->branchIdsFor($user));
                     }
                 }),
             ],

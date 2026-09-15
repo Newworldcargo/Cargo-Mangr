@@ -6,7 +6,6 @@ $auth_branch = 3;
 $auth_client = 4;
 
 $userBranch = Modules\Cargo\Entities\Branch::where('user_id',auth()->user()->id)->first();
-$userStaff  = Modules\Cargo\Entities\Staff::where('user_id',auth()->user()->id)->first();
 $userClient = Modules\Cargo\Entities\Driver::where('user_id',auth()->user()->id)->first();
 
 $driver = Modules\Cargo\Entities\Driver::where('is_archived', 0)->get();
@@ -15,7 +14,8 @@ if($user_role == $auth_branch){
     $driver  = Modules\Cargo\Entities\Driver::where('branch_id', $userBranch->id )->get();
 }elseif(auth()->user()->can('manage-drivers') && $user_role == $auth_staff){
 
-    $driver  = Modules\Cargo\Entities\Driver::where('branch_id', $userStaff->branch_id )->get();
+    $branchIds = app(Modules\Cargo\Services\BranchAccessService::class)->branchIdsFor(auth()->user());
+    $driver  = Modules\Cargo\Entities\Driver::whereIn('branch_id', $branchIds)->get();
 }
 
 @endphp
