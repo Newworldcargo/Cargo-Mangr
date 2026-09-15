@@ -7,6 +7,7 @@ use Modules\Cargo\Entities\Branch;
 use Modules\Cargo\Entities\Client;
 use Modules\Cargo\Entities\Driver;
 use Modules\Cargo\Entities\Shipment;
+use Modules\Cargo\Entities\Staff;
 
 /**
  * Authorizes writes to a shipment without changing its shared read visibility.
@@ -53,6 +54,10 @@ class ShipmentOperationAccessService
 
         if ($this->branches->isTopAdmin($user)) {
             return true;
+        }
+
+        if ($permission === 'confirm-shipment-payment' && !$this->canCollectPayments($user)) {
+            return false;
         }
 
         // A client may only amend its own still-saved shipment. It never gains
@@ -104,6 +109,28 @@ class ShipmentOperationAccessService
         }
 
         return $this->hasPermission($user, $permission);
+    }
+
+    public function canCollectPayments(?User $user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        if ($this->branches->isTopAdmin($user)) {
+            return true;
+        }
+
+        $hasPermission = $user->can('confirm-shipment-payment') || $user->hasRole(['cashier', 'cashiers']);
+        if (!$hasPermission) {
+            return false;
+        }
+
+        if (in_array((int) $user->role, [User::STAFF, 2], true)) {
+            return (bool) Staff::where('user_id', $user->id)->value('can_collect_payments');
+        }
+
+        return true;
     }
 
     public function canViewAuditTrail(?User $user, Shipment $shipment): bool

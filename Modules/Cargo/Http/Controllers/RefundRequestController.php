@@ -75,7 +75,7 @@ class RefundRequestController extends Controller
         }
 
         if ($user->role != 4) {
-            $canRequest = $user->can('confirm-shipment-payment') || $user->hasRole(['cashier', 'cashiers']);
+            $canRequest = app(\Modules\Cargo\Services\ShipmentOperationAccessService::class)->canCollectPayments($user);
             if (!$canRequest) {
                 return response()->json(['success' => false, 'message' => 'You are not allowed to request refunds.'], 403);
             }

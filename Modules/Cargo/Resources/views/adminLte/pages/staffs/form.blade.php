@@ -211,6 +211,25 @@
 </div>
 <!--end::Input group-->
 
+<div class="row mb-6">
+    <label class="col-lg-4 col-form-label fw-bold fs-6">Payment collection</label>
+    <div class="col-lg-8 fv-row">
+        <input type="hidden" name="can_collect_payments" value="0">
+        <div class="form-check form-switch">
+            <input
+                class="form-check-input"
+                type="checkbox"
+                name="can_collect_payments"
+                value="1"
+                id="can_collect_payments"
+                {{ old('can_collect_payments', isset($model) ? $model->can_collect_payments : true) ? 'checked' : '' }}
+            >
+            <label class="form-check-label" for="can_collect_payments">Can collect shipment payments</label>
+        </div>
+        <div class="form-text">Turn this off for managers who may view finance reports but must not act as cashiers.</div>
+    </div>
+</div>
+
 <!--begin::Input group -- Accessible branches -->
 <div class="row mb-6">
     <label class="col-lg-4 col-form-label fw-bold fs-6">Accessible branches</label>
