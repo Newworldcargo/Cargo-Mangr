@@ -31,6 +31,17 @@ class ConsignmentController extends Controller
     {
         abort_unless(auth()->check() && (int) auth()->user()->role === User::ADMIN, 403);
     }
+
+    /** Tracker updates are delegated separately from full consignment control. */
+    private function authorizeTrackerMutation(): void
+    {
+        abort_unless(
+            auth()->check()
+                && ((int) auth()->user()->role === User::ADMIN
+                    || auth()->user()->can('update-consignment-tracker')),
+            403
+        );
+    }
     /**
      * Display a listing of the resource.
      *
@@ -1130,14 +1141,14 @@ class ConsignmentController extends Controller
 
     public function editTracker($id)
     {
-        $this->authorizeConsignmentMutation();
+        $this->authorizeTrackerMutation();
         $consignment = Consignment::findOrFail($id);
         return response()->json($consignment);
     }
 
     public function updateTracker(Request $request, $id)
     {
-        $this->authorizeConsignmentMutation();
+        $this->authorizeTrackerMutation();
 
         // dd($request);
         try {
