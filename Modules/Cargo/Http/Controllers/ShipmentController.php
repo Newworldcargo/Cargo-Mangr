@@ -2422,6 +2422,7 @@ class ShipmentController extends Controller
             $previousPaymentTotal = 0.0;
             if ($openTransaction) {
                 $previousPaymentTotal = (float) ShipmentPaymentReceipt::where('shipment_id', $shipment->id)
+                    ->where('refunded', false)
                     ->where(function ($query) use ($openTransaction) {
                         $query->where('receipt_number', $openTransaction->receipt_number)
                             ->orWhere('receipt_number', 'like', $openTransaction->receipt_number . '-%');
