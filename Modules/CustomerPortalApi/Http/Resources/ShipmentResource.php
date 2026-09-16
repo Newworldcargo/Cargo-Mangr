@@ -202,7 +202,11 @@ class ShipmentResource extends JsonResource
         $history = $consignment->trackingHistory->keyBy('stage_id');
         // A checkpoint can be present before the first history row is written.
         // Keep future stages pending, but identify the checkpoint as current.
-        $currentStageId = (int) $consignment->getCurrentStage() ?: (int) $consignment->checkpoint;
+        // checkpoint is a 1-based position; tracking stages use database IDs.
+        $currentStageId = (int) $consignment->getCurrentStage();
+        if ($currentStageId < 1 && (int) $consignment->checkpoint > 0) {
+            $currentStageId = (int) optional($stages->get((int) $consignment->checkpoint - 1))->id;
+        }
         $events = [];
 
         foreach ($stages as $stage) {

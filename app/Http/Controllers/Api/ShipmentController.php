@@ -614,7 +614,11 @@ class ShipmentController extends Controller
         // already have a checkpoint/status but no history row yet, expose the
         // checkpoint as the active stage instead of presenting every stage as
         // pending.
-        $currentStageId = (int) $consignment->getCurrentStage() ?: (int) $consignment->checkpoint;
+        $currentStageId = (int) $consignment->getCurrentStage();
+        if ($currentStageId < 1 && (int) $consignment->checkpoint > 0) {
+            // checkpoint is a 1-based position, while stage IDs are database IDs.
+            $currentStageId = (int) optional($stages->get((int) $consignment->checkpoint - 1))->id;
+        }
         $events = [];
 
         foreach ($stages as $stage) {
