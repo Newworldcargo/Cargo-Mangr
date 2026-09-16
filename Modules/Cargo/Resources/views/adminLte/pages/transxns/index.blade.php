@@ -135,7 +135,9 @@ $client = 4;
                     <td class="px-4 py-2">{{ $txn->cashier?->name ?? 'Legacy / unassigned' }}</td>
                     <td class="px-4 py-2 text-green-600 font-semibold">{{ currency_symbol_for($txn->display_currency ?? $branchCurrency ?? 'ZMW') }}{{ number_format($txn->display_total, 2) }} {{ $txn->display_currency ?? $branchCurrency ?? 'ZMW' }}</td>
                     <td class="px-4 py-2">
-                        @if($txn->isRefunded())
+                        @if($txn->isVoidedDuplicate())
+                            <span class="text-xs px-2 py-1 rounded-full bg-gray-200 text-gray-700">Voided duplicate</span>
+                        @elseif($txn->isRefunded())
                             <span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700">Refunded</span>
                         @elseif($txn->isRefundRequested())
                             <span class="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-700">Refund Requested</span>

@@ -11,6 +11,22 @@ use Modules\Cargo\Entities\Branch;
 class Transxn extends Model
 {
     use HasFactory;
+
+    public const STATUS_COMPLETED = 'completed';
+    public const STATUS_PARTIALLY_PAID = 'partially_paid';
+    public const STATUS_REFUND_REQUESTED = 'refund_requested';
+    public const STATUS_PARTIALLY_REFUNDED = 'partially_refunded';
+    public const STATUS_REFUNDED = 'refunded';
+    public const STATUS_VOIDED_DUPLICATE = 'voided_duplicate';
+
+    public static function settledStatuses(): array
+    {
+        return [
+            self::STATUS_COMPLETED,
+            self::STATUS_REFUND_REQUESTED,
+            self::STATUS_PARTIALLY_REFUNDED,
+        ];
+    }
     protected $fillable = [
         'shipment_id',
         'cashier_user_id',
@@ -68,6 +84,11 @@ class Transxn extends Model
 
     public function isCompleted()
     {
-        return in_array($this->status, ['completed', 'refund_requested', 'partially_refunded'], true);
+        return in_array($this->status, self::settledStatuses(), true);
+    }
+
+    public function isVoidedDuplicate(): bool
+    {
+        return $this->status === self::STATUS_VOIDED_DUPLICATE;
     }
 }

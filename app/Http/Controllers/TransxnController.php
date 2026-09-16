@@ -32,7 +32,7 @@ class TransxnController extends Controller
      */
     private function periodTotals(Carbon $start, Carbon $end, $scopeQuery = null, string $displayCurrency = 'ZMW'): array
     {
-        $q = Transxn::whereIn('status', ['completed', 'refund_requested', 'partially_refunded'])
+        $q = Transxn::whereIn('status', Transxn::settledStatuses())
             ->whereBetween('created_at', [$start, $end]);
         if ($scopeQuery) { $scopeQuery($q); }
         $completedRows = $q

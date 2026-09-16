@@ -26,7 +26,7 @@ class PaymentController extends PortalController
             ->whereHas('shipment', function ($query) use ($client) { $query->where('client_id', $client->id); })
             ->first();
         if (!$invoice) return $this->problem($request, 'NOT_FOUND', 'Invoice not found.', 404);
-        if (in_array($invoice->status, ['completed', 'refund_requested', 'partially_refunded'], true)) {
+        if (in_array($invoice->status, Transxn::settledStatuses(), true)) {
             return $this->problem($request, 'INVOICE_NOT_PAYABLE', 'This invoice is already settled.', 422);
         }
 

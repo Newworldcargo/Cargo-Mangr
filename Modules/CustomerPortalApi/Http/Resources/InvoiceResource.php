@@ -3,13 +3,14 @@
 namespace Modules\CustomerPortalApi\Http\Resources;
 
 use Illuminate\Http\Resources\Json\JsonResource;
+use App\Models\Transxn;
 
 class InvoiceResource extends JsonResource
 {
     public function toArray($request)
     {
         $shipment = $this->shipment;
-        $paid = in_array($this->status, ['completed', 'refund_requested', 'partially_refunded'], true);
+        $paid = in_array($this->status, Transxn::settledStatuses(), true);
         $total = (float) $this->total;
         $currency = strtoupper((string) ($this->currency ?: config('customerportalapi.booking_pricing.currency', 'ZMW')));
         $issuedAt = $this->created_at;

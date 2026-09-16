@@ -7,6 +7,7 @@
     $nwcReceipt = $shipment->nwcReceipt;
     $receiptNumber = $shipment?->receipt?->receipt_number ?? $nwcReceipt?->receipt_number ?? '-';
     $paymentReceipts = ($shipment->paymentReceipts ?? collect())->filter(function ($paymentReceipt) use ($receiptNumber) {
+        if ($paymentReceipt->isVoidedDuplicate()) return false;
         return $receiptNumber === '-'
             || empty($paymentReceipt->receipt_number)
             || str_starts_with($paymentReceipt->receipt_number, $receiptNumber . '-');

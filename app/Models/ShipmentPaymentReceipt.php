@@ -16,6 +16,7 @@ class ShipmentPaymentReceipt extends Model
         'collection_branch_id',
         'method_of_payment',
         'amount',
+        'status',
         'currency',
         'receipt_number',
         'cashier_name',
@@ -28,6 +29,11 @@ class ShipmentPaymentReceipt extends Model
     protected $casts = [
         'amount' => 'decimal:2',
     ];
+
+    public function isVoidedDuplicate(): bool
+    {
+        return $this->status === 'voided_duplicate';
+    }
 
     public function shipment()
     {

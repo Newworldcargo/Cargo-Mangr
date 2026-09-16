@@ -45,6 +45,7 @@
         $nwcReceipt = $shipment->nwcReceipt;
         $currentReceiptNumber = $receipt?->receipt_number ?? $nwcReceipt?->receipt_number;
         $paymentReceipts = ($shipment->paymentReceipts ?? collect())->filter(function ($paymentReceipt) use ($currentReceiptNumber) {
+            if ($paymentReceipt->isVoidedDuplicate()) return false;
             return empty($currentReceiptNumber)
                 || empty($paymentReceipt->receipt_number)
                 || str_starts_with($paymentReceipt->receipt_number, $currentReceiptNumber . '-');

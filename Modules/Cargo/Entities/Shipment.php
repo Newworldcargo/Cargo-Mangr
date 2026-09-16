@@ -510,7 +510,9 @@ class Shipment extends Model implements HasMedia
 
     public function receipt()
     {
-        return $this->hasOne(Transxn::class)->latestOfMany();
+        return $this->hasOne(Transxn::class)
+            ->where('status', '!=', Transxn::STATUS_VOIDED_DUPLICATE)
+            ->latestOfMany();
     }
 
     public function nwcReceipt()
@@ -520,7 +522,10 @@ class Shipment extends Model implements HasMedia
 
     public function paymentReceipts()
     {
-        return $this->hasMany(ShipmentPaymentReceipt::class);
+        return $this->hasMany(ShipmentPaymentReceipt::class)
+            ->where(function ($query) {
+                $query->whereNull('status')->orWhere('status', '!=', 'voided_duplicate');
+            });
     }
 
     /**

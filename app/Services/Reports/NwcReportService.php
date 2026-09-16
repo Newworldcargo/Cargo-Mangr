@@ -51,7 +51,7 @@ class NwcReportService
                 'shipment.paymentReceipts' // Include payment receipts for multiple payment support
             ])
             ->whereBetween('created_at', [$start, $end])
-            ->whereIn('status', ['completed', 'refund_requested', 'partially_refunded'])
+            ->whereIn('status', Transxn::settledStatuses())
             // Only include transactions for shipments that are currently marked as paid
             ->whereHas('shipment', function($query) {
                 $query->where('paid', 1);
