@@ -200,7 +200,9 @@ class ShipmentResource extends JsonResource
             ->orderBy('order')
             ->get();
         $history = $consignment->trackingHistory->keyBy('stage_id');
-        $currentStageId = (int) $consignment->getCurrentStage();
+        // A checkpoint can be present before the first history row is written.
+        // Keep future stages pending, but identify the checkpoint as current.
+        $currentStageId = (int) $consignment->getCurrentStage() ?: (int) $consignment->checkpoint;
         $events = [];
 
         foreach ($stages as $stage) {
