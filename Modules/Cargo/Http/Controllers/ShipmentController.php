@@ -2327,6 +2327,23 @@ class ShipmentController extends Controller
         DB::beginTransaction();
 
         try {
+            // Serialize payment attempts for this shipment. The paid flag is
+            // checked again after acquiring the row lock so a stale page or a
+            // second browser request cannot record another completed payment.
+            $shipment = Shipment::with(['nwcReceipt', 'branch'])
+                ->whereKey($shipment->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ((int) $shipment->paid === 1) {
+                DB::rollBack();
+
+                return response()->json([
+                    'error' => 'SHIPMENT_ALREADY_PAID',
+                    'message' => 'This shipment has already been fully paid. No additional payment was recorded.',
+                ], 409);
+            }
+
             $oldValues = $shipment->only(['paid']);
             $collectionBranchId = app(BranchAccessService::class)->branchIdFor(Auth::user());
 

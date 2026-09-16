@@ -81,6 +81,19 @@ class NwcReportService
 
         $transactions = $transactions->get();
 
+        // Payment receipts are stored per shipment, while legacy transaction
+        // rows can contain more than one completed entry for the same
+        // shipment. Keep one report row per shipment so aggregated payment
+        // lines are not repeated once for every transaction row.
+        $transactions = $transactions
+            ->groupBy('shipment_id')
+            ->map(function (Collection $shipmentTransactions) {
+                return $shipmentTransactions
+                    ->sortByDesc(fn ($transaction) => [$transaction->created_at, $transaction->id])
+                    ->first();
+            })
+            ->values();
+
         $results = collect();
 
         foreach ($transactions as $transaction) {
