@@ -610,7 +610,11 @@ class ShipmentController extends Controller
             ->orderBy('stage_id')
             ->get()
             ->keyBy('stage_id');
-        $currentStageId = $consignment->getCurrentStage();
+        // History is the source of completed stages. For consignments that
+        // already have a checkpoint/status but no history row yet, expose the
+        // checkpoint as the active stage instead of presenting every stage as
+        // pending.
+        $currentStageId = (int) $consignment->getCurrentStage() ?: (int) $consignment->checkpoint;
         $events = [];
 
         foreach ($stages as $stage) {
