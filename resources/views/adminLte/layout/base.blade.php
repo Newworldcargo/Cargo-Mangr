@@ -149,6 +149,8 @@
             const overlayLoader = document.querySelector('.overlay-loader');
             const topNavProgress = document.querySelector('.top-nav-progress');
 
+            if (!button || !overlayLoader || !topNavProgress) return;
+
             button.addEventListener('click', function() {
                 // Show the overlay
                 overlayLoader.classList.add('active');

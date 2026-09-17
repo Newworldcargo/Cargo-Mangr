@@ -7,6 +7,16 @@ $client = 4;
 $driver = 5;
 @endphp
 
+@if ($user_role == $admin || auth()->user()->can('view-online-bookings'))
+<li class="nav-item">
+    <a href="{{ fr_route('shipments.online-bookings') }}"
+        class="nav-link {{ areActiveRoutes(['shipments.online-bookings']) }}">
+        <i class="fas fa-globe fa-fw"></i>
+        <p>Online Bookings</p>
+    </a>
+</li>
+@endif
+
 
 @if (auth()->user()->can('manage-shipments') || in_array($user_role, [$admin, $client, $branch]))
 <li style="color: #fff"

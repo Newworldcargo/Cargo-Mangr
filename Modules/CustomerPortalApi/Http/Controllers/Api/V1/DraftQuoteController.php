@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Modules\CustomerPortalApi\Http\Resources\PortalQuoteResource;
 use Modules\CustomerPortalApi\Http\Resources\ShipmentDraftResource;
+use Modules\CustomerPortalApi\Http\Resources\OnlineBookingResource;
 use Modules\CustomerPortalApi\Models\PortalFile;
 use Modules\CustomerPortalApi\Models\PortalQuote;
 use Modules\CustomerPortalApi\Models\PortalShipmentDraft;
@@ -19,6 +20,7 @@ use Modules\Cargo\Entities\PackageShipment;
 use Modules\Cargo\Entities\Shipment;
 use Modules\Cargo\Entities\ShipmentSetting;
 use Modules\Cargo\Entities\State;
+use Modules\Cargo\Services\OnlineBookingService;
 
 class DraftQuoteController extends PortalController
 {
@@ -125,61 +127,22 @@ class DraftQuoteController extends PortalController
                 return $this->problem($request, 'QUOTE_REQUIRED', 'Request a fresh server price before submitting this booking.', 422, [], true);
             }
         }
-        $quotedTotal = $quote ? ((int) $quote->amount_minor) / 100 : 0;
         $branch = Branch::where('is_archived', 0)->whereKey($form['pickupBranchId'] ?? null)->first()
             ?: Branch::where('is_archived', 0)->orderBy('id')->first();
         if (!$branch) return $this->problem($request, 'DEPENDENCY_UNAVAILABLE', 'No collection branch is available right now.', 503);
 
         try {
-            $shipment = DB::transaction(function () use ($model, $payload, $form, $cargoRows, $client, $branch, $quote, $quotedTotal) {
-                $origin = $this->locationProfile($branch->name . ' ' . $branch->address);
-                $destination = $this->locationProfile((string) ($form['destination'] ?? ''));
-                $evidence = $this->shipmentEvidenceFromPayload($payload, $client->id);
-                $totals = $this->cargoTotals($cargoRows);
-                $shipment = Shipment::create([
-                    'code' => '-',
-                    'status_id' => Shipment::REQUESTED_STATUS,
-                    'type' => Shipment::PICKUP,
-                    'branch_id' => $branch->id,
-                    'shipping_date' => now()->toDateString(),
-                    'client_status' => Shipment::CLIENT_STATUS_CREATED,
-                    'client_id' => $client->id,
-                    'client_phone' => $client->responsible_mobile,
-                    'client_address' => (string) $form['pickup'],
-                    'reciver_name' => (string) $form['recipient'],
-                    'reciver_phone' => (string) $form['phone'],
-                    'reciver_address' => (string) ($form['destination'] ?? ''),
-                    'from_country_id' => $origin['country']->id,
-                    'from_state_id' => $origin['state']->id,
-                    'to_country_id' => $destination['country']->id,
-                    'to_state_id' => $destination['state']->id,
-                    'payment_type' => Shipment::POSTPAID,
-                    'order_id' => 'PORTAL-' . strtoupper(substr((string) \Illuminate\Support\Str::uuid(), 0, 12)),
-                    'total_weight' => $totals['weight'],
-                    'shipping_cost' => $quotedTotal,
-                    'amount_to_be_collected' => $quotedTotal,
-                    'attachments_before_shipping' => $evidence ? json_encode($evidence) : null,
-                ]);
-                $width = max(5, (int) (ShipmentSetting::getVal('shipment_code_count') ?: 5));
-                $shipment->barcode = str_pad((string) $shipment->id, $width, '0', STR_PAD_LEFT);
-                $shipment->code = (string) (ShipmentSetting::getVal('shipment_prefix') ?: 'NWC') . $shipment->barcode;
-                $shipment->save();
-                $this->createShipmentPackageRows($shipment, $cargoRows);
-                $payload['submittedShipmentId'] = $shipment->id;
-                $model->payload = $payload;
-                $model->quote_id = $quote ? $quote->id : null;
-                $model->shipment_id = $shipment->id;
-                $model->status = 'submitted';
-                $model->revision = ((int) ($model->revision ?: 1)) + 1;
-                $model->save();
-                return $shipment;
-            });
+            $booking = app(OnlineBookingService::class)->createFromPortalDraft(
+                $model, $client, $branch, $payload, $cargoRows, $quote
+            );
+        } catch (\DomainException $exception) {
+            return $this->problem($request, 'REVISION_CONFLICT', $exception->getMessage(), 409);
         } catch (\Throwable $exception) {
             report($exception);
-            return $this->problem($request, 'ORDER_SUBMISSION_FAILED', 'We could not create your shipment order. Your draft is still safe.', 500);
+            return $this->problem($request, 'ORDER_SUBMISSION_FAILED', 'We could not create your booking request. Your draft is still safe.', 500);
         }
 
-        return $this->success($request, (new ShipmentResource($shipment->load(['consignment.trackingHistory', 'from_address', 'packages'])))->resolve($request), 201);
+        return $this->success($request, (new OnlineBookingResource($booking))->resolve($request), 201);
     }
 
     private function locationProfile(string $text): array

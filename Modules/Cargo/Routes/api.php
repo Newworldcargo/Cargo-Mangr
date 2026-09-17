@@ -30,6 +30,7 @@ Route::get('get-wallet', 'Api\AuthController@getWallet');
 // Shipments Apis Routes
 Route::post('admin/shipments/create', array('uses' => 'ShipmentController@storeAPI'));
 Route::get('shipments', array('uses' => 'ShipmentController@getShipmentsAPI'));
+Route::get('online-bookings', array('uses' => 'ShipmentController@getOnlineBookingsAPI'));
 Route::get('ConfirmationTypeMission', 'Api\ShipmentController@getConfirmationTypeMission');
 Route::get('shipment-by-barcode', 'ShipmentController@ajaxGetShipmentByBarcode');
 Route::get('shipmentPackages', 'Api\ShipmentController@getShipmentPackages');

@@ -190,6 +190,12 @@ if (\Illuminate\Support\Facades\Schema::hasTable('translations') && check_module
                 Route::get('import', 'ShipmentController@import')->name('shipments.import');
                 Route::post('import/parse', 'ShipmentController@parseImport')->name('shipments.import_parse');
                 Route::get('add-shipment-api','ShipmentController@ShipmentApis')->name('shipments.add.api');
+                Route::get('online-bookings', 'OnlineBookingController@index')->name('shipments.online-bookings');
+                Route::get('online-bookings/feed', 'OnlineBookingController@feed')->name('shipments.online-bookings.feed');
+                Route::get('online-bookings/{onlineBooking}', 'OnlineBookingController@show')->name('shipments.online-bookings.show');
+                Route::patch('online-bookings/{onlineBooking}', 'OnlineBookingController@update')->name('shipments.online-bookings.update');
+                Route::post('online-bookings/{onlineBooking}/convert', 'OnlineBookingController@convert')->name('shipments.online-bookings.convert');
+                Route::post('online-bookings/{onlineBooking}/reject', 'OnlineBookingController@reject')->name('shipments.online-bookings.reject');
 
                 // barcode scanner Route
                 Route::get('barcode-scanner','ShipmentController@BarcodeScanner')->name('shipments.barcode.scanner');
@@ -504,6 +510,12 @@ if (\Illuminate\Support\Facades\Schema::hasTable('translations') && check_module
             Route::get('import', 'ShipmentController@import')->name('shipments.import');
             Route::post('import/parse', 'ShipmentController@parseImport')->name('shipments.import_parse');
             Route::get('add-shipment-api','ShipmentController@ShipmentApis')->name('shipments.add.api');
+            Route::get('online-bookings', 'OnlineBookingController@index')->name('shipments.online-bookings');
+            Route::get('online-bookings/feed', 'OnlineBookingController@feed')->name('shipments.online-bookings.feed');
+            Route::get('online-bookings/{onlineBooking}', 'OnlineBookingController@show')->name('shipments.online-bookings.show');
+            Route::patch('online-bookings/{onlineBooking}', 'OnlineBookingController@update')->name('shipments.online-bookings.update');
+            Route::post('online-bookings/{onlineBooking}/convert', 'OnlineBookingController@convert')->name('shipments.online-bookings.convert');
+            Route::post('online-bookings/{onlineBooking}/reject', 'OnlineBookingController@reject')->name('shipments.online-bookings.reject');
 
             // barcode scanner Route
             Route::get('barcode-scanner','ShipmentController@BarcodeScanner')->name('shipments.barcode.scanner');

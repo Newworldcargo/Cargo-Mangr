@@ -65,6 +65,7 @@ use Modules\Cargo\Entities\ShipmentLog;
 use App\Services\AuditLogService;
 use Modules\Cargo\Services\BranchAccessService;
 use Modules\Cargo\Services\ShipmentOperationAccessService;
+use Modules\Cargo\Services\OnlineBookingService;
 
 class ShipmentController extends Controller
 {
@@ -228,9 +229,13 @@ class ShipmentController extends Controller
         if (isset($token)) {
 
             $user = User::where('remember_token', $token)->first();
-            $userClient = Client::where('user_id', $user->id)->first();
 
             if (isset($user)) {
+                $userClient = Client::where('user_id', $user->id)->first();
+                if (!$userClient) {
+                    return response()->json(['message' => 'Client profile not found'], 422);
+                }
+
                 $model->client_id = $userClient->id;
 
                 // Validation
@@ -395,10 +400,13 @@ class ShipmentController extends Controller
             $user = $apihelper->checkUser($request);
 
             if ($user) {
-                DB::beginTransaction();
-                $message = $this->storeShipment($request, $request->header('token'));
-                DB::commit();
-                return response()->json(['message' => $message]);
+                $booking = app(OnlineBookingService::class)->createFromLegacyApi($request, $user);
+                return response()->json([
+                    'message' => 'Booking request submitted successfully',
+                    'booking_id' => $booking->id,
+                    'booking_reference' => $booking->reference,
+                    'status' => $booking->status,
+                ], 201);
             } else {
                 return response()->json(['message' => 'Not Authorized']);
             }
@@ -435,12 +443,26 @@ class ShipmentController extends Controller
         }
     }
 
+    public function getOnlineBookingsAPI(Request $request)
+    {
+        $user = (new ApiHelper())->checkUser($request);
+        if (!$user) return response()->json(['message' => 'Not Authorized'], 401);
+        $client = Client::where('user_id', $user->id)->first();
+        if (!$client) return response()->json(['message' => 'Client not found'], 404);
+
+        return response()->json(\Modules\Cargo\Entities\OnlineBookingRequest::where('client_id', $client->id)
+            ->select(['id', 'reference', 'service', 'transport_mode', 'status', 'pickup_address',
+                'destination_address', 'quoted_amount', 'currency', 'submitted_at', 'shipment_id'])
+            ->orderByDesc('submitted_at')->orderByDesc('id')->paginate(20));
+    }
+
     public function show($id)
     {
         $shipment = Shipment::with(['nwcReceipt.user', 'receipt', 'paymentReceipts.user'])->find($id);
         if (!$shipment) {
             abort(404, 'Shipment not found');
         }
+        abort_unless(app(ShipmentOperationAccessService::class)->canView(auth()->user(), $shipment), 403);
         breadcrumb([
             [
                 'name' => __('cargo::view.dashboard'),

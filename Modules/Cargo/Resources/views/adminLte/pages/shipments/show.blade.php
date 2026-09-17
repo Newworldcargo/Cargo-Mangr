@@ -66,8 +66,9 @@
             <ol class="breadcrumb bg-light p-2 mb-0" style="font-size: 0.9rem; border-radius: 0.25rem;">
                 <li class="breadcrumb-item"><a href="#">Dashboard</a></li>
                 <li class="breadcrumb-item"><a href="{{ route('consignment.index') }}">Consignments</a></li>
-                <li class="breadcrumb-item"><a href="{{ route('consignment.show', $shipment->consignment_id) }}">Consignment
-                        Shipments</a></li>
+                @if($shipment->consignment_id)
+                    <li class="breadcrumb-item"><a href="{{ route('consignment.show', $shipment->consignment_id) }}">Consignment Shipments</a></li>
+                @endif
                 <li class="breadcrumb-item active" aria-current="page">Shipment - Invoice Details</li>
             </ol>
         </nav>

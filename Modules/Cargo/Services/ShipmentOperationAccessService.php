@@ -111,6 +111,33 @@ class ShipmentOperationAccessService
         return $this->hasPermission($user, $permission);
     }
 
+    public function canView(?User $user, Shipment $shipment): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        if ($this->branches->isTopAdmin($user)) {
+            return true;
+        }
+
+        if ((int) $user->role === 4) {
+            return (int) Client::where('user_id', $user->id)->value('id') === (int) $shipment->client_id;
+        }
+
+        if (!$this->branches->canAccessBranch($user, (int) $shipment->branch_id)) {
+            return false;
+        }
+
+        if ((int) $user->role === 3) {
+            return true;
+        }
+
+        return $user->can('manage-shipments')
+            || $user->can('view-shipments')
+            || ($shipment->booking_source && $user->can('view-online-bookings'));
+    }
+
     public function canCollectPayments(?User $user): bool
     {
         if (!$user) {

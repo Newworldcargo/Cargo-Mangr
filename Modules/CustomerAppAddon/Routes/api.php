@@ -19,6 +19,7 @@ use Modules\Cargo\Http\Controllers\ClientController;
 // Shipments Apis Routes
 Route::post('admin/shipments/create', [ShipmentController::class, 'storeAPI']);
 Route::get('shipments', [ShipmentController::class, 'getShipmentsAPI']);
+Route::get('online-bookings', [ShipmentController::class, 'getOnlineBookingsAPI']);
 Route::get('shipment-by-barcode', [ShipmentController::class, 'ajaxGetShipmentByBarcode']);
 
 Route::get('ConfirmationTypeMission', [ApiShipmentController::class, 'getConfirmationTypeMission']);

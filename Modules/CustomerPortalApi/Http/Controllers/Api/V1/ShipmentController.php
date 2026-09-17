@@ -4,11 +4,38 @@ namespace Modules\CustomerPortalApi\Http\Controllers\Api\V1;
 
 use Illuminate\Http\Request;
 use Modules\Cargo\Entities\Shipment;
+use Modules\Cargo\Entities\OnlineBookingRequest;
+use Modules\CustomerPortalApi\Http\Resources\OnlineBookingResource;
 use Modules\CustomerPortalApi\Http\Resources\PublicTrackingResource;
 use Modules\CustomerPortalApi\Http\Resources\ShipmentResource;
 
 class ShipmentController extends PortalController
 {
+    public function bookings(Request $request)
+    {
+        $client = $this->customerContext->client();
+        if (!$client) return $this->problem($request, 'FORBIDDEN', 'This account is not enabled for the customer portal.', 403);
+
+        $perPage = min(max((int) $request->query('per_page', 20), 1), config('customerportalapi.max_per_page', 50));
+        $paginator = OnlineBookingRequest::where('client_id', $client->id)->with('shipment:id,code')
+            ->orderByDesc('submitted_at')->orderByDesc('id')->cursorPaginate($perPage);
+
+        return $this->success($request, collect($paginator->items())
+            ->map(fn ($booking) => (new OnlineBookingResource($booking))->resolve($request))->values()->all(), 200, [
+                'nextCursor' => optional($paginator->nextCursor())->encode(),
+            ]);
+    }
+
+    public function booking(Request $request, $booking)
+    {
+        $client = $this->customerContext->client();
+        if (!$client) return $this->problem($request, 'FORBIDDEN', 'This account is not enabled for the customer portal.', 403);
+        $model = OnlineBookingRequest::where('client_id', $client->id)->with('shipment:id,code')->find($booking);
+        if (!$model) return $this->problem($request, 'NOT_FOUND', 'Booking not found.', 404);
+
+        return $this->success($request, (new OnlineBookingResource($model))->resolve($request));
+    }
+
     public function index(Request $request)
     {
         $client = $this->customerContext->client();

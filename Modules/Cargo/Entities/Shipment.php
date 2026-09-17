@@ -89,6 +89,7 @@ class Shipment extends Model implements HasMedia
         'captain_id',
         'prev_branch',
         'order_id',
+        'booking_source',
         'otp',
         'barcode',
         'created_at',

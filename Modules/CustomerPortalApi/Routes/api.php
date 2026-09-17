@@ -110,6 +110,8 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
     Route::patch('payment-methods/{method}/default', [PaymentMethodController::class, 'makeDefault'])->whereNumber('method');
 
     Route::get('shipment-drafts', [DraftQuoteController::class, 'drafts']);
+    Route::get('bookings', [ShipmentController::class, 'bookings']);
+    Route::get('bookings/{booking}', [ShipmentController::class, 'booking'])->whereNumber('booking');
     Route::post('shipment-drafts', [DraftQuoteController::class, 'createDraft']);
     Route::get('shipment-drafts/{draft}', [DraftQuoteController::class, 'showDraft'])->whereNumber('draft');
     Route::put('shipment-drafts/{draft}', [DraftQuoteController::class, 'updateDraft'])->whereNumber('draft');

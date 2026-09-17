@@ -14,6 +14,8 @@ use Modules\Cargo\Entities\Client;
 use Modules\Cargo\Entities\Country;
 use Modules\Cargo\Entities\Package;
 use Modules\Cargo\Entities\Shipment;
+use Modules\Cargo\Entities\OnlineBookingRequest;
+use Modules\Cargo\Services\OnlineBookingService;
 use Modules\Cargo\Entities\ShipmentSetting;
 use Modules\Cargo\Entities\State;
 use Modules\Cargo\Services\MobilePricingSettings;
@@ -379,7 +381,7 @@ class CustomerPortalApiTest extends TestCase
         ]);
     }
 
-    public function test_customer_draft_submit_creates_pending_shipment_with_cargo_rows()
+    public function test_customer_draft_submit_creates_booking_before_staff_acceptance()
     {
         list($user, $client) = $this->createCustomer('draft-submit@example.test');
         $branch = $this->createBranch();
@@ -442,7 +444,21 @@ class CustomerPortalApiTest extends TestCase
             ->assertJsonPath('data.status', 'pending')
             ->assertJsonPath('data.packageName', 'Shoes');
 
-        $shipment = Shipment::where('client_id', $client->id)->where('order_id', 'like', 'PORTAL-%')->firstOrFail();
+        $booking = OnlineBookingRequest::where('client_id', $client->id)->firstOrFail();
+        $this->assertSame('pending', $booking->status);
+        $this->assertNull($booking->shipment_id);
+        $this->assertSame(0, Shipment::where('client_id', $client->id)->count());
+        $this->actingAs($user, 'web')->getJson('/api/v1/bookings/' . $booking->id)
+            ->assertOk()->assertJsonPath('data.status', 'pending');
+
+        $admin = User::create([
+            'name' => 'Booking Manager', 'email' => 'booking-manager@example.test',
+            'password' => Hash::make('password'), 'role' => 1, 'verified' => true,
+        ]);
+        $shipment = app(OnlineBookingService::class)->convertToShipment($booking, $admin);
+        $this->assertSame('accepted', $booking->fresh()->status);
+        $this->assertSame($shipment->id, (int) $booking->fresh()->shipment_id);
+        $this->assertSame($shipment->id, app(OnlineBookingService::class)->convertToShipment($booking, $admin)->id);
         $this->assertSame($branch->id, (int) $shipment->branch_id);
         $this->assertSame(Shipment::REQUESTED_STATUS, (int) $shipment->status_id);
         $this->assertEquals(4.0, (float) $shipment->total_weight);

@@ -14,6 +14,7 @@ use Modules\Cargo\Http\Helpers\UserRegistrationHelper;
 use Modules\Users\Events\UserCreatedEvent;
 use Modules\Users\Events\UserUpdatedEvent;
 use Modules\Acl\Repositories\AclRepository;
+use Spatie\Permission\Models\Permission;
 
 class StaffController extends Controller
 {
@@ -104,6 +105,7 @@ class StaffController extends Controller
             throw new \Exception();
         }
         $this->syncBranchAccess($model, $request->input('branch_ids', []));
+        $this->syncOnlineBookingPermission($model, $response['user']);
         event(new UserCreatedEvent($response['user']));
         return redirect()->route('staffs.index')->with(['message_alert' => __('cargo::messages.created')]);
 
@@ -259,6 +261,7 @@ class StaffController extends Controller
             throw new \Exception();
         }
         $this->syncBranchAccess($model, $request->input('branch_ids', []));
+        $this->syncOnlineBookingPermission($model, $response['user']);
         event(new UserUpdatedEvent($response['user']));
         return redirect()->back()->with(['message_alert' => __('cargo::messages.saved')]);
     }
@@ -269,6 +272,30 @@ class StaffController extends Controller
         $staff->accessibleBranches()->sync(
             collect($branchIds)->filter()->map(fn ($id) => (int) $id)->unique()->values()->all()
         );
+    }
+
+    private function syncOnlineBookingPermission(Staff $staff, User $user): void
+    {
+        if (!Permission::where('name', 'view-online-bookings')->where('guard_name', 'web')->exists()) {
+            return;
+        }
+
+        $isLusakaStaff = Branch::whereKey($staff->branch_id)
+            ->where('name', 'like', '%Lusaka%')
+            ->exists();
+
+        if ($isLusakaStaff) {
+            $user->givePermissionTo('view-online-bookings');
+            if (Permission::where('name', 'manage-online-bookings')->where('guard_name', 'web')->exists()
+                && $user->can('edit-shipments')) {
+                $user->givePermissionTo('manage-online-bookings');
+            }
+        } else {
+            $user->revokePermissionTo('view-online-bookings');
+            if ($user->hasDirectPermission('manage-online-bookings')) {
+                $user->revokePermissionTo('manage-online-bookings');
+            }
+        }
     }
 
     /**

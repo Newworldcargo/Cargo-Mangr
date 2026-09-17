@@ -15,6 +15,7 @@ class ShipmentDraftResource extends JsonResource
             'payload' => $this->payload,
             'quoteId' => $this->quote_id ? (string) $this->quote_id : null,
             'shipmentId' => $this->shipment_id ? (string) $this->shipment_id : null,
+            'onlineBookingId' => $this->online_booking_id ? (string) $this->online_booking_id : null,
             'expiresAt' => $this->expires_at ? $this->expires_at->toIso8601String() : null,
             'revision' => (int) ($this->revision ?: 1),
             'createdAt' => $this->created_at ? $this->created_at->toIso8601String() : null,
