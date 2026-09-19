@@ -44,6 +44,7 @@ class MobileBookingQuoteController extends PortalController
             'onwardVehicleType' => ['nullable', 'in:scooter,small_van,cargo_van'],
             'fulfilment' => ['nullable', 'string', 'max:60'],
             'schedule' => ['nullable', 'string', 'max:60'],
+            'scheduledAt' => ['required_if:schedule,scheduled', 'nullable', 'date', 'after:now'],
             'cargo' => ['required', 'array'],
             'cargo.items' => ['sometimes', 'array', 'max:100'],
             'cargo.totalWeight' => ['nullable', 'numeric', 'min:0', 'max:100000'],
@@ -63,6 +64,12 @@ class MobileBookingQuoteController extends PortalController
             ]);
         }
 
+        // Existing non-USD rates must be reviewed by an administrator, never relabelled.
+        $currency = strtoupper((string) (ShipmentSetting::getVal('mobile_pricing_currency') ?: config('customerportalapi.booking_pricing.currency', 'USD')));
+        if ($currency !== 'USD') {
+            return $this->problem($request, 'PRICING_NOT_CONFIGURED', 'USD pricing is not configured. Review and save mobile rates in USD.', 503, [], false);
+        }
+
         try {
             $calculation = $calculator->calculate($input, $pricingSettings->ratesFor($input, $this->pricingRates()));
         } catch (UnsupportedMobilePricingRoute $exception) {
@@ -72,7 +79,7 @@ class MobileBookingQuoteController extends PortalController
         }
 
         $client = $this->customerContext->requireClient();
-        $currency = strtoupper((string) (ShipmentSetting::getVal('mobile_pricing_currency') ?: config('customerportalapi.booking_pricing.currency', 'ZMW')));
+
         $expiresAt = now()->addMinutes(max(1, (int) config('customerportalapi.booking_pricing.quote_minutes', 15)));
         $quote = PortalQuote::create([
             'client_id' => $client->id,
@@ -120,13 +127,9 @@ class MobileBookingQuoteController extends PortalController
 
     private function pricingRates(): array
     {
-        $rates = (array) config('customerportalapi.booking_pricing.services', []);
-        $configuredBase = $rates['local']['base_fee'] ?? null;
-        $configuredPerKm = $rates['local']['per_km'] ?? null;
-        $rates['local']['base_fee'] = is_numeric($configuredBase) ? (float) $configuredBase : (float) ShipmentSetting::getCost('def_shipping_cost');
-        $rates['local']['per_km'] = is_numeric($configuredPerKm) ? (float) $configuredPerKm : (float) ShipmentSetting::getCost('def_mile_cost');
-
-        return $rates;
+        // Legacy shipment fees may use another currency. Only explicitly configured
+        // mobile rates can be used for USD quotes; admin mobile settings override these.
+        return (array) config('customerportalapi.booking_pricing.services', []);
     }
 
     private function bookingTypeMatchesService(string $service, string $bookingType): bool

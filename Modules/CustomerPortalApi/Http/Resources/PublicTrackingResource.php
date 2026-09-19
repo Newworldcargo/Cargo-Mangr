@@ -11,7 +11,16 @@ class PublicTrackingResource extends JsonResource
         $shipment = new ShipmentResource($this->resource);
         $payload = $shipment->resolve($request);
 
-        unset($payload['customerId'], $payload['price'], $payload['allowedActions'], $payload['nextAction']);
+        // This endpoint is unauthenticated: anyone holding a tracking number can
+        // read it. Redaction here is a denylist, so every field added to
+        // ShipmentResource is public by default and must be removed explicitly.
+        unset(
+            $payload['customerId'],
+            $payload['price'],
+            $payload['allowedActions'],
+            $payload['nextAction'],
+            $payload['confirmationCode']
+        );
 
         return $payload;
     }

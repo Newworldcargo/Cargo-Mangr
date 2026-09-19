@@ -18,6 +18,7 @@ use Modules\Cargo\Entities\Package;
 use Modules\Cargo\Entities\PackageShipment;
 use Modules\Cargo\Entities\Shipment;
 use Modules\Cargo\Entities\ShipmentSetting;
+use Modules\Cargo\Http\Helpers\MissionPRNG;
 use Modules\Cargo\Entities\State;
 
 class DraftQuoteController extends PortalController
@@ -160,6 +161,10 @@ class DraftQuoteController extends PortalController
                     'amount_to_be_collected' => $quotedTotal,
                     'attachments_before_shipping' => $evidence ? json_encode($evidence) : null,
                 ]);
+                // Shared handover secret. The courier verifies this against the
+                // customer's copy in MissionController for DELIVERY_TYPE missions,
+                // so it must exist before the shipment can be confirmed.
+                $shipment->otp = MissionPRNG::get();
                 $width = max(5, (int) (ShipmentSetting::getVal('shipment_code_count') ?: 5));
                 $shipment->barcode = str_pad((string) $shipment->id, $width, '0', STR_PAD_LEFT);
                 $shipment->code = (string) (ShipmentSetting::getVal('shipment_prefix') ?: 'NWC') . $shipment->barcode;

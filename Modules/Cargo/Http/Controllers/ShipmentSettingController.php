@@ -118,7 +118,7 @@ class ShipmentSettingController extends Controller
     public function storeMobilePricing(Request $request, MobilePricingSettings $mobilePricing)
     {
         $request->validate([
-            'currency' => ['required', 'string', 'size:3', 'regex:/^[A-Za-z]{3}$/'],
+            'currency' => ['required', 'string', 'in:USD'],
             'pricing' => ['required', 'array'],
             'pricing.*' => ['nullable', 'numeric', 'min:0'],
             'intercity_routes' => ['nullable', 'array'],

@@ -44,7 +44,7 @@ return [
     'payment_webhook_token' => env('CUSTOMER_PORTAL_PAYMENT_WEBHOOK_TOKEN'),
 
     'booking_pricing' => [
-        'currency' => env('CUSTOMER_PORTAL_BOOKING_CURRENCY', 'ZMW'),
+        'currency' => env('CUSTOMER_PORTAL_BOOKING_CURRENCY', 'USD'),
         'quote_minutes' => (int) env('CUSTOMER_PORTAL_BOOKING_QUOTE_MINUTES', 15),
         'require_signed_quote' => (bool) env('CUSTOMER_PORTAL_REQUIRE_SIGNED_BOOKING_QUOTE', true),
         'services' => [

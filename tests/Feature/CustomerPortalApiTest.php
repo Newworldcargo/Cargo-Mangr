@@ -24,6 +24,54 @@ class CustomerPortalApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_scheduled_usd_quote_can_be_verified_with_the_original_mobile_request()
+    {
+        list($customer, $client) = $this->createCustomer('scheduled-quote@example.test');
+        config(['customerportalapi.booking_pricing.currency' => 'USD']);
+        ShipmentSetting::create(['key' => 'mobile_pricing_currency', 'value' => 'USD']);
+        ShipmentSetting::create(['key' => 'mobile_pricing_local_base_fee', 'value' => '12']);
+        ShipmentSetting::create(['key' => 'mobile_pricing_local_per_km', 'value' => '0']);
+        $payload = [
+            'service' => 'local', 'bookingType' => 'local_delivery',
+            'pickup' => ['city' => 'Lusaka'], 'destination' => ['city' => 'Lusaka'],
+            'schedule' => 'scheduled', 'scheduledAt' => now()->addDay()->toIso8601String(),
+            'cargo' => ['items' => [], 'fragile' => false, 'packageType' => 'standard'],
+        ];
+        $response = $this->actingAs($customer, 'web')
+            ->withSession(['_token' => 'test-csrf-token'])
+            ->withHeader('X-CSRF-Token', 'test-csrf-token')
+            ->postJson('/api/v1/bookings/quote', $payload)
+            ->assertCreated()->assertJsonPath('data.currency', 'USD')
+            ->assertJsonPath('data.formattedTotal', 'USD 12.00');
+        $pricing = [
+            'request' => $payload,
+            'quotePayload' => $response->json('data.quotePayload'),
+            'quoteSignature' => $response->json('data.quoteSignature'),
+            'quoteSource' => 'server',
+        ];
+        $signer = app(\Modules\CustomerPortalApi\Services\Pricing\MobileBookingQuoteSigner::class);
+        $quote = $signer->requireValidQuote($pricing, $client->id, 'local');
+        $this->assertSame('USD', $quote->currency);
+        $pricing['request']['scheduledAt'] = now()->addDays(2)->toIso8601String();
+        $this->expectException(\InvalidArgumentException::class);
+        $signer->requireValidQuote($pricing, $client->id, 'local');
+    }
+
+    public function test_mobile_quotes_do_not_relabel_existing_non_usd_rates()
+    {
+        list($customer) = $this->createCustomer('currency-quote@example.test');
+        ShipmentSetting::create(['key' => 'mobile_pricing_currency', 'value' => 'ZMW']);
+        $this->actingAs($customer, 'web')
+            ->withSession(['_token' => 'test-csrf-token'])
+            ->withHeader('X-CSRF-Token', 'test-csrf-token')
+            ->postJson('/api/v1/bookings/quote', [
+                'service' => 'local', 'bookingType' => 'local_delivery',
+                'pickup' => ['city' => 'Lusaka'], 'destination' => ['city' => 'Lusaka'],
+                'cargo' => ['fragile' => false],
+            ])->assertStatus(503)->assertJsonPath('error.code', 'PRICING_NOT_CONFIGURED');
+    }
+
+
     public function test_mobile_telemetry_accepts_allowlisted_redacted_events()
     {
         $this->postJson('/api/v1/telemetry/events', [
@@ -362,7 +410,7 @@ class CustomerPortalApiTest extends TestCase
         ]);
 
         $this->actingAs($admin)->post(route('shipments.settings.fees.mobile-pricing.store'), [
-            'currency' => 'ZMW',
+            'currency' => 'USD',
             'pricing' => ['local_base_fee' => 55, 'local_per_km' => 6, 'local_per_kg' => 2],
             'intercity_routes' => [
                 $origin->id => [

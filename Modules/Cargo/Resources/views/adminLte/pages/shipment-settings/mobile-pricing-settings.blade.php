@@ -29,10 +29,10 @@
             <div class="row">
                 <div class="form-group col-md-4">
                     <label>Currency</label>
-                    <input class="form-control text-uppercase" name="currency" maxlength="3" value="{{ old('currency', Modules\Cargo\Entities\ShipmentSetting::getVal('mobile_pricing_currency') ?: 'ZMW') }}" required>
+                    <input class="form-control text-uppercase" name="currency" maxlength="3" value="{{ old('currency', Modules\Cargo\Entities\ShipmentSetting::getVal('mobile_pricing_currency') ?: 'USD') }}" required>
                 </div>
             </div>
-            <p class="pricing-help mb-0">Amounts are entered in the selected currency. Per-kilometre and per-kilogram charges may be zero when intentionally unused. Every enabled service or route needs a positive base fee.</p>
+            <p class="pricing-help mb-0">Enter all mobile rates in USD. If existing rates use another currency, review and replace every rate before saving; changing the currency does not convert amounts. Per-kilometre and per-kilogram charges may be zero when intentionally unused. Every enabled service or route needs a positive base fee.</p>
         </div>
     </div>
 

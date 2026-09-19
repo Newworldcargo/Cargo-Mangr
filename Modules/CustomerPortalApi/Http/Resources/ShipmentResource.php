@@ -26,6 +26,11 @@ class ShipmentResource extends JsonResource
             'id' => (string) $this->id,
             'customerId' => (string) $this->client_id,
             'trackingNumber' => (string) $this->code,
+            // Shared handover secret, returned only on this customer-scoped
+            // resource. It must never reach PublicTrackingResource, which is
+            // unauthenticated -- anyone holding a tracking number could
+            // otherwise collect someone else's parcel.
+            'confirmationCode' => $this->otp ? (string) $this->otp : null,
             'consignmentCode' => optional($consignment)->consignment_code,
             'carrier' => optional($consignment)->shipping_line ?: 'New World Cargo',
             'transportMode' => $mode,
