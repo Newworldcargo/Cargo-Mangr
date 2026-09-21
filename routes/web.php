@@ -97,6 +97,9 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/currency/update-rates', 'CurrencyExchangeController@updateRates')->name('currency.update_rates');
     Route::get('/twilio-settings', 'TwilioSettingController@index')->name('twilio.settings');
     Route::post('/twilio-setting', 'TwilioSettingController@store')->name('twilio.settings.store');
+    Route::get('/messaging', 'MessagingController@index')->name('messaging.index');
+    Route::post('/messaging/settings', 'MessagingController@store')->name('messaging.settings');
+    Route::post('/messaging/campaigns', 'MessagingController@campaign')->name('messaging.campaign');
     Route::post('/currency/delete', 'CurrencyExchangeController@reset')->name('currency-reset');
 
     Route::get('/transactions', 'TransxnController@index')->name('transxn.index');

@@ -140,6 +140,9 @@
                         'shipping-rates',
                         'shipping-settings',
                         'twilio-settings',
+                        'manage-messaging-settings',
+                        'send-bulk-messages',
+                        'view-messaging-history',
                         'manage-tracking-stages',
                     ];
                     $canSeeSettingsMenu = $user_role == 1 || collect($settingMenuPermissions)->contains(fn ($permission) => auth()->user()->can($permission));

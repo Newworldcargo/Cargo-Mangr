@@ -27,6 +27,13 @@ class PortalOtpNotifier
             return;
         }
 
+        if (\App\Models\MessagingSetting::current()->email_enabled) {
+            app(\App\Services\Messaging\Outbox::class)->enqueue('email', 'otp', $user->email,
+                ['otp' => $otp, 'name' => $user->name, 'user_id' => $user->id],
+                'otp:' . $user->id . ':' . hash('sha256', $otp), $user->otp_expires_at ?: now()->addMinutes(10));
+            return;
+        }
+
         try {
             Mail::to($user->email)->send(new OTPMail($otp, $user->name));
         } catch (\Throwable $exception) {
@@ -40,6 +47,12 @@ class PortalOtpNotifier
 
     private function sendSms(User $user, string $otp): void
     {
+        if (\App\Models\MessagingSetting::current()->sms_enabled) {
+            app(\App\Services\Messaging\Outbox::class)->enqueue('sms', 'otp', (string) ($user->responsible_mobile ?: $user->secondary_mobile),
+                ['body' => "Your New World Cargo verification code is {$otp}. It expires in 10 minutes.", 'otp' => $otp, 'user_id' => $user->id],
+                'otp:' . $user->id . ':' . hash('sha256', $otp), $user->otp_expires_at ?: now()->addMinutes(10));
+            return;
+        }
         $webhookUrl = trim((string) config('customerportalapi.otp_sms_webhook_url', ''));
         $phone = trim((string) ($user->responsible_mobile ?: $user->secondary_mobile));
 

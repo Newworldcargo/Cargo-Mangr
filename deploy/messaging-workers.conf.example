@@ -1,0 +1,57 @@
+; Install only after reviewing paths, account limits, and the messaging runbook.
+; Dedicated queues: never point these workers at an existing application's queue.
+[program:nwc-messaging-otp]
+directory=/home/newworldcargo/web/admin.newworldcargo.com/public_html
+command=/usr/bin/php artisan queue:work messaging --queue=otp --sleep=1 --rest=1 --timeout=45 --memory=128 --max-jobs=500 --max-time=3600
+user=newworldcargo
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+stopwaitsecs=130
+redirect_stderr=true
+stdout_logfile=/home/newworldcargo/web/admin.newworldcargo.com/public_html/storage/logs/messaging-otp.log
+stdout_logfile_maxbytes=10MB
+stdout_logfile_backups=3
+
+[program:nwc-messaging-notifications]
+directory=/home/newworldcargo/web/admin.newworldcargo.com/public_html
+command=/usr/bin/php artisan queue:work messaging --queue=notifications --sleep=1 --rest=1 --timeout=45 --memory=128 --max-jobs=500 --max-time=3600
+user=newworldcargo
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+stopwaitsecs=130
+redirect_stderr=true
+stdout_logfile=/home/newworldcargo/web/admin.newworldcargo.com/public_html/storage/logs/messaging-notifications.log
+stdout_logfile_maxbytes=10MB
+stdout_logfile_backups=3
+
+[program:nwc-messaging-bulk]
+directory=/home/newworldcargo/web/admin.newworldcargo.com/public_html
+command=/usr/bin/php artisan queue:work messaging --queue=bulk --sleep=1 --rest=1 --timeout=45 --memory=128 --max-jobs=500 --max-time=3600
+user=newworldcargo
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+stopwaitsecs=130
+redirect_stderr=true
+stdout_logfile=/home/newworldcargo/web/admin.newworldcargo.com/public_html/storage/logs/messaging-bulk.log
+stdout_logfile_maxbytes=10MB
+stdout_logfile_backups=3
+
+[program:nwc-messaging-campaigns]
+directory=/home/newworldcargo/web/admin.newworldcargo.com/public_html
+command=/usr/bin/php artisan queue:work messaging --queue=campaigns --sleep=2 --rest=1 --timeout=60 --memory=128 --max-jobs=200 --max-time=3600
+user=newworldcargo
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+stopwaitsecs=130
+redirect_stderr=true
+stdout_logfile=/home/newworldcargo/web/admin.newworldcargo.com/public_html/storage/logs/messaging-campaigns.log
+stdout_logfile_maxbytes=10MB
+stdout_logfile_backups=3

@@ -1009,7 +1009,7 @@ if (!function_exists('get_notification_gateways')) {
             if ($settings->email) {
                 $gateways[] = 'mail';
             }
-            if ($settings->sms) {
+            if ($settings->sms || \App\Models\MessagingSetting::current()->sms_enabled) {
                 $gateways[] = 'sms';
             }
             if ($settings->fcm) {

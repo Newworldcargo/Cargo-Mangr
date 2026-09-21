@@ -38,12 +38,12 @@ class GlobalNotification extends Notification
     {
         
         if (!$this->gateway){
-            return ['mail', 'database'];
+            return [\App\Models\MessagingSetting::current()->email_enabled ? \App\Channels\QueuedNotificationMailChannel::class : 'mail', 'database'];
         }else{
             $arr = [];
             foreach ($this->gateway as $gateway){
                 if ($gateway == 'mail' || $gateway == 'email'){
-                    $arr[] = 'mail';
+                    $arr[] = \App\Models\MessagingSetting::current()->email_enabled ? \App\Channels\QueuedNotificationMailChannel::class : 'mail';
                 } elseif ($gateway == 'system' || $gateway == 'database'){
                     $arr[] = 'database';
                 } elseif ($gateway == 'fcm'){
@@ -74,6 +74,14 @@ class GlobalNotification extends Notification
     public function toSms($notifiable)
     {
         $params = $this->data;
+        if (\App\Models\MessagingSetting::current()->sms_enabled) {
+            $purpose = (int) $notifiable->role === 4 ? 'customer_notifications' : 'staff_notifications';
+            $phone = (string) ($params['phone'] ?? '');
+            if (!\App\Services\Messaging\Outbox::phone($phone)) $phone = ($params['country_code'] ?? '') . $phone;
+            return app(\App\Services\Messaging\Outbox::class)->enqueue('sms', $purpose, $phone,
+                ['body' => $params['message']['subject'] ?? 'New World Cargo update'],
+                'notification:' . ($this->id ?: Str::uuid()) . ':' . $notifiable->id);
+        }
       
        	$NotificationSettings = resolve(NotificationsSettings::class)->toArray();
       	$notifications = json_decode($NotificationSettings['sms'], true);

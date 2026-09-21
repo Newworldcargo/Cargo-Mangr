@@ -104,7 +104,12 @@ class OTPVerificationController extends Controller
             $user->save();
 
             // Here, send OTP via email or SMS
-            Mail::to($user->email)->send(new OTPMail($user->otp, $user->name));
+            $messaging = \App\Models\MessagingSetting::current();
+            if ($messaging->sms_enabled || $messaging->email_enabled) {
+                app(\Modules\CustomerPortalApi\Services\Portal\PortalOtpNotifier::class)->sendVerification($user);
+            } else {
+                Mail::to($user->email)->send(new OTPMail($user->otp, $user->name));
+            }
 
             // Never write the one-time code itself to application logs.
             Log::info('OTP resent to user', [

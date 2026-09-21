@@ -26,6 +26,7 @@ class Kernel extends ConsoleKernel
     {
         // $schedule->command('inspire')->hourly();
         $schedule->command('media-library:delete-old-temporary-uploads')->daily();
+        $schedule->command('messaging:recover')->everyFiveMinutes()->withoutOverlapping();
         // Refresh exchange rates daily (floatrates, fallback open.er-api) so rates never need manual updating
         // Temporarily disabled: generic market feed must not overwrite the bank-aligned operational rate.
         // $schedule->command('rates:sync')->dailyAt('02:00');

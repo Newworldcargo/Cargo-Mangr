@@ -68,6 +68,9 @@ $admin = 1;
     </li>
 @endif
 
+    @if ($user_role == $admin || auth()->user()->can('manage-messaging-settings') || auth()->user()->can('send-bulk-messages') || auth()->user()->can('view-messaging-history'))
+    <li class="nav-item"><a href="{{ route('messaging.index') }}" class="nav-link"><i class="fas fa-sms nav-icon"></i><p>Messaging (MTN)</p></a></li>
+    @endif
 @if (auth()->user()->can('twilio-settings') || $user_role == $admin)
     <li class="nav-item {{ areActiveRoutes(['twilio.settings'], 'menu-is-opening menu-open active') }}">
         <a href="{{ fr_route('twilio.settings') }}"
