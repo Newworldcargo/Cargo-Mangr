@@ -116,12 +116,16 @@ class DraftQuoteController extends PortalController
 
         $client = $this->customerContext->requireClient();
         $quote = null;
-        if ((bool) config('customerportalapi.booking_pricing.require_signed_quote', true)) {
+        $service = (string) ($payload['service'] ?? '');
+        $signedQuoteServices = (array) config('customerportalapi.booking_pricing.signed_quote_services', ['local', 'import']);
+        $requiresSignedQuote = (bool) config('customerportalapi.booking_pricing.require_signed_quote', true)
+            && in_array($service, $signedQuoteServices, true);
+        if ($requiresSignedQuote) {
             try {
                 $quote = app(MobileBookingQuoteSigner::class)->requireValidQuote(
                     (array) ($payload['pricing'] ?? []),
                     (int) $client->id,
-                    (string) ($payload['service'] ?? '')
+                    $service
                 );
             } catch (\InvalidArgumentException $exception) {
                 return $this->problem($request, 'QUOTE_REQUIRED', 'Request a fresh server price before submitting this booking.', 422, [], true);

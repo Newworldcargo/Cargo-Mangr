@@ -47,6 +47,10 @@ return [
         'currency' => env('CUSTOMER_PORTAL_BOOKING_CURRENCY', 'ZMW'),
         'quote_minutes' => (int) env('CUSTOMER_PORTAL_BOOKING_QUOTE_MINUTES', 15),
         'require_signed_quote' => (bool) env('CUSTOMER_PORTAL_REQUIRE_SIGNED_BOOKING_QUOTE', true),
+        'signed_quote_services' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', env('CUSTOMER_PORTAL_SIGNED_QUOTE_SERVICES', 'local,import'))
+        ))),
         'services' => [
             'local' => [
                 'base_fee' => env('CUSTOMER_PORTAL_LOCAL_BASE_FEE'),

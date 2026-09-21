@@ -467,6 +467,48 @@ class CustomerPortalApiTest extends TestCase
         $this->assertCount(2, $shipment->packageShipments);
     }
 
+    public function test_manually_priced_services_submit_without_a_quote()
+    {
+        $branch = $this->createBranch();
+        Package::create(['name' => 'General cargo', 'cost' => 0]);
+
+        foreach (['intercity', 'custom'] as $service) {
+            list($user, $client) = $this->createCustomer($service . '-booking@example.test');
+            $draftResponse = $this->actingAs($user, 'web')
+                ->withSession(['_token' => 'test-csrf-token'])
+                ->withHeader('X-CSRF-Token', 'test-csrf-token')
+                ->postJson('/api/v1/shipment-drafts', [
+                    'payload' => [
+                        'service' => $service,
+                        'form' => [
+                            'pickup' => 'Lusaka, Zambia',
+                            'destination' => 'Kitwe, Zambia',
+                            'pickupBranchId' => (string) $branch->id,
+                            'recipient' => 'Test Recipient',
+                            'phone' => '+260971000000',
+                        ],
+                        'cargoRows' => [
+                            ['name' => 'General cargo', 'quantity' => 1],
+                        ],
+                    ],
+                ]);
+
+            $draftResponse->assertCreated();
+            $this->actingAs($user, 'web')
+                ->withSession(['_token' => 'test-csrf-token'])
+                ->withHeader('X-CSRF-Token', 'test-csrf-token')
+                ->postJson('/api/v1/shipment-drafts/' . $draftResponse->json('data.id') . '/submit')
+                ->assertCreated()
+                ->assertJsonPath('data.customerId', (string) $client->id)
+                ->assertJsonPath('data.status', 'pending');
+
+            $booking = OnlineBookingRequest::where('client_id', $client->id)->firstOrFail();
+            $this->assertSame($service, $booking->service);
+            $this->assertEquals(0, (float) $booking->quoted_amount);
+            $this->assertNull($booking->shipment_id);
+        }
+    }
+
     private function createCustomer($email)
     {
         $user = User::create([
