@@ -155,6 +155,11 @@
                                 &nbsp;
                                 <span>Audit Trails</span>
                             </button>
+                            @if (app(\Modules\Cargo\Services\ShipmentDispatchService::class)->canManage(auth()->user(), $shipment) && app(\Modules\Cargo\Services\ShipmentDispatchService::class)->eligible($shipment))
+                                <button type="button" class="btn btn-primary" data-dispatch-shipment="{{ $shipment->id }}" data-dispatch-code="{{ $shipment->code }}">
+                                    <i class="fas fa-truck-loading mr-1" aria-hidden="true"></i> Send to dispatch
+                                </button>
+                            @endif
                             @if ($canApproveRefundRequests)
                                 <a href="{{ fr_route('refund-requests.index') }}"
                                     class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
@@ -1457,6 +1462,7 @@
 
 
             @include('cargo::adminLte.pages.shipments._partials.cargo-payment-modal')
+            @include('cargo::adminLte.pages.dispatch.modal')
         </div>
     </div>
 @endsection

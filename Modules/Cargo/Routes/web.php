@@ -191,6 +191,9 @@ if (\Illuminate\Support\Facades\Schema::hasTable('translations') && check_module
                 Route::post('import/parse', 'ShipmentController@parseImport')->name('shipments.import_parse');
                 Route::get('add-shipment-api','ShipmentController@ShipmentApis')->name('shipments.add.api');
                 Route::get('online-bookings', 'OnlineBookingController@index')->name('shipments.online-bookings');
+                Route::get('dispatch', 'DispatchController@index')->name('shipments.dispatch.index');
+                Route::get('dispatch/{shipment}/drivers', 'DispatchController@drivers')->name('shipments.dispatch.drivers');
+                Route::post('dispatch/{shipment}', 'DispatchController@store')->name('shipments.dispatch.store');
                 Route::get('online-bookings/feed', 'OnlineBookingController@feed')->name('shipments.online-bookings.feed');
                 Route::get('online-bookings/{onlineBooking}', 'OnlineBookingController@show')->name('shipments.online-bookings.show');
                 Route::patch('online-bookings/{onlineBooking}', 'OnlineBookingController@update')->name('shipments.online-bookings.update');
@@ -511,6 +514,9 @@ if (\Illuminate\Support\Facades\Schema::hasTable('translations') && check_module
             Route::post('import/parse', 'ShipmentController@parseImport')->name('shipments.import_parse');
             Route::get('add-shipment-api','ShipmentController@ShipmentApis')->name('shipments.add.api');
             Route::get('online-bookings', 'OnlineBookingController@index')->name('shipments.online-bookings');
+            Route::get('dispatch', 'DispatchController@index')->name('shipments.dispatch.index');
+            Route::get('dispatch/{shipment}/drivers', 'DispatchController@drivers')->name('shipments.dispatch.drivers');
+            Route::post('dispatch/{shipment}', 'DispatchController@store')->name('shipments.dispatch.store');
             Route::get('online-bookings/feed', 'OnlineBookingController@feed')->name('shipments.online-bookings.feed');
             Route::get('online-bookings/{onlineBooking}', 'OnlineBookingController@show')->name('shipments.online-bookings.show');
             Route::patch('online-bookings/{onlineBooking}', 'OnlineBookingController@update')->name('shipments.online-bookings.update');

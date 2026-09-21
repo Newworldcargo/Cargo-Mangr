@@ -337,6 +337,15 @@ $user_role == $driver)
 
 
 
+@if (app(\Modules\Cargo\Services\ShipmentDispatchService::class)->canView(auth()->user()))
+<li class="nav-item">
+    <a href="{{ fr_route('shipments.dispatch.index') }}" class="nav-link {{ areActiveRoutes(['shipments.dispatch.index']) }}">
+        <i class="fas fa-truck-loading"></i>
+        <p>Dispatch</p>
+    </a>
+</li>
+@endif
+
 @if (auth()->user()->can('manage-branches') ||
 auth()->user()->can('manage-customers') ||
 auth()->user()->can('manage-drivers') ||

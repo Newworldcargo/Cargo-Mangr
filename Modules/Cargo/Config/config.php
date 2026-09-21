@@ -25,6 +25,8 @@ return [
     'permissions' => [
         'shipments' => [ // this group is required if you want add any module setting, because the permissions are created under this group with the same name (setting)
             'manage-shipments',
+            'view-dispatch',
+            'manage-dispatch',
             'view-shipments',
             'view-online-bookings',
             'manage-online-bookings',
