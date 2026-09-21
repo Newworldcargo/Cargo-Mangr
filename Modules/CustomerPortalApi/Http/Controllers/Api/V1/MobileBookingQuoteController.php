@@ -57,6 +57,11 @@ class MobileBookingQuoteController extends PortalController
         }
 
         $input = $validator->validated();
+        try {
+            app(\Modules\CustomerPortalApi\Services\BookingServiceArea::class)->validate($input['service'], $input['pickup'], $input['destination']);
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            return $this->problem($request, 'OUTSIDE_SERVICE_AREA', collect($exception->errors())->flatten()->first(), 422, $exception->errors());
+        }
         if (!$this->bookingTypeMatchesService($input['service'], $input['bookingType'])) {
             return $this->problem($request, 'VALIDATION_FAILED', 'The booking type does not match the selected service.', 422, [
                 'bookingType' => ['Select the correct booking type for this service.'],

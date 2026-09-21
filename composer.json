@@ -32,6 +32,7 @@
         "livewire/livewire": "^2.0",
         "mcamara/laravel-localization": "^1.7",
         "milon/barcode": "^8.0",
+        "mjaschen/phpgeo": "^4.2",
         "nesbot/carbon": "^2.67",
         "nexmo/client": "^2.4",
         "nwidart/laravel-modules": "8.2",

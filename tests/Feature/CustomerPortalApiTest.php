@@ -320,8 +320,8 @@ class CustomerPortalApiTest extends TestCase
         $payload = [
             'service' => 'intercity',
             'bookingType' => 'city_to_city',
-            'pickup' => ['city' => 'Lusaka', 'branchId' => (string) $origin->id],
-            'destination' => ['city' => 'Kitwe', 'branchId' => (string) $destination->id],
+            'pickup' => ['city' => 'Lusaka', 'branchId' => (string) $origin->id, 'latitude' => -15.3875, 'longitude' => 28.3228],
+            'destination' => ['city' => 'Kitwe', 'branchId' => (string) $destination->id, 'latitude' => -12.8024, 'longitude' => 28.2132],
             'cargo' => ['items' => [], 'totalWeight' => 2, 'fragile' => true, 'packageType' => 'container'],
         ];
         $request = fn (array $body) => $this->actingAs($customer, 'web')
@@ -415,6 +415,10 @@ class CustomerPortalApiTest extends TestCase
                     'form' => [
                         'pickup' => 'Roma, Lusaka',
                         'destination' => 'Longacres, Lusaka',
+                        'pickupLatitude' => -15.3665,
+                        'pickupLongitude' => 28.3206,
+                        'destinationLatitude' => -15.4162,
+                        'destinationLongitude' => 28.3074,
                         'pickupBranchId' => (string) $branch->id,
                         'recipient' => 'George Munganga',
                         'phone' => '+260971000000',
@@ -483,6 +487,10 @@ class CustomerPortalApiTest extends TestCase
                         'form' => [
                             'pickup' => 'Lusaka, Zambia',
                             'destination' => 'Kitwe, Zambia',
+                            'pickupLatitude' => -15.3875,
+                            'pickupLongitude' => 28.3228,
+                            'destinationLatitude' => -12.8024,
+                            'destinationLongitude' => 28.2132,
                             'pickupBranchId' => (string) $branch->id,
                             'recipient' => 'Test Recipient',
                             'phone' => '+260971000000',
@@ -507,6 +515,24 @@ class CustomerPortalApiTest extends TestCase
             $this->assertEquals(0, (float) $booking->quoted_amount);
             $this->assertNull($booking->shipment_id);
         }
+    }
+
+    public function test_out_of_zone_draft_submission_does_not_create_a_booking()
+    {
+        [$user, $client] = $this->createCustomer('zone-check@example.test');
+        $request = fn ($url, $body = []) => $this->actingAs($user, 'web')
+            ->withSession(['_token' => 'test-csrf-token'])
+            ->withHeader('X-CSRF-Token', 'test-csrf-token')->postJson($url, $body);
+        foreach (['local', 'intercity'] as $service) {
+            $draft = $request('/api/v1/shipment-drafts', ['payload' => [
+                'service' => $service,
+                'form' => ['pickup' => 'Lusaka', 'destination' => 'Harare',
+                    'pickupLatitude' => -15.3875, 'pickupLongitude' => 28.3228,
+                    'destinationLatitude' => -17.8252, 'destinationLongitude' => 31.0335],
+            ]])->assertCreated();
+            $request('/api/v1/shipment-drafts/' . $draft->json('data.id') . '/submit')->assertStatus(422);
+        }
+        $this->assertSame(0, OnlineBookingRequest::where('client_id', $client->id)->count());
     }
 
     private function createCustomer($email)

@@ -100,6 +100,13 @@ class DraftQuoteController extends PortalController
 
         $payload = (array) $model->payload;
         $form = (array) ($payload['form'] ?? []);
+        try {
+            app(\Modules\CustomerPortalApi\Services\BookingServiceArea::class)->validate((string) ($payload['service'] ?? ''),
+                ['latitude' => $form['pickupLatitude'] ?? null, 'longitude' => $form['pickupLongitude'] ?? null],
+                ['latitude' => $form['destinationLatitude'] ?? null, 'longitude' => $form['destinationLongitude'] ?? null]);
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            return $this->problem($request, 'OUTSIDE_SERVICE_AREA', collect($exception->errors())->flatten()->first(), 422, $exception->errors());
+        }
         $cargoRows = $this->normaliseCargoRows((array) ($payload['cargoRows'] ?? []));
         $validator = Validator::make([
             'pickup' => $form['pickup'] ?? null,
