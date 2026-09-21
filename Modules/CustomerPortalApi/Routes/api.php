@@ -88,6 +88,8 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
     Route::patch('recipients/{recipient}', [RecipientController::class, 'update'])->whereNumber('recipient');
     Route::delete('recipients/{recipient}', [RecipientController::class, 'destroy'])->whereNumber('recipient');
 
+    Route::get('shipments/{shipment}/payments', [\Modules\CustomerPortalApi\Http\Controllers\Api\V1\ShipmentPaymentController::class, 'summary'])->whereNumber('shipment');
+    Route::get('shipments/{shipment}/receipts/{receipt}', [\Modules\CustomerPortalApi\Http\Controllers\Api\V1\ShipmentPaymentController::class, 'receipt'])->whereNumber('shipment')->where('receipt', '(payment|transaction|legacy)-[0-9]+');
     Route::get('invoices', [InvoiceController::class, 'index']);
     Route::get('invoices/{invoice}', [InvoiceController::class, 'show'])->whereNumber('invoice');
     Route::get('invoices/{invoice}/receipt-document', [InvoiceDocumentController::class, 'receipt'])->whereNumber('invoice');
