@@ -9,10 +9,9 @@ use Illuminate\Support\Facades\Http;
 
 class MtnClient
 {
-    public function send(OutboundMessage $message, MessagingSetting $settings): string
+    public function authenticate(MessagingSetting $settings): string
     {
-        $sender = $message->purpose === 'otp' ? $settings->sender_otp : $settings->sender_txn;
-        if (!$settings->email || !$settings->password || !$sender) throw new RejectedSend('MTN account or approved sender is missing.');
+        if (!$settings->email || !$settings->password) throw new RejectedSend('MTN account credentials are missing.');
         $cacheKey = 'mtn-token:' . hash('sha256', $settings->email . $settings->password);
         try {
             $token = Cache::lock($cacheKey . ':lock', 20)->block(2, function () use ($cacheKey, $settings) {
@@ -40,6 +39,15 @@ class MtnClient
             Cache::put($cacheKey . ':cooldown', true, 30);
             throw new RetryableSend('MTN authentication is temporarily unavailable.');
         }
+        return $token;
+    }
+
+    public function send(OutboundMessage $message, MessagingSetting $settings): string
+    {
+        $sender = $message->purpose === 'otp' ? $settings->sender_otp : $settings->sender_txn;
+        if (!$sender) throw new RejectedSend('MTN approved sender is missing.');
+        $token = $this->authenticate($settings);
+        $cacheKey = 'mtn-token:' . hash('sha256', $settings->email . $settings->password);
 
         // Never retry an ambiguous send automatically: MTN has not confirmed idempotency.
         $response = Http::withToken($token)->acceptJson()->withOptions(['connect_timeout' => 3])->timeout(15)

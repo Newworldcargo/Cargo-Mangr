@@ -49,6 +49,29 @@ class MessagingTest extends TestCase
         (new SendOutboundMessage($message->id))->handle(app(MtnClient::class));
     }
 
+    public function test_authentication_check_does_not_send_or_enable_messages(): void
+    {
+        $settings = $this->enable(['sms_enabled' => false, 'email_enabled' => false, 'sender_txn' => null, 'sender_otp' => null]);
+        Http::fake(['*/login' => Http::response(['access_token' => 'private-test-token'])]);
+        $this->artisan('messaging:test-mtn-auth')->expectsOutput('MTN authentication succeeded. No SMS sent; sending settings unchanged.')->assertExitCode(0);
+        $this->artisan('messaging:test-mtn-auth')->assertExitCode(0);
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($request) => str_ends_with($request->url(), '/login') && $request['email'] === $settings->email);
+        $this->assertFalse($settings->fresh()->sms_enabled);
+        $this->assertFalse($settings->fresh()->email_enabled);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_authentication_check_hides_provider_secrets(): void
+    {
+        $this->enable();
+        Http::fake(['*/login' => Http::response(['error' => 'private-provider-content'], 401)]);
+        $this->artisan('messaging:test-mtn-auth')->expectsOutput('MTN authentication was rejected.')->assertExitCode(1);
+        $this->artisan('messaging:test-mtn-auth')->expectsOutput('MTN authentication needs review before further login attempts.')->assertExitCode(1);
+        Http::assertSentCount(1);
+        Queue::assertNothingPushed();
+    }
+
     public function test_disabled_by_default_and_per_purpose(): void
     {
         $this->assertNull(app(Outbox::class)->enqueue('sms', 'otp', '0970000000', ['body' => 'Test'], 'one'));

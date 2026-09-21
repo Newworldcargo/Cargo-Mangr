@@ -96,6 +96,20 @@ that optimisation. We do not assume a successful response means delivered.
 
 ## Operational limitations
 
+### Authentication verification
+
+Run `php artisan messaging:test-mtn-auth` as the application deployment user to
+verify the encrypted account credentials without sending SMS or enabling any
+purpose. Successful checks reuse the encrypted, short-lived token cache. The
+command never prints passwords, tokens or raw provider responses.
+
+On 2026-09-21, the configured account successfully authenticated using
+`https://cpassmessaging.mtn.zm/api/v1/accounts/users/login`. No separate API key
+was needed. The older `:32147/v1` address is not used. Unauthenticated probes
+returned inconsistent responses, so a GET or empty login body is not a reliable
+account authentication check. This verifies login only, not sender approval,
+delivery, billing or throughput. SMS and email activation remain disabled.
+
 The outbox prevents request-time provider fan-out, but no production throughput
 guarantee is possible without provider limits and a monitored load test. Email
 transport timeouts are ambiguous too, so SMTP exceptions are held for review.
