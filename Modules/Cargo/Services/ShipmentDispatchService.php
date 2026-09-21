@@ -20,7 +20,8 @@ class ShipmentDispatchService
 
     public function canManage(?User $user, Shipment $shipment): bool
     {
-        return $user && (app(BranchAccessService::class)->isTopAdmin($user) || $user->can('manage-dispatch'))
+        return $user && (app(BranchAccessService::class)->isTopAdmin($user)
+            || ($user->can('manage-dispatch') && app(BranchAccessService::class)->canAccessBranch($user, (int) $shipment->branch_id)))
             && app(ShipmentOperationAccessService::class)->canOperate($user, $shipment, 'manage-dispatch');
     }
 

@@ -19,7 +19,7 @@ class DispatchController extends Controller
         $entries = ShipmentDispatchEntry::with(['shipment.branch', 'shipment.captain'])
             ->whereHas('shipment', function ($query) use ($request, $branches, $data) {
                 if (!$branches->isTopAdmin($request->user())) {
-                    $query->whereIn('branch_id', $branches->shipmentBranchIdsFor($request->user()));
+                    $query->whereIn('branch_id', $branches->branchIdsFor($request->user()));
                 }
                 if ($search = trim($data['search'] ?? '')) {
                     $query->where(function ($q) use ($search) {
