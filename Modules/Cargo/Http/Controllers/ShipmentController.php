@@ -974,6 +974,30 @@ class ShipmentController extends Controller
 
             unset($data[0]);
 
+            // Preflight every contact before the CSV importer writes any rows.
+            $staffPhones = new \App\Services\ImportStaffPhoneGuard();
+            foreach ($data as $row) {
+                $numbers = [];
+                $importCustomerId = $user_role == $auth_client
+                    ? Client::where('user_id', auth()->id())->where('is_archived', 0)->value('id')
+                    : null;
+                foreach ($request->columns as $index => $column) {
+                    if ($column === 'client_id' && $user_role != $auth_client) $importCustomerId = (int) ($row[$index] ?? 0);
+                    if (in_array($column, ['client_phone', 'client_phone_2', 'reciver_phone', 'reciver_phone_2'], true)) {
+                        $numbers[] = $row[$index] ?? null;
+                    }
+                }
+                try {
+                    $phoneIndex = array_search('client_phone', $request->columns, true);
+                    if ($phoneIndex !== false && trim((string) ($row[$phoneIndex] ?? '')) === '' && $importCustomerId) {
+                        $numbers[] = Client::where('id', $importCustomerId)->value('responsible_mobile');
+                    }
+                    $staffPhones->assertAllowed($numbers, $importCustomerId ? (int) $importCustomerId : null);
+                } catch (\Illuminate\Validation\ValidationException $exception) {
+                    return back()->with(['error_message_alert' => $exception->errors()['customer'][0]]);
+                }
+            }
+
             if ($user_role == $auth_client) {
                 $client = Client::where('user_id', auth()->user()->id)->first();
             }

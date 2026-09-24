@@ -12,6 +12,7 @@ class ConsignmentCustomerMatcher
     private array $owners = [];
     private array $profiles = [];
     private array $names = [];
+    private ?ImportStaffPhoneGuard $staffPhones = null;
 
     public static function phone(?string $value): ?string
     {
@@ -51,6 +52,9 @@ class ConsignmentCustomerMatcher
         foreach (DB::table('clients')->select('id', 'user_id', 'name', 'is_archived', 'responsible_mobile', 'secondary_mobile')->cursor() as $client) {
             $this->indexClient($client);
         }
+        foreach (DB::table('staffs')->select('user_id', 'responsible_mobile')->cursor() as $staff) {
+            if ($phone = self::phone($staff->responsible_mobile)) $this->owners[$phone]['user:'.$staff->user_id] = true;
+        }
         $this->loaded = true;
     }
 
@@ -72,6 +76,7 @@ class ConsignmentCustomerMatcher
 
     public function find(string $phone, string $name, ?string $secondary = null): ?Client
     {
+        $this->staffPhones ??= new ImportStaffPhoneGuard();
         $this->load();
         $owners = [];
         foreach (array_filter([$phone, $secondary]) as $value) {
@@ -81,7 +86,10 @@ class ConsignmentCustomerMatcher
             }
             $owners += $this->owners[$normalized] ?? [];
         }
-        if (!$owners) return null;
+        if (!$owners) {
+            $this->staffPhones->assertAllowed([$phone, $secondary]);
+            return null;
+        }
         if (count($owners) !== 1) {
             throw ValidationException::withMessages(['customer' => 'These phone details match more than one account. Confirm the customer and correct the contact details before importing this row.']);
         }
@@ -93,6 +101,8 @@ class ConsignmentCustomerMatcher
         if (!$this->name($name) || !in_array($this->name($name), $this->names[$owner] ?? [], true)) {
             throw ValidationException::withMessages(['customer' => 'This phone is already linked to a different customer name. Confirm the name and number before importing this row.']);
         }
-        return Client::findOrFail(array_key_first($profiles));
+        $client = Client::findOrFail(array_key_first($profiles));
+        $this->staffPhones->assertAllowed([$phone, $secondary], $client->id);
+        return $client;
     }
 }

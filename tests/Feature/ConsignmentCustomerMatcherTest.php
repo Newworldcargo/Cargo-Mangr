@@ -153,4 +153,31 @@ class ConsignmentCustomerMatcherTest extends TestCase
         $this->assertFalse((bool) $row->fresh()->included);
         $this->assertStringContainsString('more than one account', $row->fresh()->validation_errors['customer']);
     }
+
+    public function test_staff_number_for_another_name_is_rejected_in_preview_and_direct_resolution(): void
+    {
+        $client = $this->customer('Staff Customer', '+260970000000');
+        User::find($client->user_id)->update(['role' => 0]);
+        $batch = ConsignmentImportBatch::create(['uuid' => (string) \Illuminate\Support\Str::uuid(),
+            'created_by' => $client->user_id, 'original_filename' => 'test.xlsx', 'storage_path' => 'test.xlsx',
+            'shipment_type' => 'air', 'selected_sheet' => 'Sheet1', 'data_start_row' => 2,
+            'mappings' => ['hawb_number' => 'A', 'consignee_name' => 'B', 'phone' => 'C', 'destination' => 'D']]);
+        $row = ConsignmentImportRow::create(['batch_id' => $batch->id, 'sheet_name' => 'Sheet1', 'spreadsheet_row' => 2,
+            'raw_values' => ['A' => 'TEST123', 'B' => 'Another Customer', 'C' => '0970000000', 'D' => 'Lusaka'], 'included' => true]);
+        $method = new \ReflectionMethod(ConsignmentImportController::class, 'validateRows');
+        $method->setAccessible(true);
+        $method->invoke(new ConsignmentImportController(), $batch);
+        $this->assertSame('invalid', $row->fresh()->status);
+        $this->assertFalse((bool) $row->fresh()->included);
+        $this->assertStringContainsString('different customer name', $row->fresh()->validation_errors['customer']);
+        $method = new \ReflectionMethod(ConsignmentImportController::class, 'resolveClient');
+        $method->setAccessible(true);
+        try {
+            $method->invoke(new ConsignmentImportController(), ['phone' => '0970000000', 'consignee_name' => 'Another Customer'], $batch);
+            $this->fail('Staff contact was accepted');
+        } catch (ValidationException $exception) {
+            $this->assertDatabaseCount('users', 1);
+            $this->assertDatabaseCount('clients', 1);
+        }
+    }
 }
