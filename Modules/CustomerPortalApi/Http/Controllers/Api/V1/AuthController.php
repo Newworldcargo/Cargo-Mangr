@@ -78,7 +78,19 @@ class AuthController extends PortalController
             return $this->problem($request, 'VALIDATION_FAILED', 'Please correct the highlighted fields.', 422, $validator->errors()->toArray());
         }
 
-        $user = DB::transaction(function () use ($request) {
+        $phone = \Modules\CustomerPortalApi\Services\Portal\RegistrationPhone::normalise($request->input('phone'));
+        if (!$phone) {
+            return $this->problem($request, 'VALIDATION_FAILED', 'Enter a valid phone number with its country code.', 422,
+                ['phone' => ['Enter a valid phone number with its country code.']]);
+        }
+        try {
+        $user = \Illuminate\Support\Facades\Cache::lock('portal-register-phone:' . hash('sha256', $phone), 30)->block(5, function () use ($request, $phone) {
+            if (app(\Modules\CustomerPortalApi\Services\Portal\RegistrationPhone::class)->exists($phone)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'phone' => 'This phone number is already registered. Sign in or recover your existing account.',
+                ]);
+            }
+            return DB::transaction(function () use ($request) {
             $name = trim($request->input('firstName') . ' ' . $request->input('lastName', ''));
             $user = new User();
             $user->name = $name;
@@ -105,7 +117,13 @@ class AuthController extends PortalController
             $client->save();
 
             return $user->fresh();
+            });
         });
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            return $this->problem($request, 'VALIDATION_FAILED', 'This phone number is already registered. Sign in or recover your existing account.', 422, $exception->errors());
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException $exception) {
+            return $this->problem($request, 'REGISTRATION_BUSY', 'Please wait a moment and try again.', 503, [], true);
+        }
 
         Auth::guard('web')->login($user, false);
         $request->session()->regenerate();
