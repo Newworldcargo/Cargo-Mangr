@@ -47,16 +47,26 @@ class ConsignmentController extends Controller
      *
      * @return \Illuminate\Http\Response
      */
-    public function index()
+    public function index(Request $request)
     {
+        $cargoType = in_array($request->query('cargo_type'), ['air', 'sea'], true)
+            ? $request->query('cargo_type') : 'all';
+        $cargoCounts = Consignment::query()->selectRaw('cargo_type, COUNT(*) AS total')
+            ->groupBy('cargo_type')->pluck('total', 'cargo_type');
+        $consignmentCounts = [
+            'all' => $cargoCounts->sum(),
+            'air' => (int) $cargoCounts->get('air', 0),
+            'sea' => (int) $cargoCounts->get('sea', 0),
+        ];
         $consignments = Consignment::query()
+            ->when($cargoType !== 'all', fn ($query) => $query->where('cargo_type', $cargoType))
             ->withCount('shipments')
             ->orderByRaw('COALESCE(cargo_date, DATE(created_at)) DESC')
             ->orderByDesc('created_at')
-            ->paginate(200);
+            ->paginate(200)->appends(['cargo_type' => $cargoType]);
 
         $adminTheme = env('ADMIN_THEME', 'adminLte');
-        return view('cargo::' . $adminTheme . '.pages.consignments.index', compact('consignments'));
+        return view('cargo::' . $adminTheme . '.pages.consignments.index', compact('consignments', 'cargoType', 'consignmentCounts'));
     }
 
     public function import(Request $request)

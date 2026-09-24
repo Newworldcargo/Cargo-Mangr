@@ -29,10 +29,31 @@
             @endcan
         </div>
     </div>
+    <nav class="consignment-cargo-tabs mb-3" aria-label="Consignment cargo type">
+        @foreach(['all' => ['All', 'fa-layer-group'], 'air' => ['Air Cargo', 'fa-plane'], 'sea' => ['Sea Cargo', 'fa-ship']] as $type => $tab)
+            <a href="{{ route('consignment.index', ['cargo_type' => $type]) }}"
+               class="consignment-cargo-tab {{ $cargoType === $type ? 'is-active' : '' }}"
+               @if($cargoType === $type) aria-current="page" @endif>
+                <span><i class="fas {{ $tab[1] }} mr-1" aria-hidden="true"></i>{{ $tab[0] }}</span>
+                <span class="consignment-cargo-count">{{ number_format($consignmentCounts[$type]) }}</span>
+            </a>
+        @endforeach
+    </nav>
     @if (!empty($consignments))
         @include('cargo::adminLte.pages.consignments.editor.table')
     @endif
+    @if($consignments->hasPages())
+        <div class="mt-3">{{ $consignments->links('pagination::bootstrap-4') }}</div>
+    @endif
 </div>
+<style>
+    .consignment-cargo-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid #d5dbe3; }
+    .consignment-cargo-tab { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; min-height: 56px; padding: 12px 8px; color: #475569; border-bottom: 3px solid transparent; font-size: 14px; font-weight: 600; text-align: center; text-decoration: none; }
+    .consignment-cargo-tab:hover { color: var(--primary, #007bff); background: #f3f6fa; text-decoration: none; }
+    .consignment-cargo-tab.is-active { color: var(--primary, #007bff); border-bottom-color: var(--primary, #007bff); background: #f3f6fa; }
+    .consignment-cargo-tab:focus-visible { outline: 2px solid var(--primary, #007bff); outline-offset: -2px; }
+    .consignment-cargo-count { padding: 2px 6px; border-radius: 4px; background: #e7ebf0; color: #334155; font-size: 12px; }
+</style>
 
 <!-- Update Tracker Modal -->
 <div class="modal fade" id="updateTrackerModal" tabindex="-1" role="dialog" aria-labelledby="updateTrackerModalLabel"
