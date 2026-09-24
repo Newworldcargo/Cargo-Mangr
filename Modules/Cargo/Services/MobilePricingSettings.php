@@ -9,6 +9,12 @@ class MobilePricingSettings
 {
     private $storedValues;
 
+    public function advancePricingEnabled(string $service): bool
+    {
+        return in_array($service, ['local', 'intercity', 'import'], true)
+            && $this->value('mobile_pricing_' . $service . '_advance_enabled') === '1';
+    }
+
     public const GLOBAL_FIELDS = [
         'local_base_fee' => 'mobile_pricing_local_base_fee',
         'local_per_km' => 'mobile_pricing_local_per_km',

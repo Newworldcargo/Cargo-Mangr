@@ -93,6 +93,7 @@ class ShipmentSettingController extends Controller
         return view('cargo::'.$adminTheme.'.pages.shipment-settings.fees-settings', [
             'branches' => $branches,
             'mobilePricingValues' => $mobilePricing->globalValues(),
+            'advancePricing' => collect(['local', 'intercity', 'import'])->mapWithKeys(fn ($service) => [$service => $mobilePricing->advancePricingEnabled($service)])->all(),
             'mobileRouteValues' => $routeValues,
         ]);
     }
@@ -123,10 +124,15 @@ class ShipmentSettingController extends Controller
             'pricing.*' => ['nullable', 'numeric', 'min:0'],
             'intercity_routes' => ['nullable', 'array'],
             'import_routes' => ['nullable', 'array'],
+            'advance_pricing' => ['sometimes', 'array'],
+            'advance_pricing.*' => ['boolean'],
         ]);
 
         $activeBranchIds = Branch::where('is_archived', 0)->pluck('id')->map(fn ($id) => (int) $id)->all();
         $settings = ['mobile_pricing_currency' => strtoupper($request->currency)];
+        foreach (['local', 'intercity', 'import'] as $service) {
+            $settings['mobile_pricing_' . $service . '_advance_enabled'] = $request->boolean('advance_pricing.' . $service) ? '1' : '0';
+        }
         foreach (MobilePricingSettings::GLOBAL_FIELDS as $field => $key) {
             $settings[$key] = $request->input("pricing.{$field}", '');
         }

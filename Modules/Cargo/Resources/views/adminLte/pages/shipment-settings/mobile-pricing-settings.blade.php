@@ -1,7 +1,7 @@
 <form class="form-horizontal" action="{{ route('shipments.settings.fees.mobile-pricing.store') }}" method="POST">
     @csrf
     <div class="alert alert-info">
-        These prices are used by the mobile booking API. Laravel calculates and signs the quote; the mobile app cannot override it. Only enabled branch routes can be booked.
+        Booking prices apply to the customer portal and mobile app. When advance pricing is off, staff confirm the price after receiving the booking.
     </div>
 
     <div class="card border-primary mb-5">
@@ -27,6 +27,15 @@
         <div class="card-header"><h5 class="mb-0 h6">Quote settings</h5></div>
         <div class="card-body">
             <div class="row">
+                @foreach(['local' => 'Local Delivery', 'intercity' => 'City-to-City', 'import' => 'International'] as $service => $label)
+                    <div class="col-md-4 mb-3">
+                        <input type="hidden" name="advance_pricing[{{ $service }}]" value="0">
+                        <div class="custom-control custom-switch">
+                            <input type="checkbox" class="custom-control-input" id="advance-pricing-{{ $service }}" name="advance_pricing[{{ $service }}]" value="1" {{ old('advance_pricing.' . $service, $advancePricing[$service] ?? false) ? 'checked' : '' }}>
+                            <label class="custom-control-label" for="advance-pricing-{{ $service }}">{{ $label }} advance pricing</label>
+                        </div>
+                    </div>
+                @endforeach
                 <div class="form-group col-md-4">
                     <label>Currency</label>
                     <input class="form-control text-uppercase" name="currency" maxlength="3" value="{{ old('currency', Modules\Cargo\Entities\ShipmentSetting::getVal('mobile_pricing_currency') ?: 'ZMW') }}" required>

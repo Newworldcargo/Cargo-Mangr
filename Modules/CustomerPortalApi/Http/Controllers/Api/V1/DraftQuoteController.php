@@ -124,9 +124,7 @@ class DraftQuoteController extends PortalController
         $client = $this->customerContext->requireClient();
         $quote = null;
         $service = (string) ($payload['service'] ?? '');
-        $signedQuoteServices = (array) config('customerportalapi.booking_pricing.signed_quote_services', ['local', 'import']);
-        $requiresSignedQuote = (bool) config('customerportalapi.booking_pricing.require_signed_quote', true)
-            && in_array($service, $signedQuoteServices, true);
+        $requiresSignedQuote = app(\Modules\Cargo\Services\MobilePricingSettings::class)->advancePricingEnabled($service);
         if ($requiresSignedQuote) {
             try {
                 $quote = app(MobileBookingQuoteSigner::class)->requireValidQuote(
@@ -134,8 +132,11 @@ class DraftQuoteController extends PortalController
                     (int) $client->id,
                     $service
                 );
+                if (($quote->assumptions['pricingStatus'] ?? '') !== 'priced') {
+                    throw new \InvalidArgumentException('A priced quote is required.');
+                }
             } catch (\InvalidArgumentException $exception) {
-                return $this->problem($request, 'QUOTE_REQUIRED', 'Request a fresh server price before submitting this booking.', 422, [], true);
+                return $this->problem($request, 'QUOTE_REQUIRED', 'Refresh your price before submitting this booking.', 422, [], true);
             }
         }
         $branch = Branch::where('is_archived', 0)->whereKey($form['pickupBranchId'] ?? null)->first()

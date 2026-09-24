@@ -69,7 +69,10 @@ class MobileBookingQuoteController extends PortalController
         }
 
         try {
-            $calculation = $calculator->calculate($input, $pricingSettings->ratesFor($input, $this->pricingRates()));
+            $calculation = $pricingSettings->advancePricingEnabled($input['service'])
+                ? $calculator->calculate($input, $pricingSettings->ratesFor($input, $this->pricingRates()))
+                : ['total' => 0, 'distanceKm' => $input['distanceKm'] ?? null,
+                    'estimatedDurationMinutes' => null, 'pricingStatus' => 'pending_operations_pricing', 'breakdown' => []];
         } catch (UnsupportedMobilePricingRoute $exception) {
             return $this->problem($request, 'UNSUPPORTED_ROUTE', $exception->getMessage(), 422, [], false);
         } catch (InvalidArgumentException $exception) {
@@ -110,7 +113,8 @@ class MobileBookingQuoteController extends PortalController
             'quoteId' => (string) $quote->id,
             'currency' => $currency,
             'total' => (float) $calculation['total'],
-            'formattedTotal' => $this->formattedTotal((float) $calculation['total'], $currency),
+            'formattedTotal' => $calculation['pricingStatus'] === 'pending_operations_pricing'
+                ? 'Price to be confirmed by our team' : $this->formattedTotal((float) $calculation['total'], $currency),
             'distanceKm' => $calculation['distanceKm'],
             'estimatedDurationMinutes' => $calculation['estimatedDurationMinutes'],
             'expiresAt' => $expiresAt->toIso8601String(),

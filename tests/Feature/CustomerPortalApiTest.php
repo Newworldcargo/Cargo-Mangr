@@ -283,8 +283,42 @@ class CustomerPortalApiTest extends TestCase
             ->assertJsonPath('error.code', 'CSRF_TOKEN_MISMATCH');
     }
 
+    public function test_manual_pricing_allows_unpriced_bookings_but_cannot_bypass_advance_pricing()
+    {
+        [$customer] = $this->createCustomer('manual-booking@example.test');
+        $branch = $this->createBranch();
+        foreach (['local' => 'local_delivery', 'intercity' => 'city_to_city', 'import' => 'international_import'] as $service => $type) {
+            $request = ['service' => $service, 'bookingType' => $type,
+                'pickup' => ['city' => 'Lusaka', 'latitude' => -15.3665, 'longitude' => 28.3206],
+                'destination' => ['city' => 'Lusaka', 'latitude' => -15.4162, 'longitude' => 28.3074],
+                'cargo' => ['items' => [], 'totalWeight' => 4, 'fragile' => false]];
+            $post = fn ($url, $body = []) => $this->actingAs($customer, 'web')->withSession(['_token' => 'test-csrf-token'])
+                ->withHeader('X-CSRF-Token', 'test-csrf-token')->postJson($url, $body);
+            $quote = $post('/api/v1/bookings/quote', $request)->assertCreated()
+                ->assertJsonPath('data.breakdown.pricingStatus', 'pending_operations_pricing')
+                ->assertJsonPath('data.formattedTotal', 'Price to be confirmed by our team');
+            $draft = $post('/api/v1/shipment-drafts', ['payload' => [
+                'service' => $service,
+                'form' => ['pickup' => 'Roma, Lusaka', 'destination' => 'Longacres, Lusaka',
+                    'pickupLatitude' => -15.3665, 'pickupLongitude' => 28.3206,
+                    'destinationLatitude' => -15.4162, 'destinationLongitude' => 28.3074,
+                    'pickupBranchId' => (string) $branch->id, 'recipient' => 'Test recipient', 'phone' => '+260970000000'],
+                'cargoRows' => [['name' => 'Box', 'quantity' => 1]],
+                'pricing' => ['request' => $request, 'quotePayload' => $quote->json('data.quotePayload'),
+                    'quoteSignature' => $quote->json('data.quoteSignature'), 'quoteSource' => 'server'],
+            ]])->assertCreated();
+            $toggle = ShipmentSetting::create(['key' => 'mobile_pricing_' . $service . '_advance_enabled', 'value' => '1']);
+            $post('/api/v1/shipment-drafts/' . $draft->json('data.id') . '/submit')
+                ->assertStatus(422)->assertJsonPath('error.code', 'QUOTE_REQUIRED');
+            $toggle->update(['value' => '0']);
+            $post('/api/v1/shipment-drafts/' . $draft->json('data.id') . '/submit')->assertCreated()
+                ->assertJsonPath('data.status', 'pending')->assertJsonPath('data.price.amountMinor', 0);
+        }
+    }
+
     public function test_mobile_pricing_uses_enabled_branch_route_rates_and_rejects_reverse_route()
     {
+        ShipmentSetting::create(['key' => 'mobile_pricing_intercity_advance_enabled', 'value' => '1']);
         list($customer) = $this->createCustomer('route-pricing@example.test');
         $origin = $this->createBranch();
         $destinationUser = User::create([
@@ -366,6 +400,7 @@ class CustomerPortalApiTest extends TestCase
         $this->actingAs($admin)->post(route('shipments.settings.fees.mobile-pricing.store'), [
             'currency' => 'ZMW',
             'pricing' => ['local_base_fee' => 55, 'local_per_km' => 6, 'local_per_kg' => 2],
+            'advance_pricing' => ['local' => 1, 'intercity' => 0, 'import' => 0],
             'intercity_routes' => [
                 $origin->id => [
                     $destination->id => ['enabled' => 1, 'base_fee' => 100, 'per_km' => 2, 'per_kg' => 5],
@@ -375,6 +410,8 @@ class CustomerPortalApiTest extends TestCase
 
         $pricing = app(MobilePricingSettings::class);
         $this->assertDatabaseHas('shipment_settings', ['key' => 'mobile_pricing_local_base_fee', 'value' => '55']);
+        $this->assertDatabaseHas('shipment_settings', ['key' => 'mobile_pricing_local_advance_enabled', 'value' => '1']);
+        $this->assertDatabaseHas('shipment_settings', ['key' => 'mobile_pricing_import_advance_enabled', 'value' => '0']);
         $this->assertDatabaseHas('shipment_settings', [
             'key' => $pricing->routeKey('intercity', $origin->id, $destination->id, 'enabled'),
             'value' => '1',
@@ -383,6 +420,7 @@ class CustomerPortalApiTest extends TestCase
 
     public function test_customer_draft_submit_creates_booking_before_staff_acceptance()
     {
+        ShipmentSetting::create(['key' => 'mobile_pricing_local_advance_enabled', 'value' => '1']);
         list($user, $client) = $this->createCustomer('draft-submit@example.test');
         $branch = $this->createBranch();
         Package::create(['name' => 'General cargo', 'cost' => 0]);
