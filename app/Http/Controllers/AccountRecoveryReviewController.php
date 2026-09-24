@@ -9,7 +9,7 @@ class AccountRecoveryReviewController extends Controller
 {
     public function index(Request $request)
     {
-        abort_unless($request->user()->can('manage-clients'), 403);
+        abort_unless($request->user()->can('manage-customers'), 403);
         $requests = DB::table('customer_account_recovery_requests')->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END")->orderBy('created_at')->paginate(30);
         foreach ($requests as $item) $item->details = json_decode(Crypt::decryptString($item->encrypted_details), true, 512, JSON_THROW_ON_ERROR);
         return view('account-recovery.index', compact('requests'));
@@ -17,7 +17,7 @@ class AccountRecoveryReviewController extends Controller
 
     public function update(Request $request, string $reference)
     {
-        abort_unless($request->user()->can('manage-clients'), 403);
+        abort_unless($request->user()->can('manage-customers'), 403);
         $data = $request->validate(['status' => 'required|in:pending,contacted,resolved,rejected', 'note' => 'required|string|min:5|max:2000']);
         DB::transaction(function () use ($request, $reference, $data) {
             $item = DB::table('customer_account_recovery_requests')->where('reference', $reference)->lockForUpdate()->first();

@@ -29,7 +29,7 @@
 
             <!--begin::Card toolbar-->
             <div class="card-toolbar">
-                @can('manage-clients')
+                @can('manage-customers')
                     <a href="{{ route('account-recovery.index') }}" class="btn btn-light-primary mr-2">Account recovery</a>
                 @endcan
                 <!--begin::Toolbar-->

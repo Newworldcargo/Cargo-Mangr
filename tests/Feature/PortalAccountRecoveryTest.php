@@ -113,7 +113,7 @@ class PortalAccountRecoveryTest extends TestCase
     {
         $user = $this->customer('reviewer@example.test');
         $group = DB::table('permission_groups')->insertGetId(['name' => 'Recovery tests', 'created_at' => now(), 'updated_at' => now()]);
-        $permission = \Spatie\Permission\Models\Permission::firstOrCreate(['name' => 'manage-clients', 'guard_name' => 'web'], ['permission_group_id' => $group]);
+        $permission = \Spatie\Permission\Models\Permission::firstOrCreate(['name' => 'manage-customers', 'guard_name' => 'web'], ['permission_group_id' => $group]);
         $user->givePermissionTo($permission);
         $reference = (string) \Illuminate\Support\Str::uuid();
         DB::table('customer_account_recovery_requests')->insert(['reference' => $reference,
