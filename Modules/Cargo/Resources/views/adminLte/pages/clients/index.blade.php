@@ -29,6 +29,9 @@
 
             <!--begin::Card toolbar-->
             <div class="card-toolbar">
+                @can('manage-clients')
+                    <a href="{{ route('account-recovery.index') }}" class="btn btn-light-primary mr-2">Account recovery</a>
+                @endcan
                 <!--begin::Toolbar-->
                 <div class="d-flex flex-wrap align-items-center" id="{{ $table_id }}_custom_filter">
                     {{-- data table length --}}

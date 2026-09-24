@@ -38,10 +38,7 @@ class AuthController extends PortalController
         }
 
         $identifier = trim($request->input('identifier'));
-        $user = User::where('email', $identifier)
-            ->orWhere('responsible_mobile', $identifier)
-            ->orWhere('secondary_mobile', $identifier)
-            ->first();
+        $user = app(\Modules\CustomerPortalApi\Services\Portal\PortalAccountIdentifier::class)->find($identifier);
 
         if (!$user || !Hash::check($request->input('password'), $user->password)) {
             return $this->problem($request, 'UNAUTHENTICATED', 'The supplied credentials are invalid.', 401);
@@ -50,10 +47,6 @@ class AuthController extends PortalController
         $client = app(\Modules\CustomerPortalApi\Services\Portal\PortalCustomerAccess::class)->clientFor($user);
         if (!$client) {
             return $this->problem($request, 'FORBIDDEN', 'This account is not enabled for the customer portal.', 403);
-        }
-
-        if (!(bool) $user->verified) {
-            return $this->problem($request, 'CONTACT_UNVERIFIED', 'Verify your contact before signing in.', 403);
         }
 
         Auth::guard('web')->login($user, false);
@@ -189,16 +182,15 @@ class AuthController extends PortalController
         if ($validator->fails()) return $this->problem($request, 'VALIDATION_FAILED', 'Enter your email address or phone number.', 422, $validator->errors()->toArray());
 
         $identifier = strtolower(trim((string) $request->input('identifier')));
-        $user = User::whereRaw('LOWER(email) = ?', [$identifier])
-            ->orWhere('responsible_mobile', trim((string) $request->input('identifier')))
-            ->orWhere('secondary_mobile', trim((string) $request->input('identifier')))
-            ->first();
+        $user = app(\Modules\CustomerPortalApi\Services\Portal\PortalAccountIdentifier::class)->find($identifier);
         $client = $user ? app(\Modules\CustomerPortalApi\Services\Portal\PortalCustomerAccess::class)->clientFor($user) : null;
         if ($user && $client) {
-            $user->otp = random_int(100000, 999999);
-            $user->otp_expires_at = now()->addMinutes(10);
-            $user->save();
-            app(PortalOtpNotifier::class)->sendVerification($user);
+            try {
+                app(\Modules\CustomerPortalApi\Services\Portal\PortalPasswordChallenge::class)->send($user);
+            } catch (\Throwable $exception) {
+                // Keep the public response identical for known and unknown accounts.
+                \Illuminate\Support\Facades\Log::warning('Portal password recovery email failed.', ['user_id' => $user->id]);
+            }
         }
 
         return $this->success($request, null);
@@ -214,29 +206,29 @@ class AuthController extends PortalController
         if ($validator->fails()) return $this->problem($request, 'VALIDATION_FAILED', 'Please correct the password fields.', 422, $validator->errors()->toArray());
 
         $identifier = strtolower(trim((string) $request->input('identifier')));
-        $user = User::whereRaw('LOWER(email) = ?', [$identifier])
-            ->orWhere('responsible_mobile', trim((string) $request->input('identifier')))
-            ->orWhere('secondary_mobile', trim((string) $request->input('identifier')))
-            ->first();
+        $user = app(\Modules\CustomerPortalApi\Services\Portal\PortalAccountIdentifier::class)->find($identifier);
         $client = $user ? app(\Modules\CustomerPortalApi\Services\Portal\PortalCustomerAccess::class)->clientFor($user) : null;
-        if (!$user || !$client || !$user->otp) {
+        if (!$user || !$client || !$user->verified) {
             return $this->problem($request, 'OTP_INVALID', 'The verification code is invalid.', 422);
         }
-        if (!$user->otp_expires_at || now()->greaterThan($user->otp_expires_at)) {
-            return $this->problem($request, 'OTP_EXPIRED', 'The verification code has expired. Request a new one.', 422);
+        $lock = \Illuminate\Support\Facades\Cache::lock('portal-password-reset:'.$user->id, 15);
+        if (!$lock->get()) return $this->problem($request, 'RECOVERY_BUSY', 'Please wait a moment and try again.', 409);
+        try {
+        if (!app(\Modules\CustomerPortalApi\Services\Portal\PortalPasswordChallenge::class)->consume($user, $request->input('code'))) {
+            return $this->problem($request, 'OTP_INVALID', 'The code is incorrect or expired. Request a new code if needed.', 422);
         }
-        if (!hash_equals((string) $user->otp, (string) $request->input('code'))) {
-            return $this->problem($request, 'OTP_INVALID', 'The verification code is invalid.', 422);
-        }
-
+        DB::transaction(function () use ($user, $request) {
         $user->forceFill([
             'password' => Hash::make($request->input('password')),
             'remember_token' => Str::random(60),
             'otp' => null,
             'otp_expires_at' => null,
         ])->save();
+        DB::table('customer_portal_bff_sessions')->where('user_id', $user->id)->whereNull('revoked_at')->update(['revoked_at' => now(), 'updated_at' => now()]);
+        });
         event(new PasswordReset($user));
         return $this->success($request, null);
+        } finally { $lock->release(); }
     }
 
     public function verifyPassword(Request $request)

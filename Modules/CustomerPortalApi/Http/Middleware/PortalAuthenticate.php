@@ -40,6 +40,10 @@ class PortalAuthenticate
             return $this->problem($request, 'FORBIDDEN', 'This account is not enabled for the customer portal.', 403);
         }
 
+        if (!Auth::guard('web')->user()->verified && !$request->is('api/v1/session', 'api/v1/auth/logout')) {
+            return $this->problem($request, 'CONTACT_UNVERIFIED', 'Verify your account before continuing.', 403);
+        }
+
         return $next($request);
     }
 

@@ -56,10 +56,10 @@ Route::post('/2fa/regenerate', [TwoFactorAuthController::class, 'regenerate'])->
 
 
 // Claim Accounts Routes - Guest only
-Route::get('/clients/claim-accounts', [ClientController::class, 'showClaimAccounts'])
+Route::get('/clients/claim-accounts', fn () => redirect()->away('https://app.newworldcargo.com/recover-account'))
     ->name('clients.claim-accounts')
     ->middleware('guest');
-Route::post('/clients/process-claim', [ClientController::class, 'processClaim'])
+Route::post('/clients/process-claim', fn () => redirect()->away('https://app.newworldcargo.com/recover-account'))
     ->name('clients.process-claim')
     ->middleware('guest');
 
@@ -76,6 +76,8 @@ Route::get('/fraud-awareness', 'FraudAwarenessController@index')->name('fraud');
 Route::post('contact', 'Api\ContactUsController@sendContact')->name('contact.store');
 
 Route::middleware(['auth'])->group(function () {
+    Route::get('/customer-account-recovery', [\App\Http\Controllers\AccountRecoveryReviewController::class, 'index'])->name('account-recovery.index');
+    Route::post('/customer-account-recovery/{reference}', [\App\Http\Controllers\AccountRecoveryReviewController::class, 'update'])->name('account-recovery.update');
     Route::post('/shipment-mark-as-paid', [ShipmentController::class, 'markAsPaid'])->name('shipments.mark-as-paid');
     Route::get('/consignment', 'ConsignmentController@index')->name('consignment.index');
     Route::get('/create-consignment', 'ConsignmentController@create')->name('consignment.create');

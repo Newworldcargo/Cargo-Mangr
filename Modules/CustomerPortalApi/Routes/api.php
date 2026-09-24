@@ -42,6 +42,10 @@ Route::post('telemetry/events', [TelemetryController::class, 'store'])
 
 Route::post('auth/login', [AuthController::class, 'login'])
     ->middleware('throttle:customer-portal');
+Route::post('auth/account-recovery', [\Modules\CustomerPortalApi\Http\Controllers\Api\V1\AccountRecoveryController::class, 'start'])
+    ->middleware([PortalCsrfMiddleware::class, 'throttle:5,10']);
+Route::post('auth/account-recovery/confirm', [\Modules\CustomerPortalApi\Http\Controllers\Api\V1\AccountRecoveryController::class, 'confirm'])
+    ->middleware([PortalCsrfMiddleware::class, 'throttle:20,10']);
 Route::post('auth/register', [AuthController::class, 'register'])
     ->middleware('throttle:customer-portal');
 Route::post('auth/password/forgot', [AuthController::class, 'requestPasswordReset'])

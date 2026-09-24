@@ -104,7 +104,7 @@ class CustomerPortalApiTest extends TestCase
             'identifier' => $user->email,
         ])->assertOk();
 
-        $code = (string) $user->fresh()->otp;
+        $code = (string) Mail::sent(\App\Mail\OTPMail::class)->last()->otp;
         $this->assertMatchesRegularExpression('/^\d{6}$/', $code);
 
         $payload = [
