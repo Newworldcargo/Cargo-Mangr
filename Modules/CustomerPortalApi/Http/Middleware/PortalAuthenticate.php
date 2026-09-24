@@ -36,6 +36,11 @@ class PortalAuthenticate
             return $this->problem($request, 'UNAUTHENTICATED', 'A valid customer session is required.', 401);
         }
 
+        if (!$request->is('api/v1/auth/logout')
+            && app(\Modules\CustomerPortalApi\Services\Portal\PortalEmailRequirement::class)->needsRecovery(Auth::guard('web')->user())) {
+            return $this->problem($request, 'EMAIL_REQUIRED', 'Add an email you can access to recover your customer account.', 403);
+        }
+
         if (!app(CustomerContext::class)->client()) {
             return $this->problem($request, 'FORBIDDEN', 'This account is not enabled for the customer portal.', 403);
         }

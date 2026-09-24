@@ -44,6 +44,11 @@ class AuthController extends PortalController
             return $this->problem($request, 'UNAUTHENTICATED', 'The supplied credentials are invalid.', 401);
         }
 
+        // Only disclose email completion after the caller proves their credentials.
+        if (app(\Modules\CustomerPortalApi\Services\Portal\PortalEmailRequirement::class)->needsRecovery($user)) {
+            return $this->problem($request, 'EMAIL_REQUIRED', 'Add an email you can access to recover your customer account.', 403);
+        }
+
         $client = app(\Modules\CustomerPortalApi\Services\Portal\PortalCustomerAccess::class)->clientFor($user);
         if (!$client) {
             return $this->problem($request, 'FORBIDDEN', 'This account is not enabled for the customer portal.', 403);
