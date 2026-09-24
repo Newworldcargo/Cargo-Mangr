@@ -6,6 +6,7 @@ use App\Models\Consignment;
 use App\Models\ConsignmentImportBatch;
 use App\Models\ConsignmentImportRow;
 use App\Models\User;
+use App\Services\ConsignmentCustomerMatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +24,8 @@ use PhpOffice\PhpSpreadsheet\Spreadsheet;
 
 class ConsignmentImportController extends Controller
 {
+    private ?ConsignmentCustomerMatcher $customerMatcher = null;
+
     private const CONSIGNMENT_STATUSES = ['pending', 'dispatched', 'in_transit', 'delivered', 'canceled'];
 
     private const FIELDS = [
@@ -191,10 +194,10 @@ class ConsignmentImportController extends Controller
             return $this->completedImportRedirect($batch);
         }
 
-        $lock = Cache::lock('consignment-import-confirm-'.$batch->id, 300);
+        $lock = Cache::lock('consignment-import-confirm', 300);
         if (!$lock->get()) {
             return redirect()->route('consignment.import.preview', $batch->uuid)
-                ->with('warning', 'This import is already being processed. Please wait for it to finish; do not confirm it again.');
+                ->with('warning', 'An import is already being processed. Please wait for it to finish and try again.');
         }
 
         try {
@@ -268,6 +271,7 @@ class ConsignmentImportController extends Controller
 
         $pickupBranch = Branch::findOrFail($batch->pickup_branch_id);
         $destinationBranch = Branch::findOrFail($batch->destination_branch_id);
+        $this->customerMatcher = new ConsignmentCustomerMatcher();
         DB::transaction(function () use ($batch, $rows, $first, $package, $pickupBranch, $destinationBranch, $consignment) {
             if (!$consignment) {
                 $consignment = Consignment::create(['consignment_code' => $batch->consignment_code, 'name' => 'Imported consignment',
@@ -480,10 +484,15 @@ class ConsignmentImportController extends Controller
                         }
                     }
                     if (empty($errors['phone']) && empty($errors['phone_2'])) {
-                        $client=$this->findClientForImport($mapped['phone'], $mapped['consignee_name'] ?? '', $mapped['phone_2']);
-                        if (!$client) $warnings['customer']='A new customer profile will be created when you confirm the import.';
-                        elseif (!$this->phone((string)$client->responsible_mobile)) $warnings['customer']='This phone number will be added to the existing customer profile when you confirm.';
-                        if ($mapped['phone_2']) $warnings['phone_2']='Both confirmed phone numbers will be saved for this customer and shipment.';
+                        try {
+                            $client=$this->findClientForImport($mapped['phone'], $mapped['consignee_name'] ?? '', $mapped['phone_2']);
+                            $warnings['customer']=$client
+                                ? 'Existing customer: '.$client->name.' (profile #'.$client->id.'). This shipment will appear in their existing history.'
+                                : 'A new customer profile will be created when you confirm the import.';
+                        } catch (ValidationException $exception) {
+                            $errors['customer']=$exception->errors()['customer'][0];
+                        }
+                        if ($mapped['phone_2']) $warnings['phone_2']='Both confirmed phone numbers will be saved on this shipment.';
                     }
                 }
             }
@@ -593,7 +602,7 @@ class ConsignmentImportController extends Controller
         foreach ($matches as $match) {
             $phone = $this->phone($match);
             if (preg_match('/^\d{7,15}$/', $phone)) {
-                $identity = strlen($phone) >= 9 ? substr($phone, -9) : $phone;
+                $identity = ConsignmentCustomerMatcher::phone($phone) ?? $phone;
                 $candidates[$identity] ??= $phone;
             }
         }
@@ -648,64 +657,26 @@ class ConsignmentImportController extends Controller
     private function number($value): ?float { $clean = preg_replace('/[^0-9.\-]/', '', (string) $value); return $clean !== '' && is_numeric($clean) ? (float) $clean : null; }
     private function findClientForImport(string $phone, string $name, ?string $phone2 = null): ?Client
     {
-        $phones=array_values(array_filter(array_unique([$this->phone($phone), $this->phone((string) $phone2)])));
-        $name=$this->normalise($name);
-        if ($name === '' || !$phones) return null;
-        $nameMatches=Client::whereRaw('LOWER(TRIM(name)) = ?', [$name])->where('is_archived',0)->limit(10)->get();
-        $samePhone=$nameMatches->filter(fn($client)=>collect([$client->responsible_mobile, $client->secondary_mobile])
-            ->contains(fn($storedPhone)=>collect($phones)->contains(fn($candidate)=>$this->phonesMatch($storedPhone,$candidate))));
-        if ($samePhone->count() === 1) return $samePhone->first();
-        $withoutPhone=$nameMatches->filter(fn($client)=>$this->phone((string)$client->responsible_mobile) === '' && $this->phone((string)$client->secondary_mobile) === '');
-        if ($nameMatches->count() === 1 && $withoutPhone->count() === 1) return $withoutPhone->first();
-
-        $normalisedPrimary="REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(responsible_mobile, ' ', ''), '+', ''), '-', ''), '(', ''), ')', ''), '.', '')";
-        $normalisedSecondary="REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(secondary_mobile, ' ', ''), '+', ''), '-', ''), '(', ''), ')', ''), '.', '')";
-        $phoneMatches=Client::where(function($query) use ($phones, $normalisedPrimary, $normalisedSecondary) {
-                foreach ($phones as $candidate) {
-                    $query->orWhereRaw("$normalisedPrimary LIKE ?", ['%'.substr($candidate,-9)])
-                        ->orWhereRaw("$normalisedSecondary LIKE ?", ['%'.substr($candidate,-9)]);
-                }
-            })->where('is_archived',0)->limit(20)->get()
-            ->filter(fn($client)=>$this->normalise($client->name) === $name
-                && collect([$client->responsible_mobile, $client->secondary_mobile])
-                    ->contains(fn($storedPhone)=>collect($phones)->contains(fn($candidate)=>$this->phonesMatch($storedPhone,$candidate))));
-        return $phoneMatches->count() === 1 ? $phoneMatches->first() : null;
+        $this->customerMatcher ??= new ConsignmentCustomerMatcher();
+        return $this->customerMatcher->find($phone, $name, $phone2);
     }
     private function phonesMatch($left, $right): bool
     {
-        $left=$this->phone((string)$left); $right=$this->phone((string)$right);
-        if ($left === '' || $right === '') return false;
-        return $left === $right || (strlen($left) >= 9 && strlen($right) >= 9 && substr($left,-9) === substr($right,-9));
+        $left=ConsignmentCustomerMatcher::phone($left); $right=ConsignmentCustomerMatcher::phone($right);
+        return $left !== null && $left === $right;
     }
     private function resolveClient(array $data, ConsignmentImportBatch $batch): Client
     {
-        $phone=$this->phone($data['phone']);
-        $phone2=$this->phone((string) ($data['phone_2'] ?? ''));
+        $phone=ConsignmentCustomerMatcher::phone($data['phone']) ?? $data['phone'];
+        $phone2=ConsignmentCustomerMatcher::phone($data['phone_2'] ?? null);
         $name=trim($data['consignee_name']);
         $client=$this->findClientForImport($phone,$name,$phone2);
-        if ($client) {
-            $clientPrimary=$this->phone((string)$client->responsible_mobile);
-            $clientSecondary=$this->phone((string)$client->secondary_mobile);
-            if (!$clientPrimary) $clientPrimary=$phone;
-            foreach (array_filter([$phone, $phone2]) as $candidate) {
-                if (!$this->phonesMatch($clientPrimary,$candidate) && !$this->phonesMatch($clientSecondary,$candidate) && !$clientSecondary) $clientSecondary=$candidate;
-            }
-            $client->update(['responsible_mobile'=>$clientPrimary,'secondary_mobile'=>$clientSecondary ?: null,
-                'responsible_name'=>$client->responsible_name ?: $name,'branch_id'=>$client->branch_id ?: $batch->pickup_branch_id,'updated_by'=>auth()->id()]);
-            if ($client->user_id && ($user=User::find($client->user_id))) {
-                $userPrimary=$this->phone((string)$user->responsible_mobile) ?: $clientPrimary;
-                $userSecondary=$this->phone((string)$user->secondary_mobile);
-                foreach (array_filter([$clientPrimary, $clientSecondary]) as $candidate) {
-                    if (!$this->phonesMatch($userPrimary,$candidate) && !$this->phonesMatch($userSecondary,$candidate) && !$userSecondary) $userSecondary=$candidate;
-                }
-                $user->update(['responsible_mobile'=>$userPrimary,'secondary_mobile'=>$userSecondary ?: null]);
-            }
-            return $client;
-        }
+        if ($client) return $client;
         $email='imported+'.$phone.'.'.substr(sha1($this->normalise($name)),0,10).'@newworldcargo.invalid';
         $user=User::firstOrCreate(['email'=>$email], ['name'=>$name,'password'=>bcrypt(Str::random(40)),'responsible_mobile'=>$phone,'secondary_mobile'=>$phone2 ?: null,'role'=>4,'verified'=>0]);
         $client=Client::firstOrCreate(['user_id'=>$user->id], ['code'=>0,'name'=>$name,'email'=>$email,'responsible_name'=>$name,'responsible_mobile'=>$phone,'secondary_mobile'=>$phone2 ?: null,'branch_id'=>$batch->pickup_branch_id,'is_archived'=>0,'created_by'=>auth()->id()]);
         if (!$client->code) $client->update(['code'=>$client->id]);
+        $this->customerMatcher->remember($client);
         return $client;
     }
     private function guessPhoneColumn(ConsignmentImportBatch $batch, array $usedColumns): ?string
