@@ -1150,6 +1150,11 @@ class ConsignmentController extends Controller
     {
         $this->authorizeTrackerMutation();
 
+        $request->validate([
+            'status' => 'required|integer|min:1',
+            'completed_at' => 'nullable|date_format:Y-m-d\TH:i|before_or_equal:now',
+        ]);
+
         // dd($request);
         try {
             $consignment = Consignment::findOrFail($id);
@@ -1161,7 +1166,9 @@ class ConsignmentController extends Controller
 
             $currentStage = $consignment->getCurrentStage();
             $targetStage = $request->status;
-            $now = Carbon::now();
+            $now = $request->filled('completed_at')
+                ? Carbon::createFromFormat('Y-m-d\TH:i', $request->input('completed_at'), config('app.timezone'))->second(0)
+                : Carbon::now();
 
             // Get the tracking stage to determine the status
             $trackingStage = DB::table('tracking_stages')
@@ -1286,7 +1293,7 @@ class ConsignmentController extends Controller
         }
 
         $history = \App\Models\ConsignmentTrackingHistory::where('consignment_id', $consignmentId)
-            ->orderByDesc('completed_at')
+            ->orderByDesc('stage_id')
             ->orderByDesc('id')
             ->first();
 
@@ -1294,12 +1301,15 @@ class ConsignmentController extends Controller
         if ($history) {
             $stage = \App\Models\TrackingStage::find($history->stage_id);
             return response()->json([
+                'stage_id' => $history->stage_id,
                 'stage_name' => $stage ? $stage->name : null,
                 'stage_description' => $stage ? $stage->description : null,
                 'status' => $history->status,
                 'notes' => $history->notes,
                 'location' => $history->location,
                 'completed_at' => $history->completed_at,
+                'completed_at_local' => $history->completed_at ? $history->completed_at->format('Y-m-d\TH:i') : null,
+                'completed_at_display' => $history->completed_at ? $history->completed_at->format('Y-m-d H:i') : null,
             ]);
         } else {
             return response()->json([

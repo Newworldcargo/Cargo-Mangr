@@ -126,6 +126,11 @@
                                 </div>
                             </div>
 
+                            <div class="form-group">
+                                <label for="trackerCompletedAt" class="font-weight-bold">Update date and time ({{ config('app.timezone') }})</label>
+                                <input type="datetime-local" class="form-control" id="trackerCompletedAt" name="completed_at" required>
+                            </div>
+
                             <div class="modal-footer border-0 px-0 pt-4">
                                 <button type="button" class="btn btn-light border shadow-sm px-4" data-dismiss="modal">
                                     <i class="fas fa-times mr-2"></i>Cancel
@@ -200,16 +205,6 @@
     }
 </style>
 
-<script>
-    // Set current time for status update
-    document.addEventListener('DOMContentLoaded', function() {
-        const updateTimeEl = document.getElementById('statusUpdateTime');
-        if(updateTimeEl) {
-            const now = new Date();
-            updateTimeEl.textContent = now.toLocaleString();
-        }
-    });
-</script>
 
 @include('cargo::adminLte.pages.consignments.editor.import-modal')
 @include('cargo::adminLte.pages.consignments.editor.index')
@@ -242,6 +237,14 @@
         $(document).on('click', '.update-tracker-btn', function() {
             const consignmentId = $(this).data('id');
             const cargoType = $(this).data('cargo_type') || 'air';
+            const parts = new Intl.DateTimeFormat('en-GB', {
+                timeZone: @json(config('app.timezone')), year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+            }).formatToParts(new Date());
+            const dateParts = Object.fromEntries(parts.map(part => [part.type, part.value]));
+            const currentTime = `${dateParts.year}-${dateParts.month}-${dateParts.day}T${dateParts.hour}:${dateParts.minute}`;
+            $('#trackerCompletedAt').val(currentTime);
+            $('#statusUpdateTime, #conLastUpdate').text('Loading...');
             
             // Show loaders
             $('#currentStageLoader').removeClass('d-none');
@@ -260,6 +263,7 @@
                 method: 'GET',
                 data: { cargo_type: cargoType },
                 success: function(stages) {
+                    if ($('#updateTrackerForm').attr('action') !== `/consignment/tracker/update/${consignmentId}`) return;
                     // Populate the select dropdown
                     const $select = $('#trackerStatus');
                     $select.empty();
@@ -282,6 +286,12 @@
                         method: 'GET',
                         data: { consignment_id: consignmentId },
                         success: function(data) {
+                            if ($('#updateTrackerForm').attr('action') !== `/consignment/tracker/update/${consignmentId}`) return;
+                            $('#statusUpdateTime, #conLastUpdate').text(data.completed_at_display || 'Not yet updated');
+                            if (data.completed_at_local) $('#trackerCompletedAt').val(data.completed_at_local);
+                            $select.off('change.trackerDate').on('change.trackerDate', function() {
+                                $('#trackerCompletedAt').val(String($(this).val()) === String(data.stage_id) && data.completed_at_local ? data.completed_at_local : currentTime);
+                            });
                             $('#currentStageName').text(data.stage_name || 'Unknown');
                             $('#currentStageDescription').text(data.stage_description || 'No details available.');
                             
@@ -301,6 +311,7 @@
                             $('#updateTrackerBtn').prop('disabled', false);
                         },
                         error: function(error) {
+                            $('#statusUpdateTime, #conLastUpdate').text('Unavailable');
                             $('#currentStageName').text('Error loading stage');
                             $('#currentStageDescription').text('Failed to load current stage details.');
                             $('#currentStageLoader').addClass('d-none');
@@ -321,7 +332,6 @@
             $('#modalTracking').text($(this).data('consignment_code') || '');
             $('#sourceDestination').text($(this).data('source') || '');
             $('#finalDestination').text($(this).data('destination') || '');
-            $('#conLastUpdate').text($(this).data('updated_at') || '');
             
             // Set consignment ID
             $('#consignmentId').val(consignmentId);
