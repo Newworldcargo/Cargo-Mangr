@@ -14,8 +14,10 @@ class ShipmentPaymentSummary
     {
         $transactions = Transxn::where('shipment_id', $shipment->id)->where('status', '!=', 'voided_duplicate')->orderByDesc('id')->get();
         $invoice = $transactions->first();
+        $checkoutQuote = !$invoice ? app(CustomerShipmentBill::class)->quote($shipment) : null;
         $currency = strtoupper($invoice?->currency ?: app(BranchAccessService::class)->currencyFor(null, $shipment->branch));
         $total = $invoice ? (float) $invoice->total : convert_currency((float) $shipment->amount_to_be_collected, 'USD', $currency);
+        if ($checkoutQuote) $total = $checkoutQuote['amountMinor'] / 100;
         $payments = ShipmentPaymentReceipt::where('shipment_id', $shipment->id)
             ->whereIn('status', ['active', 'completed'])->orderBy('created_at')->orderBy('id')->get();
         $receipts = [];
@@ -51,8 +53,8 @@ class ShipmentPaymentSummary
             ? app(LipilaGateway::class)->ready()
             : (bool) config('customerportalapi.payment_provider') && (bool) config('customerportalapi.payment_webhook_url');
         $checkoutMessage = !$providerReady ? 'Online payments are currently unavailable. Please contact your branch to arrange payment.'
-            : (!$invoice ? 'Please contact your branch to confirm your bill before paying online.'
-                : ($invoice->status === 'partially_paid' ? 'Please contact your branch to pay the remaining balance.' : null));
+            : (!$invoice && !$checkoutQuote ? 'Please contact your branch to confirm your bill before paying online.'
+                : ($invoice?->status === 'partially_paid' ? 'Please contact your branch to pay the remaining balance.' : null));
 
         return [
             'total' => ['currency' => $currency, 'amountMinor' => $totalMinor],
@@ -61,6 +63,7 @@ class ShipmentPaymentSummary
             'status' => $invoice?->isRefunded() ? 'Refunded' : ($settled ? 'Paid' : ($paid > 0 ? 'Partially paid' : 'Unpaid')),
             'invoiceId' => $invoice ? (string) $invoice->id : null,
             'checkoutMessage' => $checkoutMessage,
+            'canPrepareCheckout' => $providerReady && (bool) $checkoutQuote,
             'receipts' => $receipts,
         ];
     }

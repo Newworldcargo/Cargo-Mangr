@@ -8,6 +8,16 @@ use Modules\CustomerPortalApi\Services\ShipmentPaymentSummary;
 
 class ShipmentPaymentController extends PortalController
 {
+    public function checkout(Request $request, $shipment, ShipmentPaymentSummary $summary)
+    {
+        $model = $this->ownedShipment($shipment);
+        if (config('customerportalapi.payment_provider') !== 'lipila' || !app(\Modules\CustomerPortalApi\Services\LipilaGateway::class)->ready()) {
+            return $this->problem($request, 'PAYMENTS_UNAVAILABLE', 'Online payments are currently unavailable.', 503);
+        }
+        app(\Modules\CustomerPortalApi\Services\CustomerShipmentBill::class)->prepare($model->id, $model->client_id);
+        return $this->success($request, $summary->forShipment($model->fresh()));
+    }
+
     public function summary(Request $request, $shipment, ShipmentPaymentSummary $summary)
     {
         return $this->success($request, $summary->forShipment($this->ownedShipment($shipment)));
