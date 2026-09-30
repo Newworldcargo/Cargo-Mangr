@@ -88,6 +88,8 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/consignment/{id}', 'ConsignmentController@destroy')->name('consignment.destroy');
     Route::post('/consignments/import', [ConsignmentImportController::class, 'upload'])->name('consignment.import');
     Route::get('/consignments/imports/{uuid}/preview', [ConsignmentImportController::class, 'preview'])->name('consignment.import.preview');
+    Route::get('/consignments/imports/{uuid}/customers', [ConsignmentImportController::class, 'searchCustomers'])->name('consignment.import.customers');
+    Route::post('/consignments/imports/{uuid}/rows/{rowId}/customer', [ConsignmentImportController::class, 'selectCustomer'])->whereNumber('rowId')->name('consignment.import.customer.select');
     Route::post('/consignments/imports/{uuid}/preview', [ConsignmentImportController::class, 'updatePreview'])->name('consignment.import.preview.update');
     Route::post('/consignments/imports/{uuid}/confirm', [ConsignmentImportController::class, 'confirm'])->name('consignment.import.confirm');
     Route::post('/consignments/imports/{uuid}/remove-rows', [ConsignmentImportController::class, 'removeImportedRows'])->name('consignment.import.rows.remove');

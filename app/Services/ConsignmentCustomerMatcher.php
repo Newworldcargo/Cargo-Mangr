@@ -74,6 +74,18 @@ class ConsignmentCustomerMatcher
         $this->indexClient($client);
     }
 
+    public function candidateIds(string $phone): array
+    {
+        $normalized = self::phone($phone);
+        if (!$normalized) return [];
+        $this->load();
+        $ids = [];
+        foreach (array_keys($this->owners[$normalized] ?? []) as $owner) {
+            $ids = array_merge($ids, array_keys($this->profiles[$owner] ?? []));
+        }
+        return array_values(array_unique($ids));
+    }
+
     public function find(string $phone, string $name, ?string $secondary = null): ?Client
     {
         $this->staffPhones ??= new ImportStaffPhoneGuard();

@@ -7,6 +7,7 @@ use App\Models\ConsignmentImportBatch;
 use App\Models\ConsignmentImportRow;
 use App\Models\User;
 use App\Services\ConsignmentCustomerMatcher;
+use App\Services\ImportCustomerSelection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -125,6 +126,103 @@ class ConsignmentImportController extends Controller
     {
         $batch = $this->batch($uuid);
         return view('cargo::adminLte.pages.consignments.import-preview', $this->previewData($batch));
+    }
+
+    public function searchCustomers(Request $request, string $uuid)
+    {
+        $batch = $this->batch($uuid);
+        abort_if($batch->status === 'completed', 409, 'This import is already completed.');
+        $request->validate(['q' => 'required|string|min:2|max:100']);
+        $term = trim($request->input('q'));
+        $phoneMatches = (new ConsignmentCustomerMatcher())->candidateIds($term);
+        $query = Client::query()->where('is_archived', 0)->whereIn('user_id', User::select('id'));
+        $query->where(function ($query) use ($term, $phoneMatches) {
+            if ($phoneMatches) $query->orWhereIn('id', $phoneMatches);
+            foreach (['name', 'email', 'responsible_mobile', 'secondary_mobile'] as $field) {
+                $query->orWhere($field, 'like', '%'.addcslashes($term, '%_\\').'%');
+            }
+            if (ctype_digit($term)) $query->orWhere('id', (int) $term);
+            $query->orWhereIn('user_id', User::where(function ($users) use ($term) {
+                $users->where('name', 'like', '%'.addcslashes($term, '%_\\').'%')
+                    ->orWhere('email', 'like', '%'.addcslashes($term, '%_\\').'%');
+                if ($phone = ConsignmentCustomerMatcher::phone($term)) {
+                    $users->orWhere('responsible_mobile', $phone)->orWhere('responsible_mobile', '+'.$phone)
+                        ->orWhere('secondary_mobile', $phone)->orWhere('secondary_mobile', '+'.$phone);
+                }
+            })->select('id'));
+        });
+        return response()->json(['customers' => $query->orderBy('name')->limit(25)->get(['id', 'name', 'email', 'responsible_mobile', 'secondary_mobile'])]);
+    }
+
+    public function selectCustomer(Request $request, string $uuid, int $rowId)
+    {
+        $batch = $this->batch($uuid);
+        $request->validate(['version' => 'required|integer|min:0', 'customer_id' => 'nullable|integer', 'create' => 'sometimes|boolean',
+            'phone' => 'sometimes|nullable|string|max:40', 'phone_2' => 'sometimes|nullable|string|max:40']);
+        $lock = Cache::lock('consignment-import-confirm', 300);
+        abort_unless($lock->get(), 409, 'An import is being saved. Wait a moment and try again.');
+        $contactLocks = [];
+        try {
+            if ($request->boolean('create')) {
+                $numbers = array_unique(array_filter(array_map(fn($field) => ConsignmentCustomerMatcher::phone((string) $request->input($field, '')), ['phone', 'phone_2'])));
+                sort($numbers);
+                foreach ($numbers as $number) {
+                    $contactLock = Cache::lock('portal-register-phone:'.hash('sha256', $number), 300);
+                    abort_unless($contactLock->get(), 409, 'This contact is being saved. Wait a moment and try again.');
+                    $contactLocks[] = $contactLock;
+                }
+            }
+            return DB::transaction(function () use ($request, $batch, $rowId) {
+                $batch = $batch->fresh();
+                abort_if($batch->status === 'completed', 409, 'This import is already completed.');
+                foreach ([$batch->pickup_branch_id, $batch->destination_branch_id] as $branch) {
+                    if ($branch) $this->assertBranchAllowed((int) $branch);
+                }
+                $row = $batch->rows()->whereKey($rowId)->where('sheet_name', $batch->selected_sheet)
+                    ->where('spreadsheet_row', '>=', $batch->data_start_row)->lockForUpdate()->firstOrFail();
+                abort_if($this->isSpreadsheetSummaryRow($row->raw_values, $row->mapped_values ?? []), 422, 'Totals rows cannot be assigned to a customer.');
+                abort_if((int) $row->customer_selection_version !== (int) $request->version, 409, 'This row was changed elsewhere. Close and reopen the preview before editing it.');
+                $selection = app(ImportCustomerSelection::class);
+                $client = null;
+                if ($request->boolean('create')) {
+                    abort_unless($request->user()->can('create-customers'), 403);
+                    $data = $request->validate(['first_name' => 'required|string|min:2|max:80', 'last_name' => 'required|string|min:2|max:80',
+                        'email' => 'nullable|email|max:191', 'phone' => 'required|string|max:40', 'phone_2' => 'nullable|string|max:40',
+                        'contact_name' => 'nullable|string|max:160', 'national_id' => 'nullable|string|max:100', 'address' => 'nullable|string|max:500']);
+                    abort_unless($batch->pickup_branch_id, 422, 'Save a pickup branch before adding a customer.');
+                    $client = $selection->create($data + ['contact_name' => ''], $batch);
+                } elseif ($request->filled('customer_id')) {
+                    $client = $selection->customer((int) $request->customer_id);
+                }
+                if ($client) {
+                    $selection->contacts($client);
+                    $existing = Shipment::where('code', $row->mapped_values['hawb_number'] ?? '')->first();
+                    if ($existing && (int) $existing->client_id !== (int) $client->id) {
+                        throw ValidationException::withMessages(['customer' => 'This shipment already belongs to a different customer. Reassignment must be reviewed separately.']);
+                    }
+                }
+                $old = $row->selected_customer_id;
+                $row->update(['selected_customer_id' => $client?->id, 'customer_selected_by' => $request->user()->id,
+                    'customer_selected_at' => now(), 'customer_source_hash' => $client ? $selection->fingerprint($row, $batch) : null,
+                    'customer_selection_version' => (int) $row->customer_selection_version + 1]);
+                \App\Models\AuditLog::create(['user_id' => $request->user()->id, 'event' => 'import_customer_selected',
+                    'auditable_type' => ConsignmentImportRow::class, 'auditable_id' => $row->id,
+                    'description' => 'Import row customer selection updated.', 'old_values' => ['customer_id' => $old],
+                    'new_values' => ['customer_id' => $client?->id, 'created' => $request->boolean('create')]]);
+                $this->customerMatcher = new ConsignmentCustomerMatcher();
+                $this->validateRows($batch);
+                $row->refresh();
+                $phoneColumn = $batch->mappings['phone'] ?? $batch->mappings['consignee_name'] ?? null;
+                $candidates = $this->phoneCandidates((string) ($row->raw_values[$phoneColumn] ?? ''));
+                return response()->json(['row' => $row->only(['id', 'status', 'mapped_values', 'validation_errors', 'validation_warnings', 'selected_customer_id', 'customer_selection_version']),
+                    'phone_display' => $row->selected_customer_id ? ($row->mapped_values['phone'] ?? '') : ($row->phone_override ?: (count($candidates) === 1 ? $candidates[0] : '')),
+                    'phone_2_display' => $row->selected_customer_id ? ($row->mapped_values['phone_2'] ?? '') : ($row->phone_override_2 ?: ''),
+                    'summary' => $batch->fresh()->summary]);
+            });
+        } finally {
+            foreach ($contactLocks as $contactLock) $contactLock->release();
+            $lock->release();
+        }
     }
 
     public function updatePreview(Request $request, string $uuid)
@@ -292,6 +390,9 @@ class ConsignmentImportController extends Controller
                 $pieces = $this->number($data['pieces'] ?? null) ?? 1.0;
                 $client = $this->resolveClient($data, $batch);
                 $shipment = Shipment::where('code', $data['hawb_number'])->first();
+                if (!empty($data['_selected_customer_id']) && $shipment && (int) $shipment->client_id !== (int) $client->id) {
+                    throw ValidationException::withMessages(['customer' => 'Shipment ownership changed. Review the customer before importing.']);
+                }
                 if ($shipment && (int) $shipment->consignment_id !== (int) $consignment->id) {
                     throw ValidationException::withMessages([
                         'hawb_number' => 'A parcel code now belongs to another consignment. Save and review the preview again.',
@@ -459,12 +560,20 @@ class ConsignmentImportController extends Controller
             }
             if (empty($mapped['destination'])) $mapped['destination'] = $batch->default_destination ?? '';
             $counts['detected']++; $errors=[]; $warnings=[];
+            if ($row->selected_customer_id) {
+                try {
+                    $mapped = app(ImportCustomerSelection::class)->apply($mapped, $row, $batch);
+                    $warnings['customer'] = 'Confirmed customer: '.$mapped['consignee_name'].' (profile #'.$mapped['_selected_customer_id'].'). Saved account contacts will be used.';
+                } catch (ValidationException $exception) {
+                    $errors['customer'] = $exception->errors()['customer'][0];
+                }
+            }
             foreach (self::FIELDS as $field=>$def) {
                 $hasPhoneOverride = $field === 'phone' && !empty($row->phone_override);
                 if ($def['required'] && empty($mapped[$field]) && !$hasPhoneOverride) $errors[$field] = $def['label'].' is required.';
             }
             if (empty($mapped['destination'])) $errors['destination'] = 'Map a destination column or enter one destination for the whole file.';
-            if (!empty($mapped['phone']) || !empty($row->phone_override)) {
+            if (!$row->selected_customer_id && (!empty($mapped['phone']) || !empty($row->phone_override))) {
                 $phoneCandidates = $this->phoneCandidates((string) ($mapped['phone'] ?? ''));
                 $mapped['phone'] = $row->phone_override
                     ? $this->phone($row->phone_override)
@@ -507,6 +616,11 @@ class ConsignmentImportController extends Controller
                 if ($existing && (!$batch->target_consignment_id || (int) $existing->consignment_id !== (int) $batch->target_consignment_id)) {
                     $status='conflict'; $warnings['hawb_number']='This parcel code belongs to another consignment.';
                 } elseif ($existing) {
+                    if (!empty($mapped['_selected_customer_id']) && (int) $existing->client_id !== (int) $mapped['_selected_customer_id']) {
+                        $row->update(['mapped_values' => $mapped, 'validation_errors' => ['customer' => 'This shipment belongs to another customer. Reassignment requires separate review.'], 'status' => 'invalid', 'included' => false]);
+                        $counts['invalid']++;
+                        continue;
+                    }
                     $changes = $this->shipmentChanges($existing, $mapped, $batch);
                     $status = $changes ? 'update' : 'unchanged';
                     if ($changes) $warnings['changes'] = 'Will update: '.implode(', ', $changes).'.';
@@ -545,7 +659,7 @@ class ConsignmentImportController extends Controller
 
     private function shipmentChanges(Shipment $shipment, array $data, ConsignmentImportBatch $batch): array
     {
-        $client = $this->findClientForImport($data['phone'], $data['consignee_name'] ?? '', $data['phone_2'] ?? null);
+        $client = !empty($data['_selected_customer_id']) ? app(ImportCustomerSelection::class)->customer((int) $data['_selected_customer_id']) : $this->findClientForImport($data['phone'], $data['consignee_name'] ?? '', $data['phone_2'] ?? null);
         $checks = [
             'customer' => [(int) $shipment->client_id, (int) optional($client)->id],
             'phone' => [$this->phone((string) $shipment->client_phone), $data['phone']],
@@ -667,6 +781,11 @@ class ConsignmentImportController extends Controller
     }
     private function resolveClient(array $data, ConsignmentImportBatch $batch): Client
     {
+        if (!empty($data['_selected_customer_id'])) {
+            $client = app(ImportCustomerSelection::class)->customer((int) $data['_selected_customer_id']);
+            app(ImportCustomerSelection::class)->contacts($client);
+            return $client;
+        }
         $phone=ConsignmentCustomerMatcher::phone($data['phone']) ?? $data['phone'];
         $phone2=ConsignmentCustomerMatcher::phone($data['phone_2'] ?? null);
         $name=trim($data['consignee_name']);

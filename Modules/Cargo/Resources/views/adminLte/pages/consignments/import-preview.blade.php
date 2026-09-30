@@ -74,7 +74,7 @@
                 @if($batch->status === 'completed')
                     <span>Imported: {{ $batch->result['imported'] ?? 0 }} · Removed: {{ $batch->result['removed'] ?? 0 }}</span>
                 @else
-                    <span>New: {{ $batch->summary['new'] ?? 0 }} · Updating: {{ $batch->summary['update'] ?? 0 }} · Unchanged: {{ $batch->summary['unchanged'] ?? 0 }} · Invalid: {{ $batch->summary['invalid'] ?? 0 }} · Conflicts: {{ $batch->summary['conflict'] ?? 0 }}</span>
+                    <span id="importLiveSummary">New: {{ $batch->summary['new'] ?? 0 }} · Updating: {{ $batch->summary['update'] ?? 0 }} · Unchanged: {{ $batch->summary['unchanged'] ?? 0 }} · Invalid: {{ $batch->summary['invalid'] ?? 0 }} · Conflicts: {{ $batch->summary['conflict'] ?? 0 }}</span>
                 @endif
             </div>
             <div class="card-body border-bottom py-2">
@@ -103,9 +103,9 @@
                     <tbody>
                         @forelse($rows->where('spreadsheet_row','>=',$batch->data_start_row)->where('status','!=','excluded') as $row)
                             @php($candidates = $phoneCandidates[$row->id] ?? [])
-                            @php($phoneValue = $row->phone_override ?: (count($candidates) === 1 ? $candidates[0] : ''))
-                            @php($phoneValue2 = $row->phone_override_2 ?: '')
-                            <tr>
+                            @php($phoneValue = $row->selected_customer_id ? ($row->mapped_values['phone'] ?? '') : ($row->phone_override ?: (count($candidates) === 1 ? $candidates[0] : '')))
+                            @php($phoneValue2 = $row->selected_customer_id ? ($row->mapped_values['phone_2'] ?? '') : ($row->phone_override_2 ?: ''))
+                            <tr data-import-row="{{ $row->id }}" data-customer-version="{{ $row->customer_selection_version ?? 0 }}" data-selected-customer="{{ $row->selected_customer_id }}">
                                 <td>
                                     @if($batch->status === 'completed')
                                         <input class="import-row-checkbox" type="checkbox" name="rows[{{ $row->id }}]" value="1" {{ $row->status === 'removed' || $row->import_action !== 'created' || !$row->shipment_id ? 'disabled' : '' }}>
@@ -117,7 +117,7 @@
                                 <td>
                                     @php($displayStatus = $batch->status === 'completed' && $row->shipment_id && $row->status !== 'removed' ? 'imported' : $row->status)
                                     @php($statusColor = ['new'=>'success','update'=>'info','unchanged'=>'secondary','conflict'=>'warning','invalid'=>'danger','imported'=>'success','removed'=>'dark'][$displayStatus] ?? 'secondary')
-                                    <span class="badge badge-{{ $statusColor }}">{{ ucfirst($displayStatus) }}</span>
+                                    <span data-row-status class="badge badge-{{ $statusColor }}">{{ ucfirst($displayStatus) }}</span>
                                     @if($batch->status === 'completed' && $row->import_action)<small class="d-block text-muted">{{ ucfirst($row->import_action) }}</small>@endif
                                 </td>
                                 <td>
@@ -125,6 +125,10 @@
                                         <div>{{ $row->mapped_values['phone'] ?? '—' }}</div>
                                         @if(!empty($row->mapped_values['phone_2']))<div class="text-muted">{{ $row->mapped_values['phone_2'] }}</div>@endif
                                     @else
+                                        <div data-customer-label class="small font-weight-bold mb-2">{{ $row->validation_warnings['customer'] ?? 'Customer not yet confirmed' }}</div>
+                                        @if(empty($row->validation_errors['row']))
+                                            <button type="button" class="btn btn-sm btn-outline-primary mb-2" data-pick-customer data-row-name="{{ $row->mapped_values['consignee_name'] ?? '' }}" data-row-phone="{{ $row->mapped_values['phone'] ?? '' }}" data-row-number="{{ $row->spreadsheet_row }}" data-save-url="{{ route('consignment.import.customer.select', [$batch->uuid, $row->id]) }}">{{ $row->selected_customer_id ? 'Change customer' : 'Choose / confirm customer' }}</button>
+                                        @endif
                                         <label class="small mb-1">Primary phone <span class="text-danger">*</span></label>
                                         <input type="text" name="phone_override[{{ $row->id }}]" value="{{ $phoneValue }}" list="phone-options-{{ $row->id }}" class="form-control form-control-sm {{ count($candidates) > 1 && !$row->phone_override ? 'border-danger' : '' }}" inputmode="tel" autocomplete="off" placeholder="{{ count($candidates) > 1 ? 'Choose a phone number' : 'Enter phone number' }}">
                                         @if($candidates)
@@ -148,7 +152,7 @@
                                     @if(trim((string) $heading) !== '')<td>{{ $row->raw_values[$column] ?? '' }}</td>@endif
                                 @endforeach
                                 @php($showImportIssues = !($batch->status === 'completed' && $row->shipment_id && $row->status !== 'removed'))
-                                <td class="small {{ $showImportIssues && !empty($row->validation_errors) ? 'text-danger' : ($showImportIssues && !empty($row->validation_warnings) ? 'text-warning' : 'text-muted') }}">{{ $showImportIssues ? (implode(' ', $row->validation_errors ?? []) ?: implode(' ', $row->validation_warnings ?? [])) : 'Imported successfully.' }}</td>
+                                <td data-row-issues class="small {{ $showImportIssues && !empty($row->validation_errors) ? 'text-danger' : ($showImportIssues && !empty($row->validation_warnings) ? 'text-warning' : 'text-muted') }}">{{ $showImportIssues ? (implode(' ', $row->validation_errors ?? []) ?: implode(' ', $row->validation_warnings ?? [])) : 'Imported successfully.' }}</td>
                             </tr>
                         @empty
                             <tr><td colspan="99" class="text-center text-muted py-4">No data rows exist below the selected title row.</td></tr>
@@ -163,7 +167,7 @@
             @endif
             <div class="mt-3 d-flex flex-wrap justify-content-end">
                 <button type="submit" name="action" value="refresh" class="btn btn-outline-primary px-4 mr-2 mb-2" data-processing-label="Applying…">Apply phone corrections</button>
-                <button type="submit" class="btn btn-success px-4 mb-2" data-processing-label="Importing… please wait" {{ $readyCount < 1 || !$setupComplete ? 'disabled' : '' }}>{{ $batch->mode === 'update' ? 'Confirm update' : 'Confirm import' }} ({{ $readyCount }} ready)</button>
+                <button type="submit" class="btn btn-success px-4 mb-2" data-confirm-import data-setup-complete="{{ $setupComplete ? '1' : '0' }}" data-confirm-label="{{ $batch->mode === 'update' ? 'Confirm update' : 'Confirm import' }}" data-processing-label="Importing… please wait" {{ $readyCount < 1 || !$setupComplete ? 'disabled' : '' }}>{{ $batch->mode === 'update' ? 'Confirm update' : 'Confirm import' }} ({{ $readyCount }} ready)</button>
             </div>
         @elseif($removableCount > 0)
             <div class="mt-3 d-flex flex-wrap justify-content-end">
@@ -173,9 +177,13 @@
             <div class="alert alert-secondary mt-3">This historical import has no rows that can be safely removed from here.</div>
         @endif
     </form>
+    @if($batch->status !== 'completed')
+        @include('cargo::adminLte.pages.consignments.import-customer-dialog')
+    @endif
 </div>
 @endsection
 
 @section('scripts')
 <script src="{{ asset('js/consignment-import-preview.js') }}?v={{ filemtime(public_path('js/consignment-import-preview.js')) }}" defer></script>
+<script src="{{ asset('js/consignment-import-customers.js') }}?v={{ filemtime(public_path('js/consignment-import-customers.js')) }}" defer></script>
 @endsection

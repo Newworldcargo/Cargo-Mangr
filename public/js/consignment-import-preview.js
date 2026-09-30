@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (selectAll) {
         var refreshSelectAll = function () {
+            rowCheckboxes = Array.prototype.slice.call(document.querySelectorAll('.import-row-checkbox:not(:disabled)'));
             var selected = rowCheckboxes.filter(function (checkbox) { return checkbox.checked; }).length;
             selectAll.checked = rowCheckboxes.length > 0 && selected === rowCheckboxes.length;
             selectAll.indeterminate = selected > 0 && selected < rowCheckboxes.length;
@@ -17,6 +18,8 @@ document.addEventListener('DOMContentLoaded', function () {
             checkbox.addEventListener('change', refreshSelectAll);
         });
         refreshSelectAll();
+        document.addEventListener('import-rows-updated', refreshSelectAll);
+        document.getElementById('importActionForm').addEventListener('change', refreshSelectAll);
     }
 
     document.querySelectorAll('form[data-confirm-message]').forEach(function (form) {
