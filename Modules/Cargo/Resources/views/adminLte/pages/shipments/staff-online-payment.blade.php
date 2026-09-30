@@ -1,7 +1,7 @@
 <link rel="stylesheet" href="{{ asset('css/shipment-payment-modal.css') }}?v=20260930-2">
 <div class="payment-channel-tabs" role="tablist" aria-label="Payment channel">
-    <button type="button" id="offline-payment-tab" class="active" role="tab" aria-selected="true" aria-controls="offline-payment-panel"><i class="fas fa-money-bill-wave" aria-hidden="true"></i> Offline</button>
     <button type="button" id="online-payment-tab" role="tab" aria-selected="false" aria-controls="online-payment-panel" tabindex="-1"><i class="fas fa-mobile-alt" aria-hidden="true"></i> Online</button>
+    <button type="button" id="offline-payment-tab" class="active" role="tab" aria-selected="true" aria-controls="offline-payment-panel"><i class="fas fa-money-bill-wave" aria-hidden="true"></i> Offline</button>
 </div>
 <div id="online-payment-panel" role="tabpanel" aria-labelledby="online-payment-tab" hidden>
     <fieldset id="online-payment-networks" class="payment-networks">

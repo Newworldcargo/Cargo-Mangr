@@ -17,6 +17,7 @@ try {for (const width of [360,390,768,1440]) {
  });
  await page.goto('https://admin.newworldcargo.com/uat',{waitUntil:'networkidle'});
  await page.locator('#markPaidModal').evaluate(el=>{el.classList.add('show');el.style.display='block';el.removeAttribute('aria-hidden');});
+ assert.equal((await page.getByRole('tab').first().innerText()).trim(),'Online');
  await page.getByRole('tab',{name:'Online',exact:true}).click();
  await page.getByRole('radio',{name:'Airtel',exact:true}).check();
  await page.getByLabel('Mobile money number').fill('0972827372');
