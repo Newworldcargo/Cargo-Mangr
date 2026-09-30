@@ -110,6 +110,7 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
     Route::get('files/{fileId}/download', [FileController::class, 'download'])->whereUuid('fileId');
     Route::post('payments/intents', [PaymentController::class, 'createIntent']);
     Route::get('payments/invoices/{invoice}/intent', [PaymentController::class, 'latestIntent'])->whereNumber('invoice');
+    Route::get('payments/invoices/{invoice}/checkout', [PaymentController::class, 'checkout'])->whereNumber('invoice');
     Route::get('payments/intents/{intent}', [PaymentController::class, 'showIntent']);
     Route::get('payment-methods', [PaymentMethodController::class, 'index']);
     Route::post('payment-methods', [PaymentMethodController::class, 'store']);

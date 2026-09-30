@@ -34,7 +34,9 @@ class LipilaGateway
     public function collect(array $payload, ?array $customer = null): array
     {
         if (!$this->ready()) throw new \RuntimeException('New Lipila collections are disabled.');
-        $body = $customer ? ['customerInfo' => $customer, 'collectionRequest' => $payload + ['backUrl' => config('lipila.return_url')]] : $payload;
+        $body = $customer ? ['customerInfo' => $customer, 'collectionRequest' => $payload + [
+            'backUrl' => config('lipila.return_url'), 'referenceData' => $payload['referenceId'],
+        ]] : $payload;
         // Never retry collection POSTs: a timeout can happen after the wallet was charged.
         $response = $this->http()->asJson()->withHeaders(['callbackUrl' => config('lipila.callback_url')])
             ->post('/api/v1/collections/' . ($customer ? 'card' : 'mobile-money'), $body);

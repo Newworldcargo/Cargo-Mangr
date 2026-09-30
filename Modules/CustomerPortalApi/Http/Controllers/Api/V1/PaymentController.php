@@ -15,6 +15,31 @@ use Modules\CustomerPortalApi\Services\LipilaPayments;
 
 class PaymentController extends PortalController
 {
+    public function checkout(Request $request, $invoice)
+    {
+        $client = $this->customerContext->requireClient();
+        $bill = Transxn::whereKey($invoice)->whereHas('shipment', fn ($query) => $query->where('client_id', $client->id))->first();
+        if (!$bill) return $this->problem($request, 'NOT_FOUND', 'Invoice not found.', 404);
+        $shipment = $bill->shipment;
+        $summary = app(\Modules\CustomerPortalApi\Services\ShipmentPaymentSummary::class)->forShipment($shipment);
+        $hasPayments = \App\Models\ShipmentPaymentReceipt::where('shipment_id', $shipment->id)->whereIn('status', ['active', 'completed'])->where('refunded', false)->exists();
+        $payable = !$shipment->paid && (string) $summary['invoiceId'] === (string) $bill->id
+            && in_array($bill->status, ['pending', 'unpaid'], true) && !$hasPayments
+            && $summary['remaining']['amountMinor'] > 0 && $summary['paid']['amountMinor'] === 0
+            && \Modules\CustomerPortalApi\Services\PaymentAttemptGuard::minorUnits($bill->total) === $summary['remaining']['amountMinor'];
+        $ready = config('customerportalapi.payment_provider') === 'lipila' && app(LipilaGateway::class)->ready();
+        $currency = strtoupper((string) $bill->currency);
+        $methods = $ready && $payable && in_array($currency, ['ZMW', 'USD'], true)
+            ? ($currency === 'ZMW' ? ['mobile-money', 'card'] : ['card']) : [];
+        return $this->success($request, [
+            'invoiceId' => (string) $bill->id,
+            'amount' => ['currency' => $currency, 'amountMinor' => \Modules\CustomerPortalApi\Services\PaymentAttemptGuard::minorUnits($bill->total) ?? 0],
+            'methods' => $methods,
+            'message' => $methods ? null : (!$ready ? 'Online payments are currently unavailable. Please contact your branch.'
+                : ($shipment->paid ? 'This shipment is already paid.' : 'Please contact your branch to confirm the remaining bill.')),
+        ]);
+    }
+
     public function createIntent(Request $request)
     {
         $validator = Validator::make($request->all(), [

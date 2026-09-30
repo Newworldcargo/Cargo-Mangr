@@ -457,7 +457,42 @@ class LipilaPaymentsTest extends TestCase
         Http::assertSent(fn ($request) => $request->method() === 'POST'
             && $request['collectionRequest']['currency'] === 'USD'
             && $request['customerInfo']['phoneNumber'] === '263771234567'
+            && $request['collectionRequest']['referenceData'] === $intent->intent_id
+            && $request['collectionRequest']['backUrl'] === config('lipila.return_url')
             && $request['collectionRequest']['amount'] === 100);
+    }
+
+    public function test_customer_checkout_uses_invoice_currency_and_server_amount(): void
+    {
+        $invoice = $this->invoice();
+        $url = '/api/v1/payments/invoices/' . $invoice->id . '/checkout';
+        $this->getJson($url)->assertOk()->assertJsonPath('data.amount.amountMinor', 10000)
+            ->assertJsonPath('data.amount.currency', 'ZMW')->assertJsonPath('data.methods', ['mobile-money', 'card']);
+        $invoice->update(['currency' => 'USD']);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.amount.currency', 'USD')->assertJsonPath('data.methods', ['card']);
+        $invoice->update(['status' => 'completed']);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.methods', []);
+    }
+
+    public function test_checkout_is_owner_scoped_and_disabled_provider_is_not_offered(): void
+    {
+        $invoice = $this->invoice();
+        $url = '/api/v1/payments/invoices/' . $invoice->id . '/checkout';
+        config(['lipila.enabled' => false]);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.methods', []);
+        $other = User::create(['name' => 'Other', 'email' => 'other-checkout@example.test', 'password' => bcrypt('test'), 'role' => 4, 'verified' => true]);
+        Client::create(['user_id' => $other->id, 'code' => 2, 'name' => 'Other', 'email' => $other->email, 'responsible_mobile' => '000']);
+        $this->actingAs($other, 'web')->getJson($url)->assertNotFound();
+    }
+
+    public function test_checkout_does_not_offer_partial_or_stale_invoices(): void
+    {
+        $invoice = $this->invoice();
+        $url = '/api/v1/payments/invoices/' . $invoice->id . '/checkout';
+        ShipmentPaymentReceipt::create(['shipment_id' => $invoice->shipment_id, 'amount' => 10, 'currency' => 'ZMW', 'status' => 'active', 'refunded' => false, 'method_of_payment' => 'cash_payment']);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.methods', []);
+        Transxn::create(['shipment_id' => $invoice->shipment_id, 'receipt_number' => 'REC-NEW', 'total' => 120, 'currency' => 'ZMW', 'status' => 'pending']);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.methods', []);
     }
 
     public function test_confirmed_failure_allows_a_new_attempt_but_does_not_create_receipts(): void
