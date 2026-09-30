@@ -178,3 +178,16 @@ for collection POSTs. Status GETs retain `Accept: application/json` and API-key
 authentication, with `referenceId` in the query string. The corrected production
 gateway confirmed the successful test payment. A regression test covers these
 request headers.
+# Switching From Online To Cash
+
+The staff modal includes a Switch to cash action. It checks the existing attempt
+without submitting another collection or locally cancelling a pending payment.
+No attempt or a confirmed failed attempt allows the UI to select offline cash;
+pending, unknown, review, or successful payment does not. While pending, staff
+are instructed to ask the customer to decline the phone request and wait for
+failure confirmation. There is no documented provider cancellation endpoint in
+the collection API reviewed, so the UI must not imply remote cancellation.
+
+The backend reports `canSwitchOffline` separately from provider availability.
+Existing shipment locks and the unresolved-payment guard remain authoritative
+when actually recording cash, including requests from stale browser tabs.

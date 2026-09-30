@@ -5,13 +5,13 @@ const root='/home/newworldcargo/web/admin.newworldcargo.com/public_html/public';
 const browser=await chromium.launch({args:['--no-sandbox']});
 try {for (const width of [360,390,768,1440]) {
  const page=await browser.newPage({viewport:{width,height:850}});
- let bill = null;
+ let bill = null, intent = null;
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.route('**/*',async route=>{
   const url=new URL(route.request().url());
   if(url.pathname==='/uat')return route.fulfill({contentType:'text/html',body:`<!doctype html><html><head><meta name="viewport" content="width=device-width"><link rel="stylesheet" href="/assets/lte/css/adminlte.css"><link rel="stylesheet" href="/assets/lte/plugins/fontawesome/css/all.min.css"><script src="https://cdn.tailwindcss.com"></script></head><body style="background:#cbd5e1">${readFileSync('/tmp/nwc-full-payment-modal.html','utf8')}</body></html>`});
   if(url.hostname==='cdn.tailwindcss.com')return route.continue();
-  if(url.pathname.includes('shipment-online-payment'))return route.fulfill({json:{data:null,paid:false,available:true,canPrompt:true,bill}});
+  if(url.pathname.includes('shipment-online-payment'))return route.fulfill({json:{data:intent,paid:false,available:true,canPrompt:!intent||intent.status==='failed',canSwitchOffline:!intent||intent.status==='failed',bill}});
   if(url.pathname.endsWith('.css')||url.pathname.includes('/webfonts/'))return route.fulfill({body:readFileSync(root+url.pathname),contentType:url.pathname.endsWith('.css')?'text/css':'font/woff2'});
   return route.abort();
  });
@@ -34,6 +34,14 @@ try {for (const width of [360,390,768,1440]) {
  await page.locator('#payment-footer-confirmed-total').waitFor({state:'visible'});
  assert.equal(await page.locator('#payment-footer-confirmed-total').innerText(),'875.50');
  assert(!(await page.locator('#finalTotal').isVisible()));
+ intent={status:'processing',network:'airtel'};
+ await page.getByRole('button',{name:'Switch to cash'}).click();
+ await page.getByText(/The mobile-money request is still active/).waitFor();
+ assert(await page.getByRole('tab',{name:'Offline',exact:true}).isDisabled());
+ intent.status='failed';
+ await page.getByRole('button',{name:'Check payment status'}).click();
+ await page.locator('#offline-payment-panel').waitFor({state:'visible'});
+ assert.equal(await page.locator('#payment-rows select').first().inputValue(),'cash_payment');
  assert(await page.locator('#markPaidModal .modal-body').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
  await page.getByRole('tab',{name:'Offline',exact:true}).click();
  assert(await page.locator('#finalTotal').isVisible());
@@ -41,6 +49,6 @@ try {for (const width of [360,390,768,1440]) {
  assert.equal(await page.locator('input[name="payment_amount[]"]').first().inputValue(),'700');
  assert(await page.locator('#confirmMarkPaidBtn').isVisible());
  assert.deepEqual(errors,[]);
- console.log(JSON.stringify({width,dialogWidth:dialog.width,footerVisible:true,noOverflow:true,tabs:true,offlineEditable:true}));
+ console.log(JSON.stringify({width,dialogWidth:dialog.width,footerVisible:true,noOverflow:true,tabs:true,offlineEditable:true,pendingCashBlocked:true,failedSwitchesToCash:true}));
  await page.close();
 }} finally {await browser.close();}

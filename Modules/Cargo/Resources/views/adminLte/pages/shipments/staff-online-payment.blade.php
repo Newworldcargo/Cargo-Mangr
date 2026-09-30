@@ -22,6 +22,7 @@
     <div class="payment-online-actions">
         <button type="button" id="online-payment-send" class="btn btn-primary" disabled>Send payment prompt</button>
         <button type="button" id="online-payment-check" class="btn btn-outline-primary">Check payment status</button>
+        <button type="button" id="online-payment-cash" class="btn btn-outline-primary"><i class="fas fa-money-bill-wave" aria-hidden="true"></i> Switch to cash</button>
     </div>
 </div>
 <style>
@@ -73,6 +74,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const online = document.getElementById('online-payment-tab');
     const send = document.getElementById('online-payment-send');
     const check = document.getElementById('online-payment-check');
+    const cash = document.getElementById('online-payment-cash');
     const phone = document.getElementById('online-payment-phone');
     const networks = document.getElementById('online-payment-networks');
     const phoneError = document.getElementById('online-phone-error');
@@ -92,7 +94,7 @@ document.addEventListener('DOMContentLoaded', function () {
     phone.addEventListener('blur', () => { if (phone.value) validatePhone(); });
     const message = document.getElementById('online-payment-status');
     const endpoint = @json(route('shipments.online-payment.store', $shipment->id));
-    let busy = false, checking = false, open = false, state = null, key = null, uncertain = false, error = '';
+    let busy = false, checking = false, open = false, state = null, key = null, uncertain = false, error = '', wantsCash = false;
     networks.addEventListener('change', () => { error = ''; render(); });
     function updateFooter() {
         const confirmed = document.getElementById('payment-footer-confirmed-total');
@@ -135,6 +137,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (savedNetwork) savedNetwork.checked = true;
         }
         send.disabled = locked || !state || !state.canPrompt;
+        cash.disabled = busy || checking || !!(state && state.paid);
         document.querySelectorAll('#discountType, #discountValue, #charge-rows input, #charge-rows button, #addChargeBtn').forEach(el => el.disabled = locked || !!(state && state.bill && modal.dataset.paymentMode === 'online'));
         const bill = state && state.bill;
         document.getElementById('online-payment-bill').textContent = bill ? 'Confirmed bill: ' + bill.currency + ' ' + Number(bill.total).toFixed(2) : '';
@@ -148,10 +151,26 @@ document.addEventListener('DOMContentLoaded', function () {
         else message.textContent = state && state.available ? 'Ready to request the full bill amount.' : 'Online payment is not available yet. You can use offline payment.';
         send.textContent = intent && intent.status === 'failed' ? 'Send another prompt' : 'Send payment prompt';
         if (error && !locked) message.textContent = error;
+        if (wantsCash && !uncertain && state && state.canSwitchOffline) {
+            wantsCash = false;
+            mode('offline');
+            const method = document.querySelector('#payment-rows select[name="method_of_payment[]"]');
+            if (method) {
+                method.value = 'cash_payment';
+                method.dispatchEvent(new Event('change', {bubbles: true}));
+                method.focus();
+            }
+        } else if (wantsCash) {
+            send.disabled = true;
+            message.textContent = intent && intent.status === 'review'
+                ? 'This payment needs review. Ask your payment team to confirm the outcome before accepting cash.'
+                : uncertain ? 'We are still checking whether the request was sent. Cash payment will become available once its outcome is confirmed.'
+                : 'The mobile-money request is still active. Ask the customer to decline it on their phone. We will switch to cash when the failed payment is confirmed. Do not collect cash yet.';
+        }
     }
     async function status() {
         if (checking || busy) return;
-        checking = true; check.disabled = true;
+        checking = true; check.disabled = true; cash.disabled = true;
         try {
             const response = await fetch(endpoint, {headers: {'Accept': 'application/json'}, credentials: 'same-origin', signal: AbortSignal.timeout(30000)});
             if (!response.ok) throw new Error();
@@ -160,7 +179,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (state.data) uncertain = false;
             render();
         } catch (_) { message.textContent = 'We could not check the payment. Please check again before collecting money.'; send.disabled = true; }
-        finally { checking = false; check.disabled = false; }
+        finally { checking = false; check.disabled = false; cash.disabled = busy || !!(state && state.paid); }
     }
     offline.addEventListener('click', () => mode('offline'));
     online.addEventListener('click', () => { mode('online'); status(); });
@@ -171,6 +190,13 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }));
     check.addEventListener('click', status);
+    cash.addEventListener('click', async () => {
+        if (busy || checking) return;
+        wantsCash = true;
+        send.disabled = true;
+        message.textContent = 'Checking the mobile-money payment before switching to cash...';
+        await status();
+    });
     document.getElementById('confirmMarkPaidBtn').addEventListener('click', event => {
         if (modal.dataset.paymentLocked === 'true' || modal.dataset.paymentMode === 'online') { event.preventDefault(); event.stopImmediatePropagation(); }
     }, true);

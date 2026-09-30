@@ -127,9 +127,30 @@ class LipilaPaymentsTest extends TestCase
         $this->postJson($url, $payload)->assertCreated();
         $this->postJson($url, $payload)->assertCreated();
         $this->getJson($url)->assertOk()->assertJsonPath('canPrompt', false)->assertJsonPath('paid', false);
+        $this->getJson($url)->assertOk()->assertJsonPath('canSwitchOffline', false);
         $this->assertDatabaseCount('customer_portal_payment_intents', 1);
         $this->assertSame('mtn', PortalPaymentIntent::first()->billing_snapshot['network']);
         $this->assertCount(1, Http::recorded(fn ($request) => $request->method() === 'POST'));
+    }
+
+    public function test_switch_to_cash_requires_confirmed_failure_and_never_cancels_pending_payment_locally(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $intent = $this->start($invoice);
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) { $mock->shouldReceive('canOperate')->andReturn(true); });
+        $url = '/shipment-online-payment/' . $invoice->shipment_id;
+        $this->getJson($url)->assertOk()->assertJsonPath('canSwitchOffline', false);
+        $this->assertSame('processing', $intent->fresh()->status);
+        $this->complete($intent, ['status' => 'Failed']);
+        config(['lipila.enabled' => false]);
+        $this->getJson($url)->assertOk()->assertJsonPath('canSwitchOffline', true);
+        $this->assertDatabaseCount('shipment_payment_receipts', 0);
+    }
+
+    public function test_successful_online_payment_cannot_switch_to_cash(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $intent = $this->start($invoice); $this->complete($intent);
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) { $mock->shouldReceive('canOperate')->andReturn(true); });
+        $this->getJson('/shipment-online-payment/' . $invoice->shipment_id)->assertOk()->assertJsonPath('canSwitchOffline', false)->assertJsonPath('paid', true);
     }
 
     public function test_staff_prepares_authoritative_bill_with_discount_and_fees_without_marking_paid(): void

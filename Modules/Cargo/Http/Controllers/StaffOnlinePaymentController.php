@@ -66,6 +66,7 @@ class StaffOnlinePaymentController extends Controller
             'paid' => $paid, 'available' => app(LipilaGateway::class)->ready(), 'statusAvailable' => $freshStatus,
             'bill' => $bill ? ['total' => $bill->total, 'currency' => $bill->currency] : null,
             'canPrompt' => !$paid && (!$intent || $intent->status === 'failed') && app(LipilaGateway::class)->ready(),
+            'canSwitchOffline' => !$paid && !app(PaymentAttemptGuard::class)->unresolved($shipment),
         ]);
     }
 }
