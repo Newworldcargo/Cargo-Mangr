@@ -44,6 +44,17 @@ class LipilaPaymentsTest extends TestCase
         Http::fake(fn ($request) => Http::response(['referenceId' => $request['referenceId'], 'status' => 'Pending', 'identifier' => 'TEST-ID']));
     }
 
+    public function test_status_get_does_not_advertise_an_empty_json_body(): void
+    {
+        Http::fake(['*' => Http::response(['status' => 'Pending'])]);
+        app(LipilaGateway::class)->status('test-reference');
+        Http::assertSent(fn ($request) => $request->method() === 'GET'
+            && !$request->hasHeader('Content-Type')
+            && $request->hasHeader('Accept', 'application/json')
+            && $request->hasHeader('x-api-key', 'test-key')
+            && $request['referenceId'] === 'test-reference');
+    }
+
     public function test_verified_live_host_uses_public_collection_api_and_rejects_unknown_hosts(): void
     {
         config(['lipila.base_url' => 'https://blz.lipila.io']);

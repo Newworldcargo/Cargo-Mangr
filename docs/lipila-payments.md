@@ -164,3 +164,17 @@ The previous standalone ZMW 1 test returned 502; checking its reference on the
 verified host returned 404, not a definitive failed-transaction response. Do not
 automatically retry it. Existing persisted payment intents retain their original
 provider environment and are not silently migrated to a different host.
+# Confirmed Live Test
+
+The authorized standalone ZMW 5 Airtel test was confirmed `Successful` by the
+authenticated status endpoint on September 30, 2026. Provider identifier:
+`LPLXC-20260930-140217-542-3242`. This was not a shipment payment and did not create
+an invoice or receipt; live webhook delivery and shipment settlement remain
+separate verification steps.
+
+The live status API rejects a bodyless GET with `Content-Type: application/json`
+with a JSON deserialization error. The gateway now sends JSON content type only
+for collection POSTs. Status GETs retain `Accept: application/json` and API-key
+authentication, with `referenceId` in the query string. The corrected production
+gateway confirmed the successful test payment. A regression test covers these
+request headers.

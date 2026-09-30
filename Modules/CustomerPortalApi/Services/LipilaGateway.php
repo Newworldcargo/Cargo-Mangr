@@ -26,7 +26,7 @@ class LipilaGateway
         if (!in_array($url, ['https://api.lipila.dev', 'https://api.lipila.io', 'https://blz.lipila.io'], true)) {
             throw new \RuntimeException('Invalid Lipila endpoint.');
         }
-        return Http::baseUrl($url)->acceptJson()->asJson()->timeout(20)
+        return Http::baseUrl($url)->acceptJson()->timeout(20)
             ->withOptions(['allow_redirects' => false, 'connect_timeout' => 5])
             ->withHeaders(['x-api-key' => config('lipila.secret_key')]);
     }
@@ -36,7 +36,7 @@ class LipilaGateway
         if (!$this->ready()) throw new \RuntimeException('New Lipila collections are disabled.');
         $body = $customer ? ['customerInfo' => $customer, 'collectionRequest' => $payload + ['backUrl' => config('lipila.return_url')]] : $payload;
         // Never retry collection POSTs: a timeout can happen after the wallet was charged.
-        $response = $this->http()->withHeaders(['callbackUrl' => config('lipila.callback_url')])
+        $response = $this->http()->asJson()->withHeaders(['callbackUrl' => config('lipila.callback_url')])
             ->post('/api/v1/collections/' . ($customer ? 'card' : 'mobile-money'), $body);
         return ['accepted' => $response->successful(), 'data' => is_array($response->json()) ? $response->json() : []];
     }
