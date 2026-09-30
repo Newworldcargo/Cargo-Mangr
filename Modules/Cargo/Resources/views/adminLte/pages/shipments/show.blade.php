@@ -302,7 +302,7 @@
                                 <h5 class="modal-title fw-bold mb-0 text-white" id="markPaidLabel">Record Payment</h5>
                             </div>
                             <button type="button" class="btn-close btn-close-white" data-dismiss="modal"
-                                aria-label="Close payment"><i class="fas fa-times" aria-hidden="true"></i></button>
+                                data-bs-dismiss="modal" aria-label="Close payment"><i class="fas fa-times" aria-hidden="true"></i></button>
                         </div>
 
                         <div class="modal-body p-4">
@@ -548,7 +548,7 @@
                                 <strong id="finalTotal">{{ $paymentSymbol }}{{ number_format($totalAmount, 2) }}</strong>
                                 <strong id="payment-footer-confirmed-total" hidden></strong>
                             </div>
-                            <button type="button" class="btn px-4 py-2" data-dismiss="modal"
+                            <button type="button" class="btn px-4 py-2" data-dismiss="modal" data-bs-dismiss="modal"
                                 style="background-color: #e2e8f0; color: #64748b; border: none; border-radius: 8px; font-weight: 600;">
                                 Cancel
                             </button>
