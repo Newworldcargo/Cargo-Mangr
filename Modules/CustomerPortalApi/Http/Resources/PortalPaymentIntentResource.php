@@ -15,6 +15,7 @@ class PortalPaymentIntentResource extends JsonResource
             'clientToken' => $this->client_token,
             'provider' => $this->provider,
             'method' => $this->method,
+            'network' => $this->billing_snapshot['network'] ?? null,
             'checkoutUrl' => $this->status === 'requires_action' ? $this->checkout_url : null,
             'canRetry' => $this->status === 'failed',
             'message' => [

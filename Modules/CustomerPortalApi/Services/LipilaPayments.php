@@ -24,6 +24,7 @@ class LipilaPayments
         if (!$this->gateway->ready()) throw ValidationException::withMessages(['payment' => 'Online payments are currently unavailable.']);
         $requestKey = $input['idempotencyKey'] ?? null;
         $fingerprint = hash('sha256', json_encode([$invoice->id, $input['method'], $input['phone'], $input['billing'] ?? null]));
+        if (isset($input['network'])) $fingerprint = hash('sha256', $fingerprint . ':' . $input['network']);
         $created = false;
         $intent = DB::transaction(function () use ($invoice, $clientId, $input, $requestKey, $fingerprint, $initiatedBy, &$created) {
             \Modules\Cargo\Entities\Client::whereKey($clientId)->lockForUpdate()->firstOrFail();
@@ -71,7 +72,7 @@ class LipilaPayments
                 'currency' => $currency, 'amount_minor' => $amountMinor, 'revision' => 1,
                 'shipment_id' => $shipment->id, 'request_key' => $requestKey, 'request_fingerprint' => $fingerprint,
                 'provider_environment' => config('lipila.base_url'),
-                'initiated_by' => $initiatedBy, 'billing_snapshot' => $invoice->online_payment_details,
+                'initiated_by' => $initiatedBy, 'billing_snapshot' => isset($input['network']) ? array_merge($invoice->online_payment_details ?? [], ['network' => $input['network']]) : $invoice->online_payment_details,
             ]);
         });
         if (!$created) return $intent;
@@ -209,6 +210,7 @@ class LipilaPayments
     private function validateInput(array $input): array
     {
         $rules = ['method' => ['required', 'in:mobile-money,card'], 'phone' => ['required', 'string', 'regex:/^260[79][0-9]{8}$/'], 'idempotencyKey' => ['nullable', 'uuid']];
+        $rules['network'] = ['sometimes', 'in:mtn,airtel,zamtel'];
         if (($input['method'] ?? '') === 'card') {
             $rules['phone'] = ['required', 'string', 'regex:/^[1-9][0-9]{7,14}$/'];
             foreach (['firstName', 'lastName', 'city', 'address', 'zip'] as $field) $rules['billing.' . $field] = ['required', 'string', 'max:150'];

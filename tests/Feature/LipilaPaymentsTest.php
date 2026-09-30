@@ -77,18 +77,35 @@ class LipilaPaymentsTest extends TestCase
         $this->assertDatabaseCount('customer_portal_payment_intents', 0);
     }
 
+    public function test_staff_collection_requires_network_and_exactly_ten_local_digits(): void
+    {
+        $invoice = $this->invoice();
+        $this->pending();
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) { $mock->shouldReceive('canOperate')->andReturn(true); });
+        $url = '/shipment-online-payment/' . $invoice->shipment_id;
+        $payload = ['network' => 'mtn', 'phone' => '0972827372', 'idempotencyKey' => (string) \Illuminate\Support\Str::uuid(), 'final_total' => '100.00'];
+        foreach (['097282737', '09728273721', '260972827372', '0972 827372', '0612345678', '097282737a'] as $phone) {
+            $this->postJson($url, array_merge($payload, ['phone' => $phone]))->assertStatus(422)->assertJsonValidationErrors('phone');
+        }
+        $this->postJson($url, array_merge($payload, ['network' => null]))->assertStatus(422)->assertJsonValidationErrors('network');
+        $this->postJson($url, array_merge($payload, ['network' => 'unknown']))->assertStatus(422)->assertJsonValidationErrors('network');
+        $this->assertDatabaseCount('customer_portal_payment_intents', 0);
+        Http::assertNothingSent();
+    }
+
     public function test_staff_endpoint_resumes_existing_attempt_without_second_prompt(): void
     {
         $invoice = $this->invoice(); $this->pending();
         $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) {
             $mock->shouldReceive('canOperate')->andReturn(true);
         });
-        $payload = ['phone' => '0972827372', 'idempotencyKey' => (string) \Illuminate\Support\Str::uuid(), 'final_total' => '100.00'];
+        $payload = ['phone' => '0972827372', 'network' => 'mtn', 'idempotencyKey' => (string) \Illuminate\Support\Str::uuid(), 'final_total' => '100.00'];
         $url = '/shipment-online-payment/' . $invoice->shipment_id;
         $this->postJson($url, $payload)->assertCreated();
         $this->postJson($url, $payload)->assertCreated();
         $this->getJson($url)->assertOk()->assertJsonPath('canPrompt', false)->assertJsonPath('paid', false);
         $this->assertDatabaseCount('customer_portal_payment_intents', 1);
+        $this->assertSame('mtn', PortalPaymentIntent::first()->billing_snapshot['network']);
         $this->assertCount(1, Http::recorded(fn ($request) => $request->method() === 'POST'));
     }
 

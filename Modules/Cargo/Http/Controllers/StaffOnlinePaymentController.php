@@ -28,7 +28,8 @@ class StaffOnlinePaymentController extends Controller
         $model = $this->authorizePayment($request, $shipment);
         if (!app(LipilaGateway::class)->ready()) return response()->json(['message' => 'Online payments are not available yet. Please use offline payment.'], 503);
         $input = $request->validate([
-            'phone' => ['required', 'string', 'regex:/^[+0-9 ()-]{8,30}$/D'],
+            'phone' => ['required', 'string', 'regex:/^0[79][0-9]{8}$/D'],
+            'network' => ['required', 'in:mtn,airtel,zamtel'],
             'idempotencyKey' => ['required', 'uuid'],
             'final_total' => ['required', 'numeric', 'min:0.01'],
             'discount_type' => ['nullable', 'in:fixed,percent'],
@@ -36,13 +37,11 @@ class StaffOnlinePaymentController extends Controller
             'charges' => ['nullable', 'array', 'max:30'],
             'charges.*.description' => ['required', 'string', 'max:255'],
             'charges.*.amount' => ['required', 'numeric', 'min:0.01'],
-        ]);
-        $phone = preg_replace('/[^0-9]/', '', $input['phone']);
-        if (preg_match('/^0[79][0-9]{8}$/', $phone)) $phone = '260' . substr($phone, 1);
-        if (!preg_match('/^260[79][0-9]{8}$/', $phone)) return response()->json(['message' => 'Enter a Zambia mobile-money number.'], 422);
+        ], ['phone.regex' => 'Enter a 10-digit mobile number starting with 07 or 09.', 'network.required' => 'Choose the customer mobile network.', 'network.in' => 'Choose MTN, Airtel or Zamtel.']);
+        $phone = '260' . substr($input['phone'], 1);
         $invoice = app(StaffOnlinePaymentBill::class)->prepare($model->id, $request->user(), $input);
         $intent = app(LipilaPayments::class)->create($invoice, (int) $model->client_id, [
-            'method' => 'mobile-money', 'phone' => $phone, 'idempotencyKey' => $input['idempotencyKey'],
+            'method' => 'mobile-money', 'phone' => $phone, 'network' => $input['network'], 'idempotencyKey' => $input['idempotencyKey'],
         ], $request->user()->id);
         return response()->json(['data' => (new PortalPaymentIntentResource($intent))->resolve($request)], 201);
     }
