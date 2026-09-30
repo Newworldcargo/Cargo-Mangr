@@ -4,6 +4,13 @@
         @lang('view.payment_settings')
     </x-slot>
 
+    <section class="border-bottom mb-5 pb-4" aria-labelledby="lipila-heading">
+        <h2 id="lipila-heading" class="h4">Lipila</h2>
+        <p class="mb-2">Customer portal: {{ config('customerportalapi.payment_provider') === 'lipila' ? 'Default provider' : 'Available integration' }}</p>
+        <p class="mb-2">{{ app(\Modules\CustomerPortalApi\Services\LipilaGateway::class)->ready() ? 'Enabled' : 'Awaiting activation' }}. Mobile money and hosted card payments.</p>
+        <p class="text-muted mb-0">Credentials and activation are managed in protected deployment settings. Existing providers below are unchanged.</p>
+    </section>
+
     <!--begin::Basic info-->
     <div class="card mb-5 mb-xl-10">
 

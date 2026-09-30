@@ -37,7 +37,7 @@ return [
 
     'otp_sms_from' => env('CUSTOMER_PORTAL_OTP_SMS_FROM', 'New WorldCargo'),
 
-    'payment_provider' => env('CUSTOMER_PORTAL_PAYMENT_PROVIDER'),
+    'payment_provider' => env('CUSTOMER_PORTAL_PAYMENT_PROVIDER') ?: 'lipila',
 
     'payment_webhook_url' => env('CUSTOMER_PORTAL_PAYMENT_WEBHOOK_URL'),
 

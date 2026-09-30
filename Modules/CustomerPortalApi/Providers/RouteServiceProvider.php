@@ -35,6 +35,9 @@ class RouteServiceProvider extends ServiceProvider
 
     protected function mapApiRoutes()
     {
+        Route::post('api/v1/payments/lipila/webhook', \Modules\CustomerPortalApi\Http\Controllers\Api\V1\LipilaWebhookController::class)
+            ->middleware(['api', 'throttle:120,1']);
+
         Route::prefix('api/v1')
             ->middleware([
                 'web',

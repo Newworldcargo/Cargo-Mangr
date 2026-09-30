@@ -47,7 +47,9 @@ class ShipmentPaymentSummary
         $totalMinor = max(0, (int) round($total * 100));
         $settled = $invoice ? $invoice->isCompleted() || $invoice->isRefunded() : (bool) $shipment->paid;
         $remaining = $settled ? 0 : max(0, $totalMinor - $paid);
-        $providerReady = (bool) config('customerportalapi.payment_provider') && (bool) config('customerportalapi.payment_webhook_url');
+        $providerReady = config('customerportalapi.payment_provider') === 'lipila'
+            ? app(LipilaGateway::class)->ready()
+            : (bool) config('customerportalapi.payment_provider') && (bool) config('customerportalapi.payment_webhook_url');
         $checkoutMessage = !$providerReady ? 'Online payments are currently unavailable. Please contact your branch to arrange payment.'
             : (!$invoice ? 'Please contact your branch to confirm your bill before paying online.'
                 : ($invoice->status === 'partially_paid' ? 'Please contact your branch to pay the remaining balance.' : null));

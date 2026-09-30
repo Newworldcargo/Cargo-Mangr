@@ -10,6 +10,8 @@ use Illuminate\Support\Str;
 use App\Models\Transxn;
 use Modules\CustomerPortalApi\Http\Resources\PortalPaymentIntentResource;
 use Modules\CustomerPortalApi\Models\PortalPaymentIntent;
+use Modules\CustomerPortalApi\Services\LipilaGateway;
+use Modules\CustomerPortalApi\Services\LipilaPayments;
 
 class PaymentController extends PortalController
 {
@@ -26,6 +28,30 @@ class PaymentController extends PortalController
             ->whereHas('shipment', function ($query) use ($client) { $query->where('client_id', $client->id); })
             ->first();
         if (!$invoice) return $this->problem($request, 'NOT_FOUND', 'Invoice not found.', 404);
+        if (config('customerportalapi.payment_provider') === 'lipila') {
+            if (!app(LipilaGateway::class)->ready()) {
+                return $this->problem($request, 'PAYMENTS_UNAVAILABLE', 'Online payments are currently unavailable. Please contact your branch.', 503);
+            }
+            $phone = preg_replace('/[^0-9]/', '', (string) $request->input('phone'));
+            if (preg_match('/^0[79][0-9]{8}$/', $phone)) $phone = '260' . substr($phone, 1);
+            $input = $request->all();
+            $input['phone'] = $phone;
+            $rules = ['phone' => ['required', 'regex:/^260[79][0-9]{8}$/']];
+            if ($request->input('method') === 'card') {
+                $rules['phone'] = ['required', 'regex:/^[1-9][0-9]{7,14}$/'];
+                foreach (['firstName', 'lastName', 'city', 'address', 'zip'] as $field) $rules['billing.' . $field] = ['required', 'string', 'max:150'];
+                $rules['billing.email'] = ['required', 'email', 'max:150'];
+                $rules['billing.country'] = ['required', 'regex:/^[A-Z]{2}$/'];
+            }
+            $validation = Validator::make($input, $rules);
+            if ($validation->fails()) return $this->problem($request, 'VALIDATION_FAILED', 'Please check your payment details.', 422, $validation->errors()->toArray());
+            try {
+                $intent = app(LipilaPayments::class)->create($invoice, (int) $client->id, array_merge($validation->validated(), ['method' => $request->input('method')]));
+                return $this->success($request, (new PortalPaymentIntentResource($intent))->resolve($request), 201);
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                return $this->problem($request, 'INVOICE_NOT_PAYABLE', collect($e->errors())->flatten()->first(), 422, $e->errors());
+            }
+        }
         if (in_array($invoice->status, Transxn::settledStatuses(), true)) {
             return $this->problem($request, 'INVOICE_NOT_PAYABLE', 'This invoice is already settled.', 422);
         }
@@ -86,7 +112,22 @@ class PaymentController extends PortalController
             ->where('client_id', $this->customerContext->requireClient()->id)
             ->first();
         if (!$model) return $this->problem($request, 'NOT_FOUND', 'Payment intent not found.', 404);
+        if ($model->provider === 'lipila' && app(LipilaGateway::class)->ready()) {
+            try {
+                $model = app(LipilaPayments::class)->refresh($model);
+            } catch (\Throwable $e) {
+                Log::warning('Lipila status check deferred.', ['intent_id' => $model->intent_id, 'exception' => get_class($e)]);
+            }
+        }
         return $this->success($request, (new PortalPaymentIntentResource($model))->resolve($request));
+    }
+
+    public function latestIntent(Request $request, $invoice)
+    {
+        $model = PortalPaymentIntent::where('invoice_id', $invoice)
+            ->where('client_id', $this->customerContext->requireClient()->id)->latest('id')->first();
+        if (!$model) return $this->success($request, null);
+        return $this->showIntent($request, $model->intent_id);
     }
 
     private function createProviderIntent(string $provider, array $payload): array
