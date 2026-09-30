@@ -20,7 +20,6 @@
     <p id="online-payment-bill" class="font-weight-bold"></p>
     <p id="online-payment-status" role="status" aria-live="polite">Checking payment availability...</p>
     <div id="online-cash-override" hidden>
-        <p>The online request may still complete. Any later payment will be flagged for reconciliation.</p>
         <label for="online-cash-reason">Reason for switching to cash</label>
         <textarea id="online-cash-reason" class="form-control mb-3" rows="2" maxlength="500" placeholder="Customer declined the prompt and agreed to pay cash"></textarea>
         <label class="d-flex align-items-start" style="gap:10px">
@@ -68,6 +67,7 @@
 #online-payment-panel .payment-approval-note { display:flex; gap:8px; align-items:baseline; font-size:13px; color:#596579; margin:20px 0; }
 #online-payment-bill:empty { display:none; }
 #online-payment-status { border-left:3px solid #94a3b8; padding:10px 12px; background:#f5f7fa; font-size:14px; line-height:1.5; }
+#online-payment-panel:has(#online-cash-override:not([hidden])) #online-payment-status { border-left-color:#d97706; background:#fffbeb; color:#78350f; }
 #online-payment-panel .payment-online-actions { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; }
 #online-payment-panel .payment-online-actions button { min-height:48px; border-radius:6px; white-space:normal; }
 #online-payment-send { background:var(--primary, #0a2463); color:#fff; border-color:var(--primary, #0a2463); }
@@ -182,7 +182,7 @@ document.addEventListener('DOMContentLoaded', function () {
             message.textContent = intent && intent.status === 'review'
                 ? 'This payment needs review. Ask your payment team to confirm the outcome before accepting cash.'
                 : uncertain ? 'We are still checking whether the request was sent. Cash payment will become available once its outcome is confirmed.'
-                : 'Lipila has not confirmed the cancellation yet. You can confirm the agreed switch to cash below. The online request will remain under monitoring.';
+                : 'Cancellation unconfirmed. A payment prompt may still arrive. Do not approve it after paying cash.';
         }
     }
     async function status() {

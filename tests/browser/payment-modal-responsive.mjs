@@ -41,7 +41,7 @@ try {for (const width of [360,390,768,1440]) {
  assert(!(await page.locator('#finalTotal').isVisible()));
  intent={id:'a4d3aa13-60c6-4ffb-a286-10b1c96d3157',status:'processing',network:'airtel'};
  await page.getByRole('button',{name:'Switch to cash'}).click();
- await page.getByText(/Lipila has not confirmed the cancellation/).waitFor();
+ await page.getByText(/Cancellation unconfirmed. A payment prompt may still arrive/).waitFor();
  assert(await page.getByRole('tab',{name:'Offline',exact:true}).isDisabled());
  intent.status='failed';
  await page.getByRole('button',{name:'Check payment status'}).click();
