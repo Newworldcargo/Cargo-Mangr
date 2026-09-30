@@ -41,6 +41,11 @@ checks up to 50 pending attempts per run, oldest checked first, without issuing
 collections. Webhooks and customer polling use the same reconciliation service.
 Keep one scheduler per deployment, or use a shared cache for scheduler locks.
 
+On the current server, `/etc/cron.d/nwc-lipila-reconcile` invokes this command
+directly with `flock`. The pre-existing logistics scheduler points to an old app
+directory and was deliberately left unchanged. Remove the dedicated entry if
+the main scheduler is later repaired, to avoid redundant reconciliation runs.
+
 ## Behavior And Safeguards
 
 - Invoice ownership, latest bill, amount and currency are checked on the backend.
