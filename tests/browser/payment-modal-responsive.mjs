@@ -66,7 +66,7 @@ try {for (const width of [360,390,768,1440]) {
  assert.equal(await page.locator('#online-payment-networks input:checked').count(),0);
  assert.equal(await page.getByLabel('Reason for switching to cash').inputValue(),'');
  assert(!(await page.getByLabel('The customer and I agreed to pay cash and not approve the online request.').isChecked()));
- await page.getByText('Switched to cash. The previous request is still being monitored. Do not approve its payment prompt.').waitFor();
+ await page.getByText('You can record cash payment. A new online prompt is unavailable until Lipila confirms the previous request failed or was cancelled. Do not approve the old prompt after paying cash.').waitFor();
  assert(await page.locator('#markPaidModal .modal-body').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
  await page.getByRole('tab',{name:'Offline',exact:true}).click();
  assert(await page.locator('#finalTotal').isVisible());

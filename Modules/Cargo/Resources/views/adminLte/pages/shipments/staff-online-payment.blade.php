@@ -181,7 +181,7 @@ document.addEventListener('DOMContentLoaded', function () {
         send.textContent = intent && intent.status === 'failed' ? 'Send another prompt' : 'Send payment prompt';
         if (error && !locked) message.textContent = error;
         if (state && state.cashOverride && intent && ['processing', 'requires_action'].includes(intent.status)) {
-            message.textContent = 'Switched to cash. The previous request is still being monitored. Do not approve its payment prompt.';
+            message.textContent = 'You can record cash payment. A new online prompt is unavailable until Lipila confirms the previous request failed or was cancelled. Do not approve the old prompt after paying cash.';
         }
         if (wantsCash && !uncertain && state && state.canSwitchOffline) {
             wantsCash = false;
