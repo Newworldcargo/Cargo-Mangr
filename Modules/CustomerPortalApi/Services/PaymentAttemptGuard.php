@@ -12,7 +12,10 @@ class PaymentAttemptGuard
     {
         return PortalPaymentIntent::where(function ($query) use ($shipmentId) {
             $query->where('shipment_id', $shipmentId)->orWhereIn('invoice_id', Transxn::where('shipment_id', $shipmentId)->select('id'));
-        })->whereNotIn('status', ['failed', 'succeeded', 'completed', 'confirmed'])->latest('id')->first();
+        })->whereNotIn('status', ['failed', 'succeeded', 'completed', 'confirmed'])
+            ->where(function ($query) {
+                $query->whereNull('superseded_by')->orWhereNotIn('status', ['processing', 'requires_action']);
+            })->orderByRaw("CASE WHEN status = 'review' THEN 0 ELSE 1 END")->latest('id')->first();
     }
 
     // Call while holding the shipment row lock shared by online and cashier payments.

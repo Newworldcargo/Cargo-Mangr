@@ -44,11 +44,21 @@ class LipilaPayments
                 }
             }
             $existing = app(PaymentAttemptGuard::class)->unresolved($shipment->id);
+            $restarting = isset($input['restartIntentId']);
+            if ($restarting) {
+                if (!$initiatedBy || !$existing || $existing->intent_id !== $input['restartIntentId']
+                    || !$existing->cash_override_at || $existing->superseded_by || $existing->provider !== 'lipila'
+                    || $existing->method !== 'mobile-money' || $input['method'] !== 'mobile-money'
+                    || !in_array($existing->status, ['processing', 'requires_action'], true)
+                    || (int) $existing->client_id !== $clientId || (int) $existing->invoice_id !== (int) $invoice->id) {
+                    throw ValidationException::withMessages(['payment' => 'The previous payment changed. Check its status before starting again.']);
+                }
+            }
             if ($existing) {
                 if ((int) $existing->client_id !== $clientId || (int) $existing->invoice_id !== (int) $invoice->id) {
                     throw ValidationException::withMessages(['invoiceId' => 'Another payment for this shipment is still being checked. Please contact your branch.']);
                 }
-                return $existing;
+                if (!$restarting) return $existing;
             }
             $latest = Transxn::where('shipment_id', $shipment->id)->where('status', '!=', 'voided_duplicate')->latest('id')->first();
             $summary = app(ShipmentPaymentSummary::class)->forShipment($shipment);
@@ -66,7 +76,7 @@ class LipilaPayments
                 throw ValidationException::withMessages(['method' => 'Please use a card for this currency, or contact your branch.']);
             }
             $created = true;
-            return PortalPaymentIntent::create([
+            $newIntent = PortalPaymentIntent::create([
                 'intent_id' => (string) Str::uuid(), 'client_id' => $clientId, 'invoice_id' => $invoice->id,
                 'provider' => 'lipila', 'method' => $input['method'], 'status' => 'processing',
                 'currency' => $currency, 'amount_minor' => $amountMinor, 'revision' => 1,
@@ -74,6 +84,14 @@ class LipilaPayments
                 'provider_environment' => config('lipila.base_url'),
                 'initiated_by' => $initiatedBy, 'billing_snapshot' => isset($input['network']) ? array_merge($invoice->online_payment_details ?? [], ['network' => $input['network']]) : $invoice->online_payment_details,
             ]);
+            if ($restarting) {
+                $existing->update(['superseded_by' => $newIntent->id]);
+                app(AuditLogService::class)->createLog('online_payment_restarted', $newIntent, null, [], [
+                    'previous_intent_id' => $existing->intent_id, 'intent_id' => $newIntent->intent_id,
+                    'staff_id' => $initiatedBy, 'shipment_id' => $shipment->id,
+                ], 'Staff confirmed no payment received and requested a new prompt. Previous request remains monitored.');
+            }
+            return $newIntent;
         });
         if (!$created) return $intent;
         $payload = [
@@ -215,6 +233,8 @@ class LipilaPayments
     {
         $rules = ['method' => ['required', 'in:mobile-money,card'], 'phone' => ['required', 'string', 'regex:/^260[79][0-9]{8}$/'], 'idempotencyKey' => ['nullable', 'uuid']];
         $rules['network'] = ['sometimes', 'in:mtn,airtel,zamtel'];
+        $rules['restartIntentId'] = ['sometimes', 'required', 'uuid'];
+        $rules['restartAcknowledged'] = [isset($input['restartIntentId']) ? 'required' : 'sometimes', 'accepted'];
         if (($input['method'] ?? '') === 'card') {
             $rules['phone'] = ['required', 'string', 'regex:/^[1-9][0-9]{7,14}$/'];
             foreach (['firstName', 'lastName', 'city', 'address', 'zip'] as $field) $rules['billing.' . $field] = ['required', 'string', 'max:150'];

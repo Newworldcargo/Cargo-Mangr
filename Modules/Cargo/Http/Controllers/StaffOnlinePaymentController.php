@@ -31,6 +31,8 @@ class StaffOnlinePaymentController extends Controller
             'phone' => ['required', 'string', 'regex:/^0[79][0-9]{8}$/D'],
             'network' => ['required', 'in:mtn,airtel,zamtel'],
             'idempotencyKey' => ['required', 'uuid'],
+            'restartIntentId' => ['sometimes', 'required', 'uuid'],
+            'restartAcknowledged' => [$request->has('restartIntentId') ? 'required' : 'sometimes', 'accepted'],
             'final_total' => ['required', 'numeric', 'min:0.01'],
             'discount_type' => ['nullable', 'in:fixed,percent'],
             'discount_value' => ['nullable', 'numeric', 'min:0'],
@@ -38,11 +40,17 @@ class StaffOnlinePaymentController extends Controller
             'charges.*.description' => ['required', 'string', 'max:255'],
             'charges.*.amount' => ['required', 'numeric', 'min:0.01'],
         ], ['phone.regex' => 'Enter a 10-digit mobile number starting with 07 or 09.', 'network.required' => 'Choose the customer mobile network.', 'network.in' => 'Choose MTN, Airtel or Zamtel.']);
+        if (isset($input['restartIntentId'])) {
+            $previous = PortalPaymentIntent::where('shipment_id', $shipment)->where('intent_id', $input['restartIntentId'])->firstOrFail();
+            app(LipilaPayments::class)->refresh($previous);
+        }
         $phone = '260' . substr($input['phone'], 1);
         $invoice = app(StaffOnlinePaymentBill::class)->prepare($model->id, $request->user(), $input);
         $intent = app(LipilaPayments::class)->create($invoice, (int) $model->client_id, [
             'method' => 'mobile-money', 'phone' => $phone, 'network' => $input['network'], 'idempotencyKey' => $input['idempotencyKey'],
-        ], $request->user()->id);
+        ] + (isset($input['restartIntentId']) ? [
+            'restartIntentId' => $input['restartIntentId'], 'restartAcknowledged' => $input['restartAcknowledged'],
+        ] : []), $request->user()->id);
         return response()->json(['data' => (new PortalPaymentIntentResource($intent))->resolve($request)], 201);
     }
 
@@ -66,6 +74,10 @@ class StaffOnlinePaymentController extends Controller
             'paid' => $paid, 'available' => app(LipilaGateway::class)->ready(), 'statusAvailable' => $freshStatus,
             'bill' => $bill ? ['total' => $bill->total, 'currency' => $bill->currency] : null,
             'canPrompt' => !$paid && (!$intent || $intent->status === 'failed') && app(LipilaGateway::class)->ready(),
+            'canRestart' => !$paid && $freshStatus && $intent && $intent->cash_override_at && !$intent->superseded_by
+                && $intent->provider === 'lipila' && $intent->method === 'mobile-money'
+                && in_array($intent->status, ['processing', 'requires_action'], true) && app(LipilaGateway::class)->ready()
+                && !\App\Models\ShipmentPaymentReceipt::where('shipment_id', $shipment)->whereIn('status', ['active', 'completed'])->where('refunded', false)->exists(),
             'canSwitchOffline' => !$paid && !app(PaymentAttemptGuard::class)->blocksCash($shipment),
             'cashOverride' => (bool) $intent?->cash_override_at,
             'canOverrideForCash' => !$paid && $intent && $intent->provider === 'lipila' && in_array($intent->status, ['processing', 'requires_action'], true),

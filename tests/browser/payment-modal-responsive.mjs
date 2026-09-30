@@ -5,7 +5,7 @@ const root='/home/newworldcargo/web/admin.newworldcargo.com/public_html/public';
 const browser=await chromium.launch({args:['--no-sandbox']});
 try {for (const width of [360,390,768,1440]) {
  const page=await browser.newPage({viewport:{width,height:850}});
- let bill = null, intent = null, cashOverride = false;
+ let bill = null, intent = null, cashOverride = false, restartPosts = 0;
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.route('**/*',async route=>{
   const url=new URL(route.request().url());
@@ -14,8 +14,12 @@ try {for (const width of [360,390,768,1440]) {
   if(url.pathname.includes('shipment-online-payment')) {
    if(url.pathname.endsWith('/cash-override')) {
     const body=route.request().postDataJSON();assert.equal(body.intentId,intent.id);assert.equal(body.acknowledged,true);assert(body.reason.length>=5);cashOverride=true;
+   } else if(route.request().method()==='POST') {
+    const body=route.request().postDataJSON();assert.equal(body.restartIntentId,intent.id);assert.equal(body.restartAcknowledged,true);
+    assert.equal(body.phone,'0972827372');assert.equal(body.network,'airtel');restartPosts++;
+    intent={id:'replacement',status:'processing',network:'airtel'};cashOverride=false;
    }
-   return route.fulfill({json:{data:intent,paid:false,available:true,canPrompt:!intent||intent.status==='failed',canSwitchOffline:!intent||intent.status==='failed'||cashOverride,canOverrideForCash:intent?.status==='processing',cashOverride,bill}});
+   return route.fulfill({json:{data:intent,paid:false,available:true,canPrompt:!intent||intent.status==='failed',canRestart:cashOverride&&intent?.status==='processing',canSwitchOffline:!intent||intent.status==='failed'||cashOverride,canOverrideForCash:intent?.status==='processing',cashOverride,bill}});
   }
   if(url.pathname.endsWith('.css')||url.pathname.includes('/webfonts/'))return route.fulfill({body:readFileSync(root+url.pathname),contentType:url.pathname.endsWith('.css')?'text/css':'font/woff2'});
   return route.abort();
@@ -61,19 +65,27 @@ try {for (const width of [360,390,768,1440]) {
  assert(cashOverride);
  await page.getByRole('tab',{name:'Online',exact:true}).click();
  await page.getByRole('button',{name:'Check payment status'}).click();
- assert(await page.getByRole('button',{name:'Send payment prompt',exact:true}).isDisabled());
+ assert(await page.getByRole('button',{name:'Send new payment prompt',exact:true}).isDisabled());
  assert.equal(await page.getByLabel('Mobile money number').inputValue(),'');
  assert.equal(await page.locator('#online-payment-networks input:checked').count(),0);
  assert.equal(await page.getByLabel('Reason for switching to cash').inputValue(),'');
  assert(!(await page.getByLabel('The customer and I agreed to pay cash and not approve the online request.').isChecked()));
- await page.getByText('You can record cash payment. A new online prompt is unavailable until Lipila confirms the previous request failed or was cancelled. Do not approve the old prompt after paying cash.').waitFor();
+ await page.getByText('Start again with a new payment prompt. The old request is still being monitored. Approve only the newest prompt.').waitFor();
  assert(await page.locator('#markPaidModal .modal-body').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
  await page.getByRole('tab',{name:'Offline',exact:true}).click();
  assert(await page.locator('#finalTotal').isVisible());
  await page.locator('input[name="payment_amount[]"]').first().fill('700');
  assert.equal(await page.locator('input[name="payment_amount[]"]').first().inputValue(),'700');
  assert(await page.locator('#confirmMarkPaidBtn').isVisible());
+ await page.getByRole('tab',{name:'Online',exact:true}).click();
+ await page.getByRole('radio',{name:'Airtel',exact:true}).check();
+ await page.getByLabel('Mobile money number').fill('0972827372');
+ await page.getByLabel('No payment was received.',{exact:false}).check();
+ await page.getByRole('button',{name:'Send new payment prompt',exact:true}).click();
+ await page.getByText(/Awaiting payment confirmation/).waitFor();
+ assert.equal(restartPosts,1);
+ assert(await page.getByRole('button',{name:'Send payment prompt',exact:true}).isDisabled());
  assert.deepEqual(errors,[]);
- console.log(JSON.stringify({width,dialogWidth:dialog.width,footerVisible:true,noOverflow:true,tabs:true,offlineEditable:true,pendingCashBlocked:true,failedSwitchesToCash:true,acknowledgedOverride:true,noNewPrompt:true}));
+ console.log(JSON.stringify({width,dialogWidth:dialog.width,footerVisible:true,noOverflow:true,tabs:true,offlineEditable:true,pendingCashBlocked:true,failedSwitchesToCash:true,acknowledgedOverride:true,restartPosts}));
  await page.close();
 }} finally {await browser.close();}

@@ -235,6 +235,102 @@ class LipilaPaymentsTest extends TestCase
         $this->assertTrue(app(\Modules\CustomerPortalApi\Services\PaymentAttemptGuard::class)->blocksCash($invoice->shipment_id));
     }
 
+    private function restartFixture(): array
+    {
+        $invoice = $this->invoice(); $this->pending(); $intent = $this->start($invoice);
+        $intent->update(['cash_override_at' => now(), 'cash_override_by' => auth()->id(), 'cash_override_reason' => 'Customer agreed to cash']);
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) { $mock->shouldReceive('canOperate')->andReturn(true); });
+        return [$invoice, $intent, '/shipment-online-payment/' . $invoice->shipment_id, [
+            'phone' => '0972827372', 'network' => 'airtel', 'final_total' => 100,
+            'idempotencyKey' => (string) \Illuminate\Support\Str::uuid(),
+            'restartIntentId' => $intent->intent_id, 'restartAcknowledged' => true,
+        ]];
+    }
+
+    public function test_staff_restart_creates_one_new_attempt_and_replay_never_sends_twice(): void
+    {
+        [$invoice, $old, $url, $input] = $this->restartFixture();
+        $this->getJson($url)->assertOk()->assertJsonPath('canRestart', true);
+        $this->postJson($url, $input)->assertCreated();
+        $new = PortalPaymentIntent::latest('id')->first();
+        $this->assertNotEquals($old->id, $new->id);
+        $this->assertEquals($new->id, $old->fresh()->superseded_by);
+        $this->assertSame('processing', $old->fresh()->status);
+        $this->postJson($url, $input)->assertCreated();
+        $this->postJson($url, array_merge($input, ['idempotencyKey' => (string) \Illuminate\Support\Str::uuid()]))->assertStatus(422);
+        $this->assertCount(2, Http::recorded(fn ($request) => $request->method() === 'POST'));
+        $this->getJson($url)->assertOk()->assertJsonPath('canRestart', false)->assertJsonPath('canSwitchOffline', false);
+        $this->complete($new); $this->complete($old);
+        $this->assertSame('succeeded', $new->fresh()->status);
+        $this->assertSame('review', $old->fresh()->status);
+        $this->assertDatabaseCount('shipment_payment_receipts', 1);
+    }
+
+    public function test_old_prompt_success_before_replacement_success_still_creates_only_one_receipt(): void
+    {
+        [$invoice, $old, $url, $input] = $this->restartFixture();
+        $this->postJson($url, $input)->assertCreated();
+        $new = PortalPaymentIntent::latest('id')->first();
+        $this->complete($old); $this->complete($new);
+        $this->assertSame('succeeded', $old->fresh()->status);
+        $this->assertSame('review', $new->fresh()->status);
+        $this->assertDatabaseCount('shipment_payment_receipts', 1);
+    }
+
+    public function test_restart_requires_acknowledgement_permission_and_unpaid_bill(): void
+    {
+        [$invoice, $old, $url, $input] = $this->restartFixture();
+        $this->postJson($url, array_merge($input, ['restartAcknowledged' => false]))->assertStatus(422);
+        $withoutAcknowledgement = $input;
+        unset($withoutAcknowledgement['restartAcknowledged']);
+        $this->postJson($url, $withoutAcknowledgement)->assertStatus(422);
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) { $mock->shouldReceive('canOperate')->andReturn(false); });
+        $this->postJson($url, $input)->assertForbidden();
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) { $mock->shouldReceive('canOperate')->andReturn(true); });
+        ShipmentPaymentReceipt::create(['shipment_id' => $invoice->shipment_id, 'amount' => 10, 'currency' => 'ZMW', 'status' => 'active', 'refunded' => false, 'method_of_payment' => 'cash_payment']);
+        $this->getJson($url)->assertOk()->assertJsonPath('canRestart', false);
+        $this->postJson($url, $input)->assertStatus(422);
+        $this->assertNull($old->fresh()->superseded_by);
+        $this->assertCount(1, Http::recorded(fn ($request) => $request->method() === 'POST'));
+    }
+
+    public function test_restart_audit_failure_rolls_back_without_sending_prompt(): void
+    {
+        [$invoice, $old, $url, $input] = $this->restartFixture();
+        $this->mock(\App\Services\AuditLogService::class, function ($mock) { $mock->shouldReceive('createLog')->andThrow(new \RuntimeException('Audit unavailable')); });
+        $this->postJson($url, $input)->assertStatus(500);
+        $this->assertNull($old->fresh()->superseded_by);
+        $this->assertDatabaseCount('customer_portal_payment_intents', 1);
+        $this->assertCount(1, Http::recorded(fn ($request) => $request->method() === 'POST'));
+    }
+
+    public function test_customer_cannot_use_staff_restart_override(): void
+    {
+        [$invoice, $old, $url, $input] = $this->restartFixture();
+        try {
+            app(LipilaPayments::class)->create($invoice, (int) $invoice->shipment->client_id, [
+                'method' => 'mobile-money', 'phone' => '260972827372',
+                'restartIntentId' => $old->intent_id, 'restartAcknowledged' => true,
+            ]);
+            $this->fail('Customer restarted a staff-only attempt.');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $this->assertArrayHasKey('payment', $e->errors());
+        }
+        $this->assertNull($old->fresh()->superseded_by);
+        $this->assertCount(1, Http::recorded(fn ($request) => $request->method() === 'POST'));
+    }
+
+    public function test_failed_replacement_does_not_reactivate_superseded_prompt_but_review_blocks(): void
+    {
+        [$invoice, $old, $url, $input] = $this->restartFixture();
+        $this->postJson($url, $input)->assertCreated();
+        $new = PortalPaymentIntent::latest('id')->first();
+        $new->update(['status' => 'failed']);
+        $this->getJson($url)->assertOk()->assertJsonPath('canPrompt', true)->assertJsonPath('canRestart', false);
+        $old->update(['status' => 'review']);
+        $this->getJson($url)->assertOk()->assertJsonPath('canPrompt', false)->assertJsonPath('canRestart', false)->assertJsonPath('canSwitchOffline', false);
+    }
+
     public function test_staff_prepares_authoritative_bill_with_discount_and_fees_without_marking_paid(): void
     {
         $invoice = $this->invoice(); $shipment = $invoice->shipment;

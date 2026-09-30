@@ -19,6 +19,12 @@
     <p class="payment-approval-note"><i class="fas fa-lock" aria-hidden="true"></i> The customer enters their PIN on their own phone.</p>
     <p id="online-payment-bill" class="font-weight-bold"></p>
     <p id="online-payment-status" role="status" aria-live="polite">Checking payment availability...</p>
+    <div id="online-restart-confirmation" hidden>
+        <label class="d-flex align-items-start" style="gap:10px">
+            <input type="checkbox" id="online-restart-ack" style="width:20px;height:20px;flex-shrink:0">
+            <span>No payment was received. The customer agrees to approve only the newest prompt; approving both could charge them twice.</span>
+        </label>
+    </div>
     <div id="online-cash-override" hidden>
         <label for="online-cash-reason">Reason for switching to cash</label>
         <textarea id="online-cash-reason" class="form-control mb-3" rows="2" maxlength="500" placeholder="Customer declined the prompt and agreed to pay cash"></textarea>
@@ -151,20 +157,23 @@ document.addEventListener('DOMContentLoaded', function () {
         overrideError.textContent = '';
         key = null;
         error = '';
+        document.getElementById('online-restart-ack').checked = false;
     }
     function render() {
         const intent = state && state.data;
         const locked = busy || uncertain || !!(intent && intent.status !== 'failed');
+        const restartAllowed = !!(state && state.canRestart && !busy && !uncertain);
+        document.getElementById('online-restart-confirmation').hidden = !restartAllowed;
         const cashAllowed = state && state.canSwitchOffline && !busy && !uncertain;
         modal.dataset.paymentLocked = String(locked && !cashAllowed);
         offline.disabled = locked && !cashAllowed;
-        phone.disabled = locked;
-        networks.disabled = locked;
+        phone.disabled = locked && !restartAllowed;
+        networks.disabled = locked && !restartAllowed;
         if (locked && intent && intent.network && !state.cashOverride) {
             const savedNetwork = networks.querySelector('input[value="' + intent.network + '"]');
             if (savedNetwork) savedNetwork.checked = true;
         }
-        send.disabled = locked || !state || !state.canPrompt;
+        send.disabled = restartAllowed ? !document.getElementById('online-restart-ack').checked : locked || !state || !state.canPrompt;
         cash.disabled = busy || checking || !!(state && state.paid);
         document.querySelectorAll('#discountType, #discountValue, #charge-rows input, #charge-rows button, #addChargeBtn').forEach(el => el.disabled = (locked && !cashAllowed) || !!(state && state.bill && modal.dataset.paymentMode === 'online'));
         const bill = state && state.bill;
@@ -179,10 +188,11 @@ document.addEventListener('DOMContentLoaded', function () {
         else if (intent) message.textContent = intent.status === 'failed' ? 'Payment was unsuccessful. You can send a new prompt.' : intent.status === 'review' ? 'This payment needs confirmation by your payment team. Do not collect another payment.' : 'Awaiting payment confirmation. The customer should approve the request on their phone.';
         else message.textContent = state && state.available ? 'Ready to request the full bill amount.' : 'Online payment is not available yet. You can use offline payment.';
         send.textContent = intent && intent.status === 'failed' ? 'Send another prompt' : 'Send payment prompt';
-        if (error && !locked) message.textContent = error;
+        if (restartAllowed) send.textContent = 'Send new payment prompt';
         if (state && state.cashOverride && intent && ['processing', 'requires_action'].includes(intent.status)) {
-            message.textContent = 'You can record cash payment. A new online prompt is unavailable until Lipila confirms the previous request failed or was cancelled. Do not approve the old prompt after paying cash.';
+            message.textContent = restartAllowed ? 'Start again with a new payment prompt. The old request is still being monitored. Approve only the newest prompt.' : 'You can record cash payment. The previous online request is still being checked.';
         }
+        if (error && (!locked || restartAllowed)) message.textContent = error;
         if (wantsCash && !uncertain && state && state.canSwitchOffline) {
             wantsCash = false;
             overridePanel.hidden = true;
@@ -224,6 +234,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }));
     check.addEventListener('click', status);
+    document.getElementById('online-restart-ack').addEventListener('change', render);
     cash.addEventListener('click', async () => {
         if (busy || checking) return;
         wantsCash = true;
@@ -255,7 +266,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (modal.dataset.paymentLocked === 'true' || modal.dataset.paymentMode === 'online') { event.preventDefault(); event.stopImmediatePropagation(); }
     }, true);
     send.addEventListener('click', async function () {
-        if (busy || checking || !state || !state.canPrompt || uncertain) return;
+        if (busy || checking || !state || (!state.canPrompt && !state.canRestart) || uncertain) return;
+        if (state.canRestart && !document.getElementById('online-restart-ack').checked) return;
         if (!selectedNetwork()) { message.textContent = 'Choose the customer mobile network.'; networks.querySelector('input').focus(); return; }
         if (!validatePhone()) { phone.focus(); return; }
         key = crypto.randomUUID();
@@ -266,6 +278,10 @@ document.addEventListener('DOMContentLoaded', function () {
             discount_type: document.getElementById('discountType').value || null,
             discount_value: document.getElementById('discountValue').value || 0,
             final_total: state.bill ? state.bill.total : document.getElementById('finalTotal').textContent.replace(/[^0-9.-]/g, '')};
+        if (state.canRestart) {
+            body.restartIntentId = state.data.id;
+            body.restartAcknowledged = true;
+        }
         busy = true; error = ''; render(); message.textContent = 'Sending payment request...';
         try {
             const response = await fetch(endpoint, {method: 'POST', credentials: 'same-origin', signal: AbortSignal.timeout(30000), headers: {
@@ -275,7 +291,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!response.ok) {
                 if (response.status >= 500) uncertain = true;
                 error = result.errors ? Object.values(result.errors).flat().join(' ') : result.message || 'We could not request payment. Please check the payment status.';
-            } else { state = { ...state, data: result.data, canPrompt: false }; uncertain = false; }
+            } else { state = { ...state, data: result.data, canPrompt: false, canRestart: false, cashOverride: false, canSwitchOffline: false }; uncertain = false; document.getElementById('online-restart-ack').checked = false; }
         } catch (_) { uncertain = true; }
         finally { busy = false; render(); await status(); }
     });

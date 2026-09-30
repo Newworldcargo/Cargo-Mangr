@@ -184,7 +184,8 @@ Staff with the existing shipment payment permission may now explicitly authorize
 cash while Lipila is pending. The cash-override endpoint requires the current
 intent ID, a reason, and an acknowledgement of the agreement with the customer.
 The decision is audited and persisted without altering the online status. Only
-cash payments can bypass the unresolved guard; new online prompts remain blocked.
+cash payments can bypass the unresolved guard automatically. A new online prompt
+requires the separate, explicit staff restart acknowledgement described below.
 If online payment wins the race before cash, the normal paid guard blocks cash.
 If online success arrives after cash, the attempt goes to reconciliation review
 without creating a second shipment receipt. Staff see a warning on the shipment.
@@ -198,6 +199,18 @@ directly. Pending attempts require the explicit audited override above; unknown
 outcomes without a persisted attempt, review, and successful payments remain
 blocked. There is no documented provider cancellation endpoint in
 the collection API reviewed, so the UI must not imply remote cancellation.
+
+After a cash override, authorized staff can restart mobile-money collection if
+no payment has been recorded. The staff member re-enters the number and network
+and acknowledges that only the newest prompt should be approved. This does not
+cancel the old prompt: approving both could debit twice. The backend validates
+the exact previous intent, current permission and unpaid bill under row locks,
+links the old intent through `superseded_by`, and audits the replacement in the
+same transaction. Idempotency replays do not send another request; stale restart
+requests are rejected. Old attempts remain in webhook and scheduled reconciliation.
+Whichever verified success arrives first settles the bill; a second success
+requires financial review without issuing another shipment receipt. A review
+blocks further attempts. Migration: `2026_09_30_170000_add_superseded_by_to_payment_intents.php`.
 
 The backend reports `canSwitchOffline` separately from provider availability.
 Existing shipment locks and the unresolved-payment guard remain authoritative
