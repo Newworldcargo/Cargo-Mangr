@@ -161,6 +161,10 @@ class LipilaPayments
                 return;
             }
             $summary = app(ShipmentPaymentSummary::class)->forShipment($shipment);
+            if ($intent->cash_override_at && ShipmentPaymentReceipt::where('shipment_id', $shipment->id)->whereIn('status', ['active', 'completed'])->where('refunded', false)->exists()) {
+                $this->review($intent, 'Online payment succeeded after staff recorded payment under a cash override. Reconcile the additional funds; do not mark a second payment against the bill.');
+                return;
+            }
             if ((int) $invoice->shipment_id !== (int) $shipment->id || $shipment->paid || (int) $shipment->client_id !== (int) $intent->client_id
                 || (string) $summary['invoiceId'] !== (string) $invoice->id || $summary['remaining']['amountMinor'] !== (int) $intent->amount_minor
                 || $summary['remaining']['currency'] !== $intent->currency || !in_array($invoice->status, ['pending', 'unpaid'], true)) {

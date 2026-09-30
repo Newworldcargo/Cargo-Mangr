@@ -2391,7 +2391,10 @@ class ShipmentController extends Controller
             }
 
             $oldValues = $shipment->only(['paid']);
-            if (app(\Modules\CustomerPortalApi\Services\PaymentAttemptGuard::class)->unresolved($shipment->id)) {
+            $paymentGuard = app(\Modules\CustomerPortalApi\Services\PaymentAttemptGuard::class);
+            $pendingOnline = $paymentGuard->unresolved($shipment->id);
+            $cashOnly = collect($request->method_of_payment)->every(fn ($method) => $method === 'cash_payment');
+            if ($pendingOnline && (!$cashOnly || $paymentGuard->blocksCash($shipment->id))) {
                 DB::rollBack();
                 return response()->json([
                     'error' => 'ONLINE_PAYMENT_PENDING',

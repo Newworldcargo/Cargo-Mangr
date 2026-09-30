@@ -66,7 +66,39 @@ class StaffOnlinePaymentController extends Controller
             'paid' => $paid, 'available' => app(LipilaGateway::class)->ready(), 'statusAvailable' => $freshStatus,
             'bill' => $bill ? ['total' => $bill->total, 'currency' => $bill->currency] : null,
             'canPrompt' => !$paid && (!$intent || $intent->status === 'failed') && app(LipilaGateway::class)->ready(),
-            'canSwitchOffline' => !$paid && !app(PaymentAttemptGuard::class)->unresolved($shipment),
+            'canSwitchOffline' => !$paid && !app(PaymentAttemptGuard::class)->blocksCash($shipment),
+            'cashOverride' => (bool) $intent?->cash_override_at,
+            'canOverrideForCash' => !$paid && $intent && $intent->provider === 'lipila' && in_array($intent->status, ['processing', 'requires_action'], true),
         ]);
+    }
+
+    public function cashOverride(Request $request, int $shipment)
+    {
+        $this->authorizePayment($request, $shipment);
+        $input = $request->validate([
+            'intentId' => ['required', 'uuid'], 'acknowledged' => ['required', 'accepted'],
+            'reason' => ['required', 'string', 'min:5', 'max:500'],
+        ]);
+        \Illuminate\Support\Facades\DB::transaction(function () use ($request, $shipment, $input) {
+            $model = Shipment::whereKey($shipment)->lockForUpdate()->firstOrFail();
+            abort_unless(app(ShipmentOperationAccessService::class)->canOperate($request->user(), $model, 'confirm-shipment-payment'), 403);
+            abort_if((bool) $model->paid, 409, 'This shipment is already paid. Do not collect cash.');
+            $intent = app(PaymentAttemptGuard::class)->unresolved($shipment);
+            abort_unless($intent && $intent->intent_id === $input['intentId'] && $intent->provider === 'lipila'
+                && (int) $intent->client_id === (int) $model->client_id
+                && in_array($intent->status, ['processing', 'requires_action'], true), 409, 'The payment status changed. Check it again before switching to cash.');
+            if ($intent->cash_override_at) return;
+            $reason = trim($input['reason']);
+            abort_if(strlen($reason) < 5, 422, 'Enter a reason for switching to cash.');
+            $intent->cash_override_at = now();
+            $intent->cash_override_by = $request->user()->id;
+            $intent->cash_override_reason = $reason;
+            $intent->save();
+            app(\App\Services\AuditLogService::class)->createLog('online_payment_cash_override', $intent, null, [], [
+                'shipment_id' => $model->id, 'intent_id' => $intent->intent_id, 'staff_id' => $request->user()->id,
+                'amount_minor' => $intent->amount_minor, 'currency' => $intent->currency, 'reason' => $reason,
+            ], 'Staff and customer agreed to cash while the online request remains pending. Continue monitoring for late payment.');
+        });
+        return $this->status($request, $shipment);
     }
 }

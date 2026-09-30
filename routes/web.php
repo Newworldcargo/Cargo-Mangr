@@ -81,6 +81,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/shipment-mark-as-paid', [ShipmentController::class, 'markAsPaid'])->name('shipments.mark-as-paid');
     Route::get('/shipment-online-payment/{shipment}', [\Modules\Cargo\Http\Controllers\StaffOnlinePaymentController::class, 'status'])->whereNumber('shipment')->name('shipments.online-payment.status');
     Route::post('/shipment-online-payment/{shipment}', [\Modules\Cargo\Http\Controllers\StaffOnlinePaymentController::class, 'store'])->whereNumber('shipment')->middleware('throttle:10,1')->name('shipments.online-payment.store');
+    Route::post('/shipment-online-payment/{shipment}/cash-override', [\Modules\Cargo\Http\Controllers\StaffOnlinePaymentController::class, 'cashOverride'])->whereNumber('shipment')->middleware('throttle:10,1')->name('shipments.online-payment.cash-override');
     Route::get('/consignment', 'ConsignmentController@index')->name('consignment.index');
     Route::get('/create-consignment', 'ConsignmentController@create')->name('consignment.create');
     Route::post('/consignment', 'ConsignmentController@store')->name('consignment.store');

@@ -47,6 +47,8 @@
 @endsection
 @section('content')
 
+    @include('cargo::adminLte.pages.shipments.cash-override-notice')
+
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
     <!-- Add Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>

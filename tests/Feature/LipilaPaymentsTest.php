@@ -153,6 +153,88 @@ class LipilaPaymentsTest extends TestCase
         $this->getJson('/shipment-online-payment/' . $invoice->shipment_id)->assertOk()->assertJsonPath('canSwitchOffline', false)->assertJsonPath('paid', true);
     }
 
+    public function test_acknowledged_cash_override_preserves_pending_attempt_and_late_success_requires_reconciliation(): void
+    {
+        $invoice = $this->invoice(); $invoice->shipment->update(['amount_to_be_collected' => 100]);
+        $this->pending(); $intent = $this->start($invoice);
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) { $mock->shouldReceive('canOperate')->andReturn(true); });
+        $this->mock(\Modules\Cargo\Services\BranchAccessService::class, function ($mock) {
+            $mock->shouldReceive('currencyFor')->andReturn('ZMW'); $mock->shouldReceive('branchIdFor')->andReturn(null);
+        });
+        $url = '/shipment-online-payment/' . $invoice->shipment_id . '/cash-override';
+        $payload = ['intentId' => $intent->intent_id, 'acknowledged' => true, 'reason' => 'Customer declined the prompt and agreed to cash'];
+        $this->postJson($url, $payload)->assertOk()->assertJsonPath('canSwitchOffline', true)->assertJsonPath('cashOverride', true)->assertJsonPath('canPrompt', false);
+        $this->postJson($url, $payload)->assertOk();
+        $this->assertSame('processing', $intent->fresh()->status);
+        $this->assertEquals(auth()->id(), $intent->fresh()->cash_override_by);
+        $this->assertDatabaseCount('shipment_payment_receipts', 0);
+        $request = Request::create('/', 'POST', ['shipment_id' => $invoice->shipment_id, 'final_total' => 100,
+            'method_of_payment' => ['cash_payment'], 'payment_amount' => [100]]);
+        $response = app(\Modules\Cargo\Http\Controllers\ShipmentController::class)->markAsPaid($request, app(\App\Services\AuditLogService::class));
+        $this->assertSame(200, $response->getStatusCode(), $response->getContent());
+        $this->assertDatabaseCount('shipment_payment_receipts', 1);
+        $this->complete($intent);
+        $this->assertSame('review', $intent->fresh()->status);
+        $this->assertStringContainsString('cash override', $intent->fresh()->review_reason);
+        $this->assertDatabaseCount('shipment_payment_receipts', 1);
+        $this->assertEquals(1, $invoice->shipment->fresh()->paid);
+    }
+
+    public function test_cash_override_needs_permission_acknowledgement_and_current_attempt(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $intent = $this->start($invoice);
+        $url = '/shipment-online-payment/' . $invoice->shipment_id . '/cash-override';
+        $payload = ['intentId' => $intent->intent_id, 'acknowledged' => true, 'reason' => 'Customer requested cash'];
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) { $mock->shouldReceive('canOperate')->andReturn(false); });
+        $this->postJson($url, $payload)->assertForbidden();
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) { $mock->shouldReceive('canOperate')->andReturn(true); });
+        $this->postJson($url, array_merge($payload, ['acknowledged' => false]))->assertStatus(422);
+        $this->postJson($url, array_merge($payload, ['intentId' => (string) \Illuminate\Support\Str::uuid()]))->assertStatus(409);
+        $this->assertNull($intent->fresh()->cash_override_at);
+        $this->complete($intent);
+        $this->postJson($url, $payload)->assertStatus(409);
+        $this->assertDatabaseCount('shipment_payment_receipts', 1);
+    }
+
+    public function test_pending_override_allows_only_cash_not_another_manual_mobile_payment(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $intent = $this->start($invoice);
+        $intent->update(['cash_override_at' => now(), 'cash_override_by' => auth()->id(), 'cash_override_reason' => 'Customer agreed to cash']);
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) { $mock->shouldReceive('canOperate')->andReturn(true); });
+        $request = Request::create('/', 'POST', ['shipment_id' => $invoice->shipment_id, 'final_total' => 100,
+            'method_of_payment' => ['airtel'], 'payment_amount' => [100]]);
+        $response = app(\Modules\Cargo\Http\Controllers\ShipmentController::class)->markAsPaid($request, app(\App\Services\AuditLogService::class));
+        $this->assertSame(409, $response->getStatusCode());
+        $this->assertDatabaseCount('shipment_payment_receipts', 0);
+    }
+
+    public function test_online_success_before_cash_still_settles_once_despite_override(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $intent = $this->start($invoice);
+        $intent->update(['cash_override_at' => now(), 'cash_override_by' => auth()->id(), 'cash_override_reason' => 'Agreed cash, not recorded yet']);
+        $this->complete($intent);
+        $this->assertSame('succeeded', $intent->fresh()->status);
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) { $mock->shouldReceive('canOperate')->andReturn(true); });
+        $request = Request::create('/', 'POST', ['shipment_id' => $invoice->shipment_id, 'final_total' => 100,
+            'method_of_payment' => ['cash_payment'], 'payment_amount' => [100]]);
+        $response = app(\Modules\Cargo\Http\Controllers\ShipmentController::class)->markAsPaid($request, app(\App\Services\AuditLogService::class));
+        $this->assertSame(409, $response->getStatusCode());
+        $this->assertSame('SHIPMENT_ALREADY_PAID', $response->getData(true)['error']);
+        $this->assertDatabaseCount('shipment_payment_receipts', 1);
+    }
+
+    public function test_cash_override_rolls_back_when_audit_cannot_be_written(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $intent = $this->start($invoice);
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) { $mock->shouldReceive('canOperate')->andReturn(true); });
+        $this->mock(\App\Services\AuditLogService::class, function ($mock) { $mock->shouldReceive('createLog')->andThrow(new \RuntimeException('Audit unavailable')); });
+        $this->postJson('/shipment-online-payment/' . $invoice->shipment_id . '/cash-override', [
+            'intentId' => $intent->intent_id, 'acknowledged' => true, 'reason' => 'Customer agreed to pay cash',
+        ])->assertStatus(500);
+        $this->assertNull($intent->fresh()->cash_override_at);
+        $this->assertTrue(app(\Modules\CustomerPortalApi\Services\PaymentAttemptGuard::class)->blocksCash($invoice->shipment_id));
+    }
+
     public function test_staff_prepares_authoritative_bill_with_discount_and_fees_without_marking_paid(): void
     {
         $invoice = $this->invoice(); $shipment = $invoice->shipment;

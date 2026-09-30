@@ -180,12 +180,23 @@ gateway confirmed the successful test payment. A regression test covers these
 request headers.
 # Switching From Online To Cash
 
+Staff with the existing shipment payment permission may now explicitly authorize
+cash while Lipila is pending. The cash-override endpoint requires the current
+intent ID, a reason, and an acknowledgement of the agreement with the customer.
+The decision is audited and persisted without altering the online status. Only
+cash payments can bypass the unresolved guard; new online prompts remain blocked.
+If online payment wins the race before cash, the normal paid guard blocks cash.
+If online success arrives after cash, the attempt goes to reconciliation review
+without creating a second shipment receipt. Staff see a warning on the shipment.
+No automatic refund is issued. The additive migration is
+`2026_09_30_163500_add_cash_override_to_payment_intents.php`.
+
 The staff modal includes a Switch to cash action. It checks the existing attempt
 without submitting another collection or locally cancelling a pending payment.
-No attempt or a confirmed failed attempt allows the UI to select offline cash;
-pending, unknown, review, or successful payment does not. While pending, staff
-are instructed to ask the customer to decline the phone request and wait for
-failure confirmation. There is no documented provider cancellation endpoint in
+No attempt or a confirmed failed attempt allows the UI to select offline cash
+directly. Pending attempts require the explicit audited override above; unknown
+outcomes without a persisted attempt, review, and successful payments remain
+blocked. There is no documented provider cancellation endpoint in
 the collection API reviewed, so the UI must not imply remote cancellation.
 
 The backend reports `canSwitchOffline` separately from provider availability.

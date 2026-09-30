@@ -19,6 +19,17 @@
     <p class="payment-approval-note"><i class="fas fa-lock" aria-hidden="true"></i> The customer enters their PIN on their own phone.</p>
     <p id="online-payment-bill" class="font-weight-bold"></p>
     <p id="online-payment-status" role="status" aria-live="polite">Checking payment availability...</p>
+    <div id="online-cash-override" hidden>
+        <p>The online request may still complete. Any later payment will be flagged for reconciliation.</p>
+        <label for="online-cash-reason">Reason for switching to cash</label>
+        <textarea id="online-cash-reason" class="form-control mb-3" rows="2" maxlength="500" placeholder="Customer declined the prompt and agreed to pay cash"></textarea>
+        <label class="d-flex align-items-start" style="gap:10px">
+            <input type="checkbox" id="online-cash-ack" style="width:20px;height:20px;flex-shrink:0">
+            <span>The customer and I agreed to pay cash and not approve the online request.</span>
+        </label>
+        <button type="button" id="online-cash-confirm" class="btn btn-primary my-3">Confirm switch to cash</button>
+        <p id="online-cash-error" class="text-danger" role="alert"></p>
+    </div>
     <div class="payment-online-actions">
         <button type="button" id="online-payment-send" class="btn btn-primary" disabled>Send payment prompt</button>
         <button type="button" id="online-payment-check" class="btn btn-outline-primary">Check payment status</button>
@@ -75,6 +86,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const send = document.getElementById('online-payment-send');
     const check = document.getElementById('online-payment-check');
     const cash = document.getElementById('online-payment-cash');
+    const overridePanel = document.getElementById('online-cash-override');
+    const overrideButton = document.getElementById('online-cash-confirm');
+    const overrideError = document.getElementById('online-cash-error');
     const phone = document.getElementById('online-payment-phone');
     const networks = document.getElementById('online-payment-networks');
     const phoneError = document.getElementById('online-phone-error');
@@ -107,7 +121,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (bill) confirmed.textContent = Number(bill.total).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
     function mode(value) {
-        if (value === 'offline' && (uncertain || (state && state.data && !['failed', 'succeeded'].includes(state.data.status)))) return;
+        if (value === 'offline' && (uncertain || (state && state.data && !['failed', 'succeeded'].includes(state.data.status))) && !(state && state.canSwitchOffline && !busy)) return;
         modal.dataset.paymentMode = value;
         updateFooter();
         [offline, online].forEach((tab, index) => {
@@ -128,8 +142,9 @@ document.addEventListener('DOMContentLoaded', function () {
     function render() {
         const intent = state && state.data;
         const locked = busy || uncertain || !!(intent && intent.status !== 'failed');
-        modal.dataset.paymentLocked = String(locked);
-        offline.disabled = locked;
+        const cashAllowed = state && state.canSwitchOffline && !busy && !uncertain;
+        modal.dataset.paymentLocked = String(locked && !cashAllowed);
+        offline.disabled = locked && !cashAllowed;
         phone.disabled = locked;
         networks.disabled = locked;
         if (locked && intent && intent.network) {
@@ -138,13 +153,14 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         send.disabled = locked || !state || !state.canPrompt;
         cash.disabled = busy || checking || !!(state && state.paid);
-        document.querySelectorAll('#discountType, #discountValue, #charge-rows input, #charge-rows button, #addChargeBtn').forEach(el => el.disabled = locked || !!(state && state.bill && modal.dataset.paymentMode === 'online'));
+        document.querySelectorAll('#discountType, #discountValue, #charge-rows input, #charge-rows button, #addChargeBtn').forEach(el => el.disabled = (locked && !cashAllowed) || !!(state && state.bill && modal.dataset.paymentMode === 'online'));
         const bill = state && state.bill;
         document.getElementById('online-payment-bill').textContent = bill ? 'Confirmed bill: ' + bill.currency + ' ' + Number(bill.total).toFixed(2) : '';
         const summary = document.getElementById('originalTotal')?.closest('.card');
         if (summary) summary.classList.toggle('online-existing-bill-summary', !!bill);
         updateFooter();
-        if (locked) mode('online');
+        if (locked && !cashAllowed) mode('online');
+        overridePanel.hidden = !(wantsCash && state && state.canOverrideForCash && !state.cashOverride);
         if (state && state.paid) { message.textContent = 'Payment confirmed. Refreshing shipment...'; window.location.reload(); return; }
         if (uncertain) message.textContent = 'Checking whether the payment was started. Do not collect another payment yet.';
         else if (intent) message.textContent = intent.status === 'failed' ? 'Payment was unsuccessful. You can send a new prompt.' : intent.status === 'review' ? 'This payment needs confirmation by your payment team. Do not collect another payment.' : 'Awaiting payment confirmation. The customer should approve the request on their phone.';
@@ -153,6 +169,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (error && !locked) message.textContent = error;
         if (wantsCash && !uncertain && state && state.canSwitchOffline) {
             wantsCash = false;
+            overridePanel.hidden = true;
             mode('offline');
             const method = document.querySelector('#payment-rows select[name="method_of_payment[]"]');
             if (method) {
@@ -165,7 +182,7 @@ document.addEventListener('DOMContentLoaded', function () {
             message.textContent = intent && intent.status === 'review'
                 ? 'This payment needs review. Ask your payment team to confirm the outcome before accepting cash.'
                 : uncertain ? 'We are still checking whether the request was sent. Cash payment will become available once its outcome is confirmed.'
-                : 'The mobile-money request is still active. Ask the customer to decline it on their phone. We will switch to cash when the failed payment is confirmed. Do not collect cash yet.';
+                : 'Lipila has not confirmed the cancellation yet. You can confirm the agreed switch to cash below. The online request will remain under monitoring.';
         }
     }
     async function status() {
@@ -196,6 +213,26 @@ document.addEventListener('DOMContentLoaded', function () {
         send.disabled = true;
         message.textContent = 'Checking the mobile-money payment before switching to cash...';
         await status();
+    });
+    overrideButton.addEventListener('click', async () => {
+        if (busy || checking || !state || !state.canOverrideForCash || !state.data) return;
+        const reason = document.getElementById('online-cash-reason').value.trim();
+        const acknowledged = document.getElementById('online-cash-ack').checked;
+        if (reason.length < 5 || !acknowledged) {
+            overrideError.textContent = 'Enter a reason and confirm the agreement with the customer.';
+            return;
+        }
+        busy = true; overrideButton.disabled = true; overrideError.textContent = '';
+        render();
+        try {
+            const response = await fetch(endpoint + '/cash-override', {method: 'POST', credentials: 'same-origin', signal: AbortSignal.timeout(30000), headers: {
+                'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': @json(csrf_token())
+            }, body: JSON.stringify({intentId: state.data.id, reason, acknowledged})});
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.message || 'Could not confirm the switch. Please check the payment status.');
+            state = result; uncertain = false;
+        } catch (e) { overrideError.textContent = e.message || 'Could not confirm the switch. Check the payment status before collecting cash.'; }
+        finally { busy = false; overrideButton.disabled = false; render(); await status(); }
     });
     document.getElementById('confirmMarkPaidBtn').addEventListener('click', event => {
         if (modal.dataset.paymentLocked === 'true' || modal.dataset.paymentMode === 'online') { event.preventDefault(); event.stopImmediatePropagation(); }
@@ -229,6 +266,6 @@ document.addEventListener('DOMContentLoaded', function () {
         window.jQuery(modal).on('shown.bs.modal', () => { open = true; status(); });
         window.jQuery(modal).on('hidden.bs.modal', () => { open = false; });
     }
-    setInterval(() => { if (open && modal.dataset.paymentMode === 'online') status(); }, 6000);
+    setInterval(() => { if (open && (modal.dataset.paymentMode === 'online' || (state && state.cashOverride))) status(); }, 6000);
 });
 </script>

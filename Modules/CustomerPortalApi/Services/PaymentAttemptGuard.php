@@ -16,6 +16,16 @@ class PaymentAttemptGuard
     }
 
     // Call while holding the shipment row lock shared by online and cashier payments.
+    public function blocksCash(int $shipmentId): bool
+    {
+        return PortalPaymentIntent::where(function ($query) use ($shipmentId) {
+            $query->where('shipment_id', $shipmentId)->orWhereIn('invoice_id', Transxn::where('shipment_id', $shipmentId)->select('id'));
+        })->whereNotIn('status', ['failed', 'succeeded', 'completed', 'confirmed'])
+            ->where(function ($query) {
+                $query->whereNull('cash_override_at')->orWhereNotIn('status', ['processing', 'requires_action']);
+            })->exists();
+    }
+
     public function assertNoUnresolvedPayment(int $shipmentId): void
     {
         if ($this->unresolved($shipmentId)) {
