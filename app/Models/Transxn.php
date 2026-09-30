@@ -43,6 +43,7 @@ class Transxn extends Model
     ];
 
     protected $casts = [
+        'online_payment_details' => 'array',
         'refunded_at' => 'datetime',
         'refunded_amount' => 'decimal:2',
     ];

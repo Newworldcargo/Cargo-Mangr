@@ -414,6 +414,9 @@
                                     <h6 class="mb-3 text-uppercase text-[#0a2463] text-[0.85rem] tracking-[0.5px]">Payment
                                         Method</h6>
 
+                                    @include('cargo::adminLte.pages.shipments.staff-online-payment')
+                                    <div id="offline-payment-panel" role="tabpanel" aria-labelledby="offline-payment-tab">
+
                                     <div id="payment-rows" class="flex flex-col gap-4">
                                         <!-- initial payment row -->
                                         <div class="payment-row flex items-start gap-3">
@@ -510,6 +513,7 @@
                                             </div>
                                         </div>
                                     </template>
+                                    </div>
                                 </div>
 
 

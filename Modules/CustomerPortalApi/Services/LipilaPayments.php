@@ -18,17 +18,21 @@ class LipilaPayments
 {
     public function __construct(private LipilaGateway $gateway) {}
 
-    public function create(Transxn $invoice, int $clientId, array $input): PortalPaymentIntent
+    public function create(Transxn $invoice, int $clientId, array $input, ?int $initiatedBy = null): PortalPaymentIntent
     {
         $input = $this->validateInput($input);
         if (!$this->gateway->ready()) throw ValidationException::withMessages(['payment' => 'Online payments are currently unavailable.']);
         $requestKey = $input['idempotencyKey'] ?? null;
         $fingerprint = hash('sha256', json_encode([$invoice->id, $input['method'], $input['phone'], $input['billing'] ?? null]));
         $created = false;
-        $intent = DB::transaction(function () use ($invoice, $clientId, $input, $requestKey, $fingerprint, &$created) {
+        $intent = DB::transaction(function () use ($invoice, $clientId, $input, $requestKey, $fingerprint, $initiatedBy, &$created) {
             \Modules\Cargo\Entities\Client::whereKey($clientId)->lockForUpdate()->firstOrFail();
             $shipment = Shipment::whereKey($invoice->shipment_id)->lockForUpdate()->firstOrFail();
             $invoice = Transxn::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            if ($initiatedBy !== null) {
+                $staff = \App\Models\User::findOrFail($initiatedBy);
+                abort_unless(app(\Modules\Cargo\Services\ShipmentOperationAccessService::class)->canOperate($staff, $shipment, 'confirm-shipment-payment'), 403);
+            }
             abort_unless((int) $shipment->client_id === $clientId, 404);
             if ((int) $invoice->shipment_id !== (int) $shipment->id) abort(409, 'The bill changed. Please refresh.');
             if ($requestKey) {
@@ -67,6 +71,7 @@ class LipilaPayments
                 'currency' => $currency, 'amount_minor' => $amountMinor, 'revision' => 1,
                 'shipment_id' => $shipment->id, 'request_key' => $requestKey, 'request_fingerprint' => $fingerprint,
                 'provider_environment' => config('lipila.base_url'),
+                'initiated_by' => $initiatedBy, 'billing_snapshot' => $invoice->online_payment_details,
             ]);
         });
         if (!$created) return $intent;
@@ -162,20 +167,28 @@ class LipilaPayments
                 return;
             }
             $number = $invoice->receipt_number ?: 'REC-ONLINE-' . $invoice->id;
+            $cashier = $intent->initiated_by ? \App\Models\User::find($intent->initiated_by) : null;
+            $cashierName = $cashier ? $cashier->name : 'Online payment';
             $receipt = ShipmentPaymentReceipt::create([
                 'shipment_id' => $shipment->id, 'collection_branch_id' => $invoice->collection_branch_id ?: $shipment->branch_id,
                 'method_of_payment' => 'Lipila ' . ($intent->method === 'card' ? 'card' : 'mobile money'),
                 'amount' => $intent->amount_minor / 100, 'currency' => $intent->currency, 'status' => 'active',
-                'receipt_number' => $number . '-LIPILA-' . $intent->id, 'cashier_name' => 'Online payment', 'refunded' => false,
+                'receipt_number' => $number . '-LIPILA-' . $intent->id, 'cashier_name' => $cashierName, 'user_id' => $cashier?->id, 'refunded' => false,
             ]);
             NwcReceipt::updateOrCreate(['shipment_id' => $shipment->id], [
                 'receipt_number' => $number, 'payment_currency' => $intent->currency,
                 'bill_usd' => $intent->currency === 'USD' ? $invoice->total : null,
-                'bill_kwacha' => $intent->currency === 'ZMW' ? $invoice->total : null,
-                'method_of_payment' => $receipt->method_of_payment, 'cashier_name' => 'Online payment',
+                'bill_kwacha' => $intent->currency === 'ZMW' ? (isset($intent->billing_snapshot['base_minor']) ? $intent->billing_snapshot['base_minor'] / 100 : $invoice->total) : null,
+                'method_of_payment' => $receipt->method_of_payment, 'cashier_name' => $cashierName, 'user_id' => $cashier?->id,
                 'collection_branch_id' => $receipt->collection_branch_id,
                 'discount_type' => $invoice->discount_type, 'discount_value' => $invoice->discount_value ?: 0,
             ]);
+            foreach (($intent->billing_snapshot['charges'] ?? []) as $charge) {
+                \App\Models\ShipmentChargeLine::create([
+                    'shipment_id' => $shipment->id, 'description' => $charge['description'],
+                    'amount' => $charge['amount_minor'] / 100, 'currency' => $intent->currency, 'sort_order' => $charge['sort_order'],
+                ]);
+            }
             $invoice->update(['status' => 'completed', 'receipt_number' => $number]);
             $shipment->update(['paid' => 1]);
             $intent->update(['status' => 'succeeded', 'settled_at' => now(), 'receipt_id' => $receipt->id, 'checkout_url' => null, 'revision' => $intent->revision + 1]);

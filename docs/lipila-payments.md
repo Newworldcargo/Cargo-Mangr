@@ -124,3 +124,25 @@ separately authorized sandbox/live end-to-end transaction before enabling live
 customer payments. Unit/browser mocks do not prove provider delivery.
 
 Official contract: https://docs.lipila.io/docs/gettingstarted/overview.html
+# Staff Mobile-Money Collection
+
+The shipment Mark as Paid modal has Offline and Online tabs. Offline retains the
+existing manual workflow. Online collects the full unpaid ZMW bill through Lipila;
+the customer approves on their own phone. Partial payments and other currencies
+continue through the existing offline workflow.
+
+The additive migration `2026_09_30_150000_add_staff_online_payment_context.php`
+stores the bill breakdown and initiating staff member. Existing payment permission
+and shipment scope are checked before preparing the bill and again under the
+collection transaction lock. Missing conversion rates prevent new bill creation.
+
+An existing bill is displayed as confirmed and cannot be changed during collection.
+Pending or unknown outcomes block a new prompt and offline payment. Only verified
+failure permits retry. Reopening the modal reads the persisted attempt. Confirmed
+settlement records charges and cashier details once, with the receipt base amount
+kept separate from extra charges and discounts.
+
+The collection feature remains gated by `LIPILA_ENABLED`. KYC approval does not
+itself prove API readiness; verify the live account and an authorized end-to-end
+collection before enabling. Browser tests use intercepted payment responses and
+must not be interpreted as proof of live mobile-network delivery.

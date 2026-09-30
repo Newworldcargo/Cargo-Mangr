@@ -14,6 +14,7 @@ class PortalPaymentIntent extends Model
     ];
 
     protected $casts = [
+        'billing_snapshot' => 'array',
         'amount_minor' => 'integer',
     ];
 }

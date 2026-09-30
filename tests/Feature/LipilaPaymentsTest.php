@@ -44,6 +44,76 @@ class LipilaPaymentsTest extends TestCase
         Http::fake(fn ($request) => Http::response(['referenceId' => $request['referenceId'], 'status' => 'Pending', 'identifier' => 'TEST-ID']));
     }
 
+    public function test_staff_collection_records_cashier_and_extra_charges_only_once_after_confirmation(): void
+    {
+        $invoice = $this->invoice();
+        $invoice->online_payment_details = ['base_minor' => 9000, 'charges' => [['description' => 'Handling', 'amount_minor' => 1000, 'sort_order' => 0]]];
+        $invoice->save();
+        $this->pending();
+        $actor = auth()->id();
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) { $mock->shouldReceive('canOperate')->andReturn(true); });
+        $intent = app(LipilaPayments::class)->create($invoice, (int) $invoice->shipment->client_id, ['method' => 'mobile-money', 'phone' => '260972827372'], $actor);
+        $this->assertDatabaseCount('shipment_charge_lines', 0);
+        $this->complete($intent); $this->complete($intent->fresh());
+        $this->assertDatabaseCount('shipment_charge_lines', 1);
+        $this->assertDatabaseHas('shipment_charge_lines', ['amount' => 10, 'currency' => 'ZMW']);
+        $this->assertDatabaseHas('shipment_payment_receipts', ['user_id' => $actor, 'amount' => 100]);
+        $this->assertEquals(90, \App\Models\NwcReceipt::where('shipment_id', $invoice->shipment_id)->firstOrFail()->bill_kwacha);
+    }
+
+    public function test_staff_endpoint_respects_permission_and_disabled_collection(): void
+    {
+        $invoice = $this->invoice();
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) {
+            $mock->shouldReceive('canOperate')->andReturn(false);
+        });
+        $this->postJson('/shipment-online-payment/' . $invoice->shipment_id, [])->assertForbidden();
+        $this->getJson('/shipment-online-payment/' . $invoice->shipment_id)->assertForbidden();
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) {
+            $mock->shouldReceive('canOperate')->andReturn(true);
+        });
+        config(['lipila.enabled' => false]);
+        $this->postJson('/shipment-online-payment/' . $invoice->shipment_id, [])->assertStatus(503);
+        $this->assertDatabaseCount('customer_portal_payment_intents', 0);
+    }
+
+    public function test_staff_endpoint_resumes_existing_attempt_without_second_prompt(): void
+    {
+        $invoice = $this->invoice(); $this->pending();
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) {
+            $mock->shouldReceive('canOperate')->andReturn(true);
+        });
+        $payload = ['phone' => '0972827372', 'idempotencyKey' => (string) \Illuminate\Support\Str::uuid(), 'final_total' => '100.00'];
+        $url = '/shipment-online-payment/' . $invoice->shipment_id;
+        $this->postJson($url, $payload)->assertCreated();
+        $this->postJson($url, $payload)->assertCreated();
+        $this->getJson($url)->assertOk()->assertJsonPath('canPrompt', false)->assertJsonPath('paid', false);
+        $this->assertDatabaseCount('customer_portal_payment_intents', 1);
+        $this->assertCount(1, Http::recorded(fn ($request) => $request->method() === 'POST'));
+    }
+
+    public function test_staff_prepares_authoritative_bill_with_discount_and_fees_without_marking_paid(): void
+    {
+        $invoice = $this->invoice(); $shipment = $invoice->shipment;
+        $invoice->delete(); $shipment->update(['amount_to_be_collected' => 5]);
+        \App\Models\CurrencyExchangeRate::create(['from_currency' => 'USD', 'to_currency' => 'ZMW', 'exchange_rate' => 20]);
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) { $mock->shouldReceive('canOperate')->andReturn(true); });
+        $this->mock(\Modules\Cargo\Services\BranchAccessService::class, function ($mock) {
+            $mock->shouldReceive('currencyFor')->andReturn('ZMW');
+            $mock->shouldReceive('branchIdFor')->andReturn(null);
+        });
+        $bill = app(\Modules\Cargo\Services\StaffOnlinePaymentBill::class)->prepare($shipment->id, auth()->user(), [
+            'final_total' => '108.00', 'discount_type' => 'percent', 'discount_value' => 10,
+            'charges' => [['description' => 'Handling', 'amount' => '20.00']],
+        ]);
+        $this->assertEquals(108, $bill->total);
+        $this->assertEquals(10000, $bill->online_payment_details['base_minor']);
+        $this->assertSame('pending', $bill->status);
+        $this->assertFalse((bool) $shipment->fresh()->paid);
+        $this->assertDatabaseCount('shipment_payment_receipts', 0);
+        $this->assertDatabaseCount('shipment_charge_lines', 0);
+    }
+
     private function complete(PortalPaymentIntent $intent, array $overrides = []): void
     {
         $intent->update(['last_checked_at' => null]);
