@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 const root=process.cwd();
 const partial='<link rel="stylesheet" href="/assets/lte/plugins/fontawesome/css/all.min.css">'+readFileSync(root+'/Modules/Cargo/Resources/views/adminLte/pages/shipments/staff-online-payment.blade.php','utf8')
  .replace("@json(route('shipments.online-payment.store', $shipment->id))",JSON.stringify('/shipment-online-payment/41533'))
- .replace('@json(csrf_token())',JSON.stringify('test-only'))
+ .replaceAll('@json(csrf_token())',JSON.stringify('test-only'))
  .replace("{{ asset('css/shipment-payment-modal.css') }}", '/css/shipment-payment-modal.css');
 const browser=await chromium.launch({args:['--no-sandbox']});
 try {for(const width of [360,390,1440]) {
