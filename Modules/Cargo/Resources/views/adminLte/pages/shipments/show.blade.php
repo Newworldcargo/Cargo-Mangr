@@ -535,18 +535,17 @@
                                         <span class="text-muted">Extra Charges ({{ $paymentCurrency }}):</span>
                                         <span id="chargesTotal" class="fw-medium">{{ $paymentSymbol }}0.00</span>
                                     </div>
-                                    <hr style="opacity: 0.1;">
-                                    <div class="d-flex justify-content-between mt-2">
-                                        <span class="fw-bold" style="color: #0a2463;">Final Total ({{ $paymentCurrency }}):</span>
-                                        <span id="finalTotal" class="fw-bold fs-5"
-                                            style="color: #0a2463;">{{ $paymentSymbol }}{{ number_format($totalAmount, 2) }}</span>
-                                    </div>
                                 </div>
                             </form>
                         </div>
 
                         <div class="modal-footer py-4"
                             style="background-color: #f8f9fa; border-top: 1px solid rgba(0,0,0,0.05);">
+                            <div class="payment-footer-total" aria-live="polite" aria-atomic="true">
+                                <span class="payment-footer-label">Final Total (<span id="payment-footer-currency" data-currency="{{ $paymentCurrency }}">{{ $paymentCurrency }}</span>):</span>
+                                <strong id="finalTotal">{{ $paymentSymbol }}{{ number_format($totalAmount, 2) }}</strong>
+                                <strong id="payment-footer-confirmed-total" hidden></strong>
+                            </div>
                             <button type="button" class="btn px-4 py-2" data-dismiss="modal"
                                 style="background-color: #e2e8f0; color: #64748b; border: none; border-radius: 8px; font-weight: 600;">
                                 Cancel
@@ -1008,7 +1007,7 @@
 
                     // Try to place them under the finalTotal if not present
                     if (!paymentsTotalEl || !remainingEl || !statusEl) {
-                        const summaryCard = finalTotalEl.closest('.card') || finalTotalEl.parentElement;
+                        const summaryCard = originalTotalEl.closest('.card');
                         if (summaryCard) {
                             // payments total row
                             const paymentsRow = document.createElement('div');

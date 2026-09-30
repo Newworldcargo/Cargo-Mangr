@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="{{ asset('css/shipment-payment-modal.css') }}?v=20260930-1">
+<link rel="stylesheet" href="{{ asset('css/shipment-payment-modal.css') }}?v=20260930-2">
 <div class="payment-channel-tabs" role="tablist" aria-label="Payment channel">
     <button type="button" id="offline-payment-tab" class="active" role="tab" aria-selected="true" aria-controls="offline-payment-panel"><i class="fas fa-money-bill-wave" aria-hidden="true"></i> Offline</button>
     <button type="button" id="online-payment-tab" role="tab" aria-selected="false" aria-controls="online-payment-panel" tabindex="-1"><i class="fas fa-mobile-alt" aria-hidden="true"></i> Online</button>
@@ -94,9 +94,20 @@ document.addEventListener('DOMContentLoaded', function () {
     const endpoint = @json(route('shipments.online-payment.store', $shipment->id));
     let busy = false, checking = false, open = false, state = null, key = null, uncertain = false, error = '';
     networks.addEventListener('change', () => { error = ''; render(); });
+    function updateFooter() {
+        const confirmed = document.getElementById('payment-footer-confirmed-total');
+        const currency = document.getElementById('payment-footer-currency');
+        if (!confirmed || !currency) return;
+        const bill = modal.dataset.paymentMode === 'online' && state && state.bill;
+        confirmed.hidden = !bill;
+        document.getElementById('finalTotal').hidden = !!bill;
+        currency.textContent = bill ? bill.currency : currency.dataset.currency;
+        if (bill) confirmed.textContent = Number(bill.total).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
     function mode(value) {
         if (value === 'offline' && (uncertain || (state && state.data && !['failed', 'succeeded'].includes(state.data.status)))) return;
         modal.dataset.paymentMode = value;
+        updateFooter();
         [offline, online].forEach((tab, index) => {
             const selected = value === (index ? 'online' : 'offline');
             tab.classList.toggle('active', selected);
@@ -127,8 +138,9 @@ document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('#discountType, #discountValue, #charge-rows input, #charge-rows button, #addChargeBtn').forEach(el => el.disabled = locked || !!(state && state.bill && modal.dataset.paymentMode === 'online'));
         const bill = state && state.bill;
         document.getElementById('online-payment-bill').textContent = bill ? 'Confirmed bill: ' + bill.currency + ' ' + Number(bill.total).toFixed(2) : '';
-        const summary = document.getElementById('finalTotal').closest('.card');
+        const summary = document.getElementById('originalTotal')?.closest('.card');
         if (summary) summary.classList.toggle('online-existing-bill-summary', !!bill);
+        updateFooter();
         if (locked) mode('online');
         if (state && state.paid) { message.textContent = 'Payment confirmed. Refreshing shipment...'; window.location.reload(); return; }
         if (uncertain) message.textContent = 'Checking whether the payment was started. Do not collect another payment yet.';
