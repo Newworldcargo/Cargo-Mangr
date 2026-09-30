@@ -44,6 +44,18 @@ class LipilaPaymentsTest extends TestCase
         Http::fake(fn ($request) => Http::response(['referenceId' => $request['referenceId'], 'status' => 'Pending', 'identifier' => 'TEST-ID']));
     }
 
+    public function test_verified_live_host_uses_public_collection_api_and_rejects_unknown_hosts(): void
+    {
+        config(['lipila.base_url' => 'https://blz.lipila.io']);
+        $gateway = app(LipilaGateway::class);
+        $this->assertTrue($gateway->configured());
+        $invoice = $this->invoice(); $this->pending(); $this->start($invoice);
+        Http::assertSent(fn ($request) => $request->url() === 'https://blz.lipila.io/api/v1/collections/mobile-money'
+            && $request->method() === 'POST' && $request['amount'] === 100 && $request['accountNumber'] === '260972827372');
+        config(['lipila.base_url' => 'https://untrusted.example']);
+        $this->assertFalse($gateway->configured());
+    }
+
     public function test_staff_collection_records_cashier_and_extra_charges_only_once_after_confirmation(): void
     {
         $invoice = $this->invoice();

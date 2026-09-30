@@ -146,3 +146,21 @@ The collection feature remains gated by `LIPILA_ENABLED`. KYC approval does not
 itself prove API readiness; verify the live account and an authorized end-to-end
 collection before enabling. Browser tests use intercepted payment responses and
 must not be interpreted as proof of live mobile-network delivery.
+# Live Host Verification (September 30)
+
+Inspection of Lipila's hosted payment page identified `https://blz.lipila.io`
+as its backend host. The configured live key returned HTTP 200 and `success: true`
+from `/api/v1/merchants/balance` there; the same check on `api.lipila.io` returned
+502. Production `LIPILA_BASE_URL` now uses the verified host, with collections
+still disabled pending end-to-end confirmation.
+
+A browser-intercepted (not transmitted) mobile-money submission used
+`referenceId`, `amount`, `narration`, `accountNumber`, and `currency`, matching our
+collection body. The dashboard uses its own `/Links/{wallet}/momo/{merchant}/collection-link`
+route; our integration retains the documented `/collections/mobile-money` route
+and server-side API authentication rather than adopting a dashboard-internal API.
+
+The previous standalone ZMW 1 test returned 502; checking its reference on the
+verified host returned 404, not a definitive failed-transaction response. Do not
+automatically retry it. Existing persisted payment intents retain their original
+provider environment and are not silently migrated to a different host.

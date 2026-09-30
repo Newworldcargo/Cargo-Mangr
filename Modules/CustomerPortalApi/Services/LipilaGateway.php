@@ -14,7 +14,7 @@ class LipilaGateway
 
     public function configured(): bool
     {
-        return in_array(rtrim((string) config('lipila.base_url'), '/'), ['https://api.lipila.dev', 'https://api.lipila.io'], true)
+        return in_array(rtrim((string) config('lipila.base_url'), '/'), ['https://api.lipila.dev', 'https://api.lipila.io', 'https://blz.lipila.io'], true)
             && trim((string) config('lipila.secret_key')) !== ''
             && strlen((string) base64_decode((string) config('lipila.webhook_secret'), true)) === 32;
     }
@@ -23,7 +23,7 @@ class LipilaGateway
     {
         if (!$this->configured()) throw new \RuntimeException('Lipila is not configured.');
         $url = rtrim((string) config('lipila.base_url'), '/');
-        if (!in_array($url, ['https://api.lipila.dev', 'https://api.lipila.io'], true)) {
+        if (!in_array($url, ['https://api.lipila.dev', 'https://api.lipila.io', 'https://blz.lipila.io'], true)) {
             throw new \RuntimeException('Invalid Lipila endpoint.');
         }
         return Http::baseUrl($url)->acceptJson()->asJson()->timeout(20)
