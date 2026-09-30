@@ -2,7 +2,9 @@
 
 Lipila is the default customer portal provider. Existing legacy payment providers
 and their settings are retained. Explicit `CUSTOMER_PORTAL_PAYMENT_PROVIDER`
-overrides are still honored. Legacy admin checkout is not switched to Lipila.
+overrides are still honored, but the portal fails closed for providers without a
+verified collection adapter. The old generic bridge cannot mark production
+invoices paid. Legacy admin checkout is not switched to Lipila.
 
 ## Configuration
 
@@ -32,6 +34,8 @@ Deploy the additive migration before enabling:
 
 ```sh
 php artisan migrate --path=database/migrations/2026_09_30_100000_add_lipila_payment_tracking.php --force
+php artisan migrate --path=database/migrations/2026_09_30_140000_harden_online_payment_attempts.php --force
+php artisan migrate --path=database/migrations/2026_09_30_141000_create_payment_webhook_events.php --force
 php artisan config:clear
 php artisan route:clear
 ```
@@ -69,6 +73,41 @@ the main scheduler is later repaired, to avoid redundant reconciliation runs.
   overwriting the bill. Search audit logs for `lipila_payment_review`. Financial
   staff must investigate the provider reference before any retry or refund.
 - This integration does not initiate refunds or disbursements.
+
+## Edge-Case Review (September 30)
+
+- Durable customer-scoped request keys replay the original result, including
+  failure. Reusing a key with different details is rejected. Older clients
+  without keys retain shipment-scoped pending-attempt protection.
+- New invoices cannot bypass an unresolved attempt for the same shipment.
+  The cashier's mark-paid endpoint checks this guard under its shipment lock.
+- A reassigned customer cannot read or resume the former customer's checkout.
+  Invoice/shipment reassignment at settlement is held for review.
+- Amounts are parsed as exact decimal minor units; negative, exponent, boolean,
+  array, extra-precision and malformed values cannot become successful payments.
+- A foreign-currency or previously recorded installment blocks a fresh full-bill
+  collection until staff reconcile it. No implicit cross-currency arithmetic.
+- Signed webhook IDs and payload hashes are durable. Exact replays are harmless;
+  a reused event ID with changed content is rejected. Pending/unreachable status
+  checks return 503 so Lipila can retry instead of acknowledging unverified data.
+- Late success after a confirmed failure enters review, never silently pays a
+  potentially retried bill. Unknown outcomes never trigger an automatic charge.
+- Disabling new collection does not disable reconciliation. Each attempt records
+  its provider environment; switching environments cannot query the wrong wallet.
+- Receipt, invoice, shipment, intent and audit writes roll back together on error.
+- The browser no longer keeps a local paid-status override. It reloads invoices
+  from the backend; provider status messages and retry permission are returned by
+  the backend. Client-supplied amount/currency/success flags are ignored.
+- Reconciliation batches are time-bounded, serialized by cron `flock`, with
+  per-attempt cache locks and durable database settlement locks.
+
+Scope limits: this is not a certification of every historical gateway callback.
+Legacy gateway-specific controllers and refund workflows remain separate and
+need their own provider-by-provider review before activation. SQLite tests cover
+controlled interleavings and rollback, not a real multi-process MySQL load test.
+Live gateway delivery and throughput cannot be certified while its API returns
+502. Do not enable collections until connectivity and an authorized end-to-end
+payment have been verified. Never clear a pending/review attempt merely to retry.
 
 ## Verification
 

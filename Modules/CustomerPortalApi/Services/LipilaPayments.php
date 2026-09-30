@@ -20,20 +20,43 @@ class LipilaPayments
 
     public function create(Transxn $invoice, int $clientId, array $input): PortalPaymentIntent
     {
+        $input = $this->validateInput($input);
+        if (!$this->gateway->ready()) throw ValidationException::withMessages(['payment' => 'Online payments are currently unavailable.']);
+        $requestKey = $input['idempotencyKey'] ?? null;
+        $fingerprint = hash('sha256', json_encode([$invoice->id, $input['method'], $input['phone'], $input['billing'] ?? null]));
         $created = false;
-        $intent = DB::transaction(function () use ($invoice, $clientId, $input, &$created) {
+        $intent = DB::transaction(function () use ($invoice, $clientId, $input, $requestKey, $fingerprint, &$created) {
+            \Modules\Cargo\Entities\Client::whereKey($clientId)->lockForUpdate()->firstOrFail();
             $shipment = Shipment::whereKey($invoice->shipment_id)->lockForUpdate()->firstOrFail();
             $invoice = Transxn::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             abort_unless((int) $shipment->client_id === $clientId, 404);
-            $existing = PortalPaymentIntent::where('invoice_id', $invoice->id)->where('status', '!=', 'failed')->latest('id')->first();
-            if ($existing) return $existing;
+            if ((int) $invoice->shipment_id !== (int) $shipment->id) abort(409, 'The bill changed. Please refresh.');
+            if ($requestKey) {
+                $replay = PortalPaymentIntent::where('client_id', $clientId)->where('request_key', $requestKey)->first();
+                if ($replay) {
+                    if (!hash_equals((string) $replay->request_fingerprint, $fingerprint)) throw ValidationException::withMessages(['idempotencyKey' => 'This payment request was already used with different details.']);
+                    return $replay;
+                }
+            }
+            $existing = app(PaymentAttemptGuard::class)->unresolved($shipment->id);
+            if ($existing) {
+                if ((int) $existing->client_id !== $clientId || (int) $existing->invoice_id !== (int) $invoice->id) {
+                    throw ValidationException::withMessages(['invoiceId' => 'Another payment for this shipment is still being checked. Please contact your branch.']);
+                }
+                return $existing;
+            }
             $latest = Transxn::where('shipment_id', $shipment->id)->where('status', '!=', 'voided_duplicate')->latest('id')->first();
             $summary = app(ShipmentPaymentSummary::class)->forShipment($shipment);
+            if (ShipmentPaymentReceipt::where('shipment_id', $shipment->id)->whereIn('status', ['active', 'completed'])->where('refunded', false)->exists()) {
+                throw ValidationException::withMessages(['invoiceId' => 'This shipment has a recorded payment. Please contact your branch to confirm the remaining bill.']);
+            }
             if ($shipment->paid || $latest?->id !== $invoice->id || !in_array($invoice->status, ['pending', 'unpaid'], true)
                 || $summary['paid']['amountMinor'] > 0 || $summary['remaining']['amountMinor'] < 1) {
                 throw ValidationException::withMessages(['invoiceId' => 'This bill is not available for online payment. Please contact your branch.']);
             }
             $currency = strtoupper((string) $invoice->currency);
+            $amountMinor = PaymentAttemptGuard::minorUnits($invoice->total);
+            if (!$amountMinor || $amountMinor !== $summary['remaining']['amountMinor']) throw ValidationException::withMessages(['invoiceId' => 'Please contact your branch to confirm the bill.']);
             if (!in_array($currency, ['USD', 'ZMW'], true) || ($input['method'] === 'mobile-money' && $currency !== 'ZMW')) {
                 throw ValidationException::withMessages(['method' => 'Please use a card for this currency, or contact your branch.']);
             }
@@ -41,7 +64,9 @@ class LipilaPayments
             return PortalPaymentIntent::create([
                 'intent_id' => (string) Str::uuid(), 'client_id' => $clientId, 'invoice_id' => $invoice->id,
                 'provider' => 'lipila', 'method' => $input['method'], 'status' => 'processing',
-                'currency' => $currency, 'amount_minor' => $summary['remaining']['amountMinor'], 'revision' => 1,
+                'currency' => $currency, 'amount_minor' => $amountMinor, 'revision' => 1,
+                'shipment_id' => $shipment->id, 'request_key' => $requestKey, 'request_fingerprint' => $fingerprint,
+                'provider_environment' => config('lipila.base_url'),
             ]);
         });
         if (!$created) return $intent;
@@ -72,16 +97,28 @@ class LipilaPayments
         return $intent->fresh();
     }
 
-    public function refresh(PortalPaymentIntent $intent): PortalPaymentIntent
+    public function refresh(PortalPaymentIntent $intent, bool $notification = false): PortalPaymentIntent
     {
-        if ($intent->provider !== 'lipila' || in_array($intent->status, ['succeeded', 'failed', 'review'], true)) return $intent;
+        if ($intent->provider !== 'lipila' || in_array($intent->status, ['succeeded', 'review'], true) || (!$notification && $intent->status === 'failed')) return $intent;
+        if ($intent->provider_environment && $intent->provider_environment !== config('lipila.base_url')) {
+            if ($notification) throw new \RuntimeException('Payment belongs to another provider environment.');
+            return $intent;
+        }
         $lock = Cache::lock('lipila-status-' . $intent->intent_id, 30);
-        if (!$lock->get()) return $intent->fresh();
+        if (!$lock->get()) {
+            if ($notification) throw new \RuntimeException('Payment confirmation is already being checked.');
+            return $intent->fresh();
+        }
         try {
             $intent->refresh();
-            if ($intent->last_checked_at && strtotime($intent->last_checked_at) > time() - 5) return $intent;
+            if (in_array($intent->status, ['succeeded', 'review'], true)) return $intent;
+            if (!$notification && $intent->last_checked_at && strtotime($intent->last_checked_at) > time() - 5) return $intent;
             $intent->update(['last_checked_at' => now()]);
             $data = $this->gateway->status($intent->intent_id);
+            if ($notification && (!$data || ($data['referenceId'] ?? null) !== $intent->intent_id
+                || ($data['type'] ?? null) !== 'Collection' || !in_array($data['status'] ?? '', ['Successful', 'Failed'], true))) {
+                throw new \RuntimeException('Final payment status is not yet available.');
+            }
             if (!$data) return $intent;
             $this->applyStatus($intent, $data);
         } finally {
@@ -97,21 +134,28 @@ class LipilaPayments
         if (!in_array($status, ['Successful', 'Failed'], true)) return;
         DB::transaction(function () use ($intent, $data, $status) {
             $invoice = Transxn::findOrFail($intent->invoice_id);
-            $shipment = Shipment::whereKey($invoice->shipment_id)->lockForUpdate()->firstOrFail();
+            $shipment = Shipment::whereKey($intent->shipment_id ?: $invoice->shipment_id)->lockForUpdate()->firstOrFail();
             $invoice = Transxn::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             $intent = PortalPaymentIntent::whereKey($intent->id)->lockForUpdate()->firstOrFail();
             if (in_array($intent->status, ['succeeded', 'review'], true)) return;
-            if (($data['currency'] ?? null) !== $intent->currency || !is_numeric($data['amount'] ?? null)
-                || (int) round((float) $data['amount'] * 100) !== (int) $intent->amount_minor) {
+            if (($data['currency'] ?? null) !== $intent->currency
+                || PaymentAttemptGuard::minorUnits($data['amount'] ?? null) !== (int) $intent->amount_minor) {
                 $this->review($intent, 'Provider amount or currency differs from the payment request.');
                 return;
+            }
+            if (is_string($data['identifier'] ?? null) && strlen($data['identifier']) <= 255) {
+                $intent->provider_reference = $data['identifier'];
             }
             if ($status === 'Failed') {
                 $intent->update(['status' => 'failed', 'revision' => $intent->revision + 1]);
                 return;
             }
+            if ($intent->status === 'failed') {
+                $this->review($intent, 'Lipila reported success after a confirmed failure. Reconcile before accepting further payment.');
+                return;
+            }
             $summary = app(ShipmentPaymentSummary::class)->forShipment($shipment);
-            if ($shipment->paid || (int) $shipment->client_id !== (int) $intent->client_id
+            if ((int) $invoice->shipment_id !== (int) $shipment->id || $shipment->paid || (int) $shipment->client_id !== (int) $intent->client_id
                 || (string) $summary['invoiceId'] !== (string) $invoice->id || $summary['remaining']['amountMinor'] !== (int) $intent->amount_minor
                 || $summary['remaining']['currency'] !== $intent->currency || !in_array($invoice->status, ['pending', 'unpaid'], true)) {
                 $this->review($intent, 'The bill changed while the payment was in progress.');
@@ -134,17 +178,30 @@ class LipilaPayments
             ]);
             $invoice->update(['status' => 'completed', 'receipt_number' => $number]);
             $shipment->update(['paid' => 1]);
-            $intent->update(['status' => 'succeeded', 'settled_at' => now(), 'revision' => $intent->revision + 1]);
+            $intent->update(['status' => 'succeeded', 'settled_at' => now(), 'receipt_id' => $receipt->id, 'checkout_url' => null, 'revision' => $intent->revision + 1]);
             app(AuditLogService::class)->createLog('lipila_payment_confirmed', $receipt, null, [], [
                 'intent_id' => $intent->intent_id, 'amount' => $receipt->amount, 'currency' => $intent->currency,
+                'provider_reference' => $intent->provider_reference,
             ], 'Online payment confirmed by Lipila.');
         });
     }
 
     private function review(PortalPaymentIntent $intent, string $reason): void
     {
-        $intent->update(['status' => 'review', 'revision' => $intent->revision + 1]);
+        $intent->update(['status' => 'review', 'review_reason' => $reason, 'checkout_url' => null, 'revision' => $intent->revision + 1]);
         app(AuditLogService::class)->createLog('lipila_payment_review', $intent, null, [], [], $reason);
         Log::error('Lipila payment needs financial review.', ['intent_id' => $intent->intent_id, 'reason' => $reason]);
+    }
+
+    private function validateInput(array $input): array
+    {
+        $rules = ['method' => ['required', 'in:mobile-money,card'], 'phone' => ['required', 'string', 'regex:/^260[79][0-9]{8}$/'], 'idempotencyKey' => ['nullable', 'uuid']];
+        if (($input['method'] ?? '') === 'card') {
+            $rules['phone'] = ['required', 'string', 'regex:/^[1-9][0-9]{7,14}$/'];
+            foreach (['firstName', 'lastName', 'city', 'address', 'zip'] as $field) $rules['billing.' . $field] = ['required', 'string', 'max:150'];
+            $rules['billing.country'] = ['required', 'regex:/^[A-Z]{2}$/'];
+            $rules['billing.email'] = ['required', 'email', 'max:150'];
+        }
+        return \Illuminate\Support\Facades\Validator::make($input, $rules)->validate();
     }
 }

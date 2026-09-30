@@ -2391,6 +2391,13 @@ class ShipmentController extends Controller
             }
 
             $oldValues = $shipment->only(['paid']);
+            if (app(\Modules\CustomerPortalApi\Services\PaymentAttemptGuard::class)->unresolved($shipment->id)) {
+                DB::rollBack();
+                return response()->json([
+                    'error' => 'ONLINE_PAYMENT_PENDING',
+                    'message' => 'An online payment is still being checked. Confirm its outcome before recording another payment.',
+                ], 409);
+            }
             $collectionBranchId = app(BranchAccessService::class)->branchIdFor(Auth::user());
 
             $discountType = $request->filled('discount_type') ? $request->discount_type : null;

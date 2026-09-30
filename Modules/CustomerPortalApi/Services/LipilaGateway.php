@@ -9,13 +9,19 @@ class LipilaGateway
 {
     public function ready(): bool
     {
-        return (bool) config('lipila.enabled') && trim((string) config('lipila.secret_key')) !== ''
+        return (bool) config('lipila.enabled') && $this->configured();
+    }
+
+    public function configured(): bool
+    {
+        return in_array(rtrim((string) config('lipila.base_url'), '/'), ['https://api.lipila.dev', 'https://api.lipila.io'], true)
+            && trim((string) config('lipila.secret_key')) !== ''
             && strlen((string) base64_decode((string) config('lipila.webhook_secret'), true)) === 32;
     }
 
     private function http()
     {
-        if (!$this->ready()) throw new \RuntimeException('Lipila is not configured.');
+        if (!$this->configured()) throw new \RuntimeException('Lipila is not configured.');
         $url = rtrim((string) config('lipila.base_url'), '/');
         if (!in_array($url, ['https://api.lipila.dev', 'https://api.lipila.io'], true)) {
             throw new \RuntimeException('Invalid Lipila endpoint.');
@@ -27,11 +33,12 @@ class LipilaGateway
 
     public function collect(array $payload, ?array $customer = null): array
     {
+        if (!$this->ready()) throw new \RuntimeException('New Lipila collections are disabled.');
         $body = $customer ? ['customerInfo' => $customer, 'collectionRequest' => $payload + ['backUrl' => config('lipila.return_url')]] : $payload;
         // Never retry collection POSTs: a timeout can happen after the wallet was charged.
         $response = $this->http()->withHeaders(['callbackUrl' => config('lipila.callback_url')])
             ->post('/api/v1/collections/' . ($customer ? 'card' : 'mobile-money'), $body);
-        return ['accepted' => $response->successful(), 'data' => $response->json() ?: []];
+        return ['accepted' => $response->successful(), 'data' => is_array($response->json()) ? $response->json() : []];
     }
 
     public function status(string $reference): ?array

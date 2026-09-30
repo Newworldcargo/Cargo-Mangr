@@ -22,6 +22,9 @@ class PaymentController extends PortalController
             'method' => ['required', 'in:mobile-money,card'],
         ]);
         if ($validator->fails()) return $this->problem($request, 'VALIDATION_FAILED', 'A valid invoice and payment method are required.', 422, $validator->errors()->toArray());
+        if (config('customerportalapi.payment_provider') !== 'lipila' && !(config('customerportalapi.payment_provider') === 'local-uat' && app()->environment(['local', 'testing']))) {
+            return $this->problem($request, 'PAYMENTS_UNAVAILABLE', 'Online payments are currently unavailable. Please contact your branch.', 503);
+        }
 
         $client = $this->customerContext->requireClient();
         $invoice = Transxn::whereKey($request->input('invoiceId'))
@@ -32,11 +35,15 @@ class PaymentController extends PortalController
             if (!app(LipilaGateway::class)->ready()) {
                 return $this->problem($request, 'PAYMENTS_UNAVAILABLE', 'Online payments are currently unavailable. Please contact your branch.', 503);
             }
-            $phone = preg_replace('/[^0-9]/', '', (string) $request->input('phone'));
+            if (!is_string($request->input('phone')) || !preg_match('/^[+0-9 ()-]{8,30}$/D', $request->input('phone'))) {
+                return $this->problem($request, 'VALIDATION_FAILED', 'Please enter a valid payment phone number.', 422);
+            }
+            $phone = preg_replace('/[^0-9]/', '', $request->input('phone'));
             if (preg_match('/^0[79][0-9]{8}$/', $phone)) $phone = '260' . substr($phone, 1);
             $input = $request->all();
             $input['phone'] = $phone;
-            $rules = ['phone' => ['required', 'regex:/^260[79][0-9]{8}$/']];
+            $input['idempotencyKey'] = $request->header('Idempotency-Key', $request->input('idempotencyKey'));
+            $rules = ['phone' => ['required', 'regex:/^260[79][0-9]{8}$/'], 'idempotencyKey' => ['nullable', 'uuid']];
             if ($request->input('method') === 'card') {
                 $rules['phone'] = ['required', 'regex:/^[1-9][0-9]{7,14}$/'];
                 foreach (['firstName', 'lastName', 'city', 'address', 'zip'] as $field) $rules['billing.' . $field] = ['required', 'string', 'max:150'];
@@ -112,7 +119,11 @@ class PaymentController extends PortalController
             ->where('client_id', $this->customerContext->requireClient()->id)
             ->first();
         if (!$model) return $this->problem($request, 'NOT_FOUND', 'Payment intent not found.', 404);
-        if ($model->provider === 'lipila' && app(LipilaGateway::class)->ready()) {
+        if (!Transxn::whereKey($model->invoice_id)->when($model->shipment_id, fn ($query) => $query->where('shipment_id', $model->shipment_id))
+            ->whereHas('shipment', function ($query) use ($model) { $query->where('client_id', $model->client_id); })->exists()) {
+            return $this->problem($request, 'NOT_FOUND', 'Payment intent not found.', 404);
+        }
+        if ($model->provider === 'lipila' && app(LipilaGateway::class)->configured()) {
             try {
                 $model = app(LipilaPayments::class)->refresh($model);
             } catch (\Throwable $e) {

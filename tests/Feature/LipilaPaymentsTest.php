@@ -197,4 +197,194 @@ class LipilaPaymentsTest extends TestCase
         $intent->update(['client_id' => 9999]);
         $this->getJson('/api/v1/payments/intents/' . $intent->intent_id)->assertNotFound();
     }
+
+    public function test_same_key_replays_failure_without_charging_again_and_rejects_changed_details(): void
+    {
+        $invoice = $this->invoice(); $this->pending();
+        $input = ['method' => 'mobile-money', 'phone' => '260970000001', 'idempotencyKey' => (string) \Illuminate\Support\Str::uuid()];
+        $service = app(LipilaPayments::class);
+        $intent = $service->create($invoice, $invoice->shipment->client_id, $input);
+        $this->complete($intent, ['status' => 'Failed']);
+        Http::swap(new \Illuminate\Http\Client\Factory()); Http::fake();
+        $this->assertSame($intent->id, $service->create($invoice, $invoice->shipment->client_id, $input)->id);
+        try { $service->create($invoice, $invoice->shipment->client_id, array_replace($input, ['phone' => '260970000002'])); $this->fail('Changed details must be rejected.'); }
+        catch (\Illuminate\Validation\ValidationException $e) { $this->assertArrayHasKey('idempotencyKey', $e->errors()); }
+        Http::assertNothingSent();
+    }
+
+    public function test_superseding_invoice_cannot_bypass_a_pending_attempt(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $this->start($invoice);
+        $other = Transxn::create(['shipment_id' => $invoice->shipment_id, 'receipt_number' => 'REC-NEW', 'total' => 100, 'currency' => 'ZMW', 'status' => 'pending']);
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $this->start($other);
+    }
+
+    public function test_cashier_guard_blocks_unresolved_attempt(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $this->start($invoice);
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        app(\Modules\CustomerPortalApi\Services\PaymentAttemptGuard::class)->assertNoUnresolvedPayment($invoice->shipment_id);
+    }
+
+    public function test_reconciliation_continues_when_new_collections_are_disabled(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $intent = $this->start($invoice);
+        config(['lipila.enabled' => false]); $this->complete($intent);
+        $this->assertSame('succeeded', $intent->fresh()->status);
+        $this->assertSame('completed', $invoice->fresh()->status);
+    }
+
+    public function test_new_owner_cannot_resume_old_owners_checkout(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $intent = $this->start($invoice);
+        $invoice->shipment->update(['client_id' => 999]);
+        $this->getJson('/api/v1/payments/intents/' . $intent->intent_id)->assertNotFound();
+        $this->complete($intent);
+        $this->assertSame('review', $intent->fresh()->status);
+        $this->assertSame(0, ShipmentPaymentReceipt::count());
+    }
+
+    public function test_late_success_after_failure_requires_review_without_settlement(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $intent = $this->start($invoice);
+        $this->complete($intent, ['status' => 'Failed']);
+        Http::swap(new \Illuminate\Http\Client\Factory());
+        Http::fake(['*' => Http::response(['referenceId' => $intent->intent_id, 'status' => 'Successful', 'type' => 'Collection', 'currency' => 'ZMW', 'amount' => 100])]);
+        app(LipilaPayments::class)->refresh($intent->fresh(), true);
+        $this->assertSame('review', $intent->fresh()->status);
+        $this->assertNotNull($intent->fresh()->review_reason);
+        $this->assertSame(0, ShipmentPaymentReceipt::count());
+    }
+
+    public function test_callback_replay_records_one_event_and_one_receipt(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $intent = $this->start($invoice);
+        Http::swap(new \Illuminate\Http\Client\Factory());
+        Http::fake(['*' => Http::response(['referenceId' => $intent->intent_id, 'status' => 'Successful', 'type' => 'Collection', 'currency' => 'ZMW', 'amount' => 100])]);
+        $this->signedCallback(['referenceId' => $intent->intent_id])->assertOk();
+        $this->signedCallback(['referenceId' => $intent->intent_id])->assertOk();
+        $this->signedCallback(['referenceId' => $intent->intent_id, 'changed' => true])->assertStatus(409);
+        $this->assertSame(1, ShipmentPaymentReceipt::count());
+        $this->assertSame(1, \Illuminate\Support\Facades\DB::table('payment_webhook_events')->count());
+        Http::assertSentCount(1);
+    }
+
+    public function test_callback_503_is_retryable_and_does_not_acknowledge_unverified_success(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $intent = $this->start($invoice);
+        $this->signedCallback(['referenceId' => $intent->intent_id, 'status' => 'Successful'])->assertStatus(503);
+        $this->assertNull(\Illuminate\Support\Facades\DB::table('payment_webhook_events')->value('processed_at'));
+        $this->assertSame('pending', $invoice->fresh()->status);
+    }
+
+    private function signedCallback(array $data)
+    {
+        $body = json_encode($data); $timestamp = (string) time();
+        $sig = 'v1,' . base64_encode(hash_hmac('sha256', 'test-event.' . $timestamp . '.' . $body, str_repeat('x', 32), true));
+        return $this->call('POST', '/api/v1/payments/lipila/webhook', [], [], [], [
+            'CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json',
+            'HTTP_WEBHOOK_ID' => 'test-event', 'HTTP_WEBHOOK_TIMESTAMP' => $timestamp, 'HTTP_WEBHOOK_SIGNATURE' => $sig,
+        ], $body);
+    }
+
+    /** @dataProvider invalidAmounts */
+    public function test_money_parser_rejects_ambiguous_values($value): void
+    {
+        $this->assertNull(\Modules\CustomerPortalApi\Services\PaymentAttemptGuard::minorUnits($value));
+    }
+
+    public static function invalidAmounts(): array
+    {
+        return [[-1], ['1e2'], ['100.001'], [100.001], ['100,00'], [' 100'], [null], [true], [[]], ['NaN'], ['Infinity'], ['99999999999999999']];
+    }
+
+    public function test_extra_precision_provider_amount_does_not_round_into_success(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $intent = $this->start($invoice);
+        $this->complete($intent, ['amount' => 100.001]);
+        $this->assertSame('review', $intent->fresh()->status);
+    }
+
+    public function test_non_object_provider_response_leaves_attempt_unresolved(): void
+    {
+        $invoice = $this->invoice(); Http::fake(['*' => Http::response('"Successful"', 200)]);
+        $intent = $this->start($invoice);
+        $this->assertSame('processing', $intent->status);
+        $this->assertSame('pending', $invoice->fresh()->status);
+    }
+
+    public function test_changing_environment_does_not_query_the_wrong_wallet(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $intent = $this->start($invoice);
+        Http::swap(new \Illuminate\Http\Client\Factory()); Http::fake();
+        config(['lipila.base_url' => 'https://api.lipila.dev']);
+        $intent->update(['provider_environment' => 'https://api.lipila.io']);
+        app(LipilaPayments::class)->refresh($intent);
+        Http::assertNothingSent();
+    }
+
+    public function test_foreign_currency_receipts_block_new_collection_until_reviewed(): void
+    {
+        $invoice = $this->invoice(); $this->pending();
+        ShipmentPaymentReceipt::create(['shipment_id' => $invoice->shipment_id, 'amount' => 10, 'currency' => 'USD', 'status' => 'active', 'refunded' => false, 'method_of_payment' => 'cash']);
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $this->start($invoice);
+    }
+
+    public function test_unconfigured_bridge_cannot_claim_payment_success(): void
+    {
+        $invoice = $this->invoice(); Http::fake(); config(['customerportalapi.payment_provider' => 'arbitrary-bridge']);
+        $this->withoutMiddleware(\Modules\CustomerPortalApi\Http\Middleware\PortalCsrfMiddleware::class)
+            ->postJson('/api/v1/payments/intents', ['invoiceId' => $invoice->id, 'method' => 'mobile-money'])->assertStatus(503);
+        Http::assertNothingSent();
+    }
+
+    public function test_cashier_endpoint_refuses_payment_during_online_attempt(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $this->start($invoice);
+        $this->mock(\Modules\Cargo\Services\ShipmentOperationAccessService::class, function ($mock) {
+            $mock->shouldReceive('canOperate')->once()->andReturn(true);
+        });
+        $request = Request::create('/', 'POST', ['shipment_id' => $invoice->shipment_id, 'final_total' => 100,
+            'method_of_payment' => ['cash'], 'payment_amount' => [100]]);
+        $response = app(\Modules\Cargo\Http\Controllers\ShipmentController::class)->markAsPaid($request, app(\App\Services\AuditLogService::class));
+        $this->assertSame(409, $response->getStatusCode());
+        $this->assertSame('ONLINE_PAYMENT_PENDING', $response->getData(true)['error']);
+        $this->assertSame(0, ShipmentPaymentReceipt::count());
+        $this->assertSame(0, \Illuminate\Support\Facades\DB::transactionLevel());
+    }
+
+    public function test_audit_failure_rolls_back_receipt_invoice_and_shipment_together(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $intent = $this->start($invoice);
+        $this->mock(\App\Services\AuditLogService::class, function ($mock) {
+            $mock->shouldReceive('createLog')->andThrow(new \RuntimeException('Simulated audit outage'));
+        });
+        try { $this->complete($intent); $this->fail('Expected audit exception.'); }
+        catch (\RuntimeException $e) { $this->assertSame('Simulated audit outage', $e->getMessage()); }
+        $this->assertSame('pending', $invoice->fresh()->status);
+        $this->assertSame('processing', $intent->fresh()->status);
+        $this->assertSame(0, ShipmentPaymentReceipt::count());
+        $this->assertEquals(0, $invoice->shipment->fresh()->paid);
+    }
+
+    public function test_client_amount_currency_and_success_flags_are_ignored(): void
+    {
+        $invoice = $this->invoice(); $this->pending();
+        $this->withoutMiddleware(\Modules\CustomerPortalApi\Http\Middleware\PortalCsrfMiddleware::class)
+            ->postJson('/api/v1/payments/intents', ['invoiceId' => $invoice->id, 'method' => 'mobile-money', 'phone' => '0970000001',
+                'amountMinor' => 1, 'currency' => 'USD', 'status' => 'succeeded', 'paid' => true])
+            ->assertCreated()->assertJsonPath('data.amount.amountMinor', 10000)->assertJsonPath('data.amount.currency', 'ZMW')
+            ->assertJsonPath('data.status', 'processing');
+        $this->assertSame('pending', $invoice->fresh()->status);
+    }
+
+    public function test_array_phone_payload_returns_validation_error_without_charge(): void
+    {
+        $invoice = $this->invoice(); Http::fake();
+        $this->withoutMiddleware(\Modules\CustomerPortalApi\Http\Middleware\PortalCsrfMiddleware::class)
+            ->postJson('/api/v1/payments/intents', ['invoiceId' => $invoice->id, 'method' => 'mobile-money', 'phone' => ['0970000001']])->assertStatus(422);
+        Http::assertNothingSent();
+    }
 }
