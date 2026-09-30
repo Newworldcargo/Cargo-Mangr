@@ -297,10 +297,10 @@
                                     <path
                                         d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1H0zm0 3v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7zm3 2h1a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-1a1 1 0 0 1 1-1" />
                                 </svg>
-                                <h5 class="modal-title fw-bold mb-0 text-white" id="markPaidLabel">Confirm Payment</h5>
+                                <h5 class="modal-title fw-bold mb-0 text-white" id="markPaidLabel">Record Payment</h5>
                             </div>
                             <button type="button" class="btn-close btn-close-white" data-dismiss="modal"
-                                aria-label="Close"></button>
+                                aria-label="Close payment"><i class="fas fa-times" aria-hidden="true"></i></button>
                         </div>
 
                         <div class="modal-body p-4">
@@ -315,7 +315,7 @@
                                                 d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2" />
                                         </svg>
                                         <div>
-                                            <p class="mb-1 fw-medium">Are you sure you want to mark this shipment as paid?</p>
+                                            <p class="mb-1 fw-medium">Record a payment for this shipment.</p>
                                             <small class="text-muted d-block">Payment currency: <strong>{{ $paymentCurrency }}</strong> · {{ $viewerCurrencyLocation }}</small>
                                             @if($paymentCurrency !== 'USD')
                                                 <small class="text-muted d-block">Original imported bill: <strong>${{ number_format($baseUsdAmount, 2) }} USD</strong></small>

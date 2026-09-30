@@ -1,0 +1,121 @@
+#markPaidModal {
+    --primary: #0a2463;
+    padding: 0 !important;
+    letter-spacing: 0;
+}
+#markPaidModal .modal-dialog {
+    width: calc(100% - 48px);
+    max-width: 1040px;
+    margin: 24px auto;
+    min-height: calc(100% - 48px);
+}
+#markPaidModal .modal-content {
+    max-height: calc(100vh - 48px);
+    max-height: calc(100dvh - 48px);
+    border-radius: 8px !important;
+    background: #fff !important;
+}
+#markPaidModal .modal-header {
+    flex: 0 0 auto;
+    padding: 20px 24px !important;
+    background: var(--primary, #0a2463) !important;
+    gap: 16px;
+}
+#markPaidModal .modal-title {
+    font-size: 20px;
+    line-height: 1.3;
+}
+#markPaidModal .modal-header > div { min-width: 0; gap: 12px; }
+#markPaidModal .modal-header svg { flex-shrink: 0; margin: 0 !important; }
+#markPaidModal .btn-close {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    padding: 0;
+    margin: -10px -10px -10px 0;
+    opacity: 1;
+    color: #fff;
+    background: transparent;
+    border: 0;
+    font-size: 20px;
+}
+#markPaidModal .modal-body {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 24px !important;
+    scrollbar-gutter: stable;
+}
+#markPaidForm {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    grid-template-areas: "intro intro" "discount payment" "charges payment" "totals totals";
+    grid-template-rows: auto min-content 1fr auto;
+    column-gap: 32px;
+    align-items: start;
+}
+#markPaidForm > .alert {
+    grid-area: intro;
+    margin: 0 !important;
+    padding: 18px 0;
+    border-bottom: 1px solid #e2e8f0 !important;
+    border-radius: 0;
+    background: #fff !important;
+    box-shadow: none !important;
+}
+#markPaidForm > .alert svg { display: none; }
+#markPaidForm > .alert p { font-size: 15px; color: #253044; }
+#markPaidForm > .card {
+    min-width: 0;
+    margin: 0 !important;
+    padding: 24px 0 !important;
+    border-radius: 0 !important;
+    border: 0 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+}
+#markPaidForm > .card:has(#discountType) { grid-area: discount; }
+#markPaidForm > .card:has(#charge-rows) { grid-area: charges; border-top: 1px solid #e2e8f0 !important; }
+#markPaidForm > .card:has(#payment-rows) { grid-area: payment; border-left: 1px solid #e2e8f0 !important; padding-left: 24px !important; }
+#markPaidForm > .card:has(#finalTotal) { grid-area: totals; border-top: 1px solid #e2e8f0 !important; }
+#markPaidModal #markPaidForm h6 { font-size: 13px !important; letter-spacing: 0 !important; color: #334155 !important; }
+#markPaidModal #markPaidForm .payment-channel-tabs { margin: 0 0 24px; }
+#markPaidModal #markPaidForm .form-control,
+#markPaidModal #markPaidForm select { min-width: 0; min-height: 46px; border: 1px solid #cbd5e1 !important; color: #172033; border-radius: 6px; }
+#markPaidModal #markPaidForm .form-control:focus,
+#markPaidModal #markPaidForm select:focus { outline: 2px solid #3b82f6; outline-offset: 1px; }
+#markPaidModal .payment-row { min-width: 0; }
+#markPaidModal .payment-row > div:first-child { min-width: 0; }
+#markPaidModal .payment-row .add-payment,
+#markPaidModal .payment-row .remove-payment { min-width: 44px; min-height: 44px; border-radius: 6px; }
+#markPaidModal #addChargeBtn { color: #0a2463; border-color: #0a2463; min-height: 44px; }
+#markPaidModal #addChargeBtn:hover { background: #eef4ff; }
+#markPaidModal .charge-row { flex-wrap: wrap; }
+#markPaidModal .charge-row input { flex: 1 1 120px; width: 0; }
+#markPaidModal .charge-row button { min-width: 44px; min-height: 44px; }
+#markPaidModal .modal-footer {
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 16px 24px !important;
+    background: #f8fafc !important;
+    border-top: 1px solid #e2e8f0 !important;
+    gap: 10px;
+}
+#markPaidModal .modal-footer button { margin: 0; min-height: 46px; }
+#markPaidModal #confirmMarkPaidBtn { justify-content: center; gap: 8px; box-shadow: none !important; }
+#markPaidModal #finalTotal { font-size: 22px; font-variant-numeric: tabular-nums; }
+#markPaidModal .card:has(#finalTotal) > .d-flex { gap: 16px; flex-wrap: wrap; }
+#markPaidModal button:focus-visible { outline: 3px solid #3b82f6; outline-offset: 2px; }
+@media (max-width: 767px) {
+    #markPaidModal .modal-dialog { width: calc(100% - 16px); margin: 8px auto; min-height: calc(100% - 16px); }
+    #markPaidModal .modal-content { max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); }
+    #markPaidModal .modal-header { padding: 16px !important; }
+    #markPaidModal .modal-title { font-size: 18px; }
+    #markPaidModal .modal-body { padding: 0 16px !important; }
+    #markPaidForm { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: "intro" "discount" "charges" "payment" "totals"; }
+    #markPaidForm > .card { padding: 20px 0 !important; }
+    #markPaidForm > .card:has(#payment-rows) { padding-left: 0 !important; border-left: 0 !important; border-top: 1px solid #e2e8f0 !important; }
+    #markPaidModal .modal-footer { padding: 12px 16px calc(12px + env(safe-area-inset-bottom)) !important; flex-wrap: nowrap; }
+    #markPaidModal .modal-footer button { padding: 10px 12px !important; }
+    #markPaidModal #confirmMarkPaidBtn { flex: 1; }
+}

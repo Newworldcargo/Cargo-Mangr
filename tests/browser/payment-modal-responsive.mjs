@@ -1,0 +1,36 @@
+import {chromium} from '/home/newworldcargo/web/staging/new-world-cargo-app/node_modules/@playwright/test/index.mjs';
+import {readFileSync} from 'node:fs';
+import assert from 'node:assert/strict';
+const root='/home/newworldcargo/web/admin.newworldcargo.com/public_html/public';
+const browser=await chromium.launch({args:['--no-sandbox']});
+try {for (const width of [360,390,768,1440]) {
+ const page=await browser.newPage({viewport:{width,height:850}});
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.route('**/*',async route=>{
+  const url=new URL(route.request().url());
+  if(url.pathname==='/uat')return route.fulfill({contentType:'text/html',body:`<!doctype html><html><head><meta name="viewport" content="width=device-width"><link rel="stylesheet" href="/assets/lte/css/adminlte.css"><link rel="stylesheet" href="/assets/lte/plugins/fontawesome/css/all.min.css"><script src="https://cdn.tailwindcss.com"></script></head><body style="background:#cbd5e1">${readFileSync('/tmp/nwc-full-payment-modal.html','utf8')}</body></html>`});
+  if(url.hostname==='cdn.tailwindcss.com')return route.continue();
+  if(url.pathname.includes('shipment-online-payment'))return route.fulfill({json:{data:null,paid:false,available:true,canPrompt:true}});
+  if(url.pathname.endsWith('.css')||url.pathname.includes('/webfonts/'))return route.fulfill({body:readFileSync(root+url.pathname),contentType:url.pathname.endsWith('.css')?'text/css':'font/woff2'});
+  return route.abort();
+ });
+ await page.goto('https://admin.newworldcargo.com/uat',{waitUntil:'networkidle'});
+ await page.locator('#markPaidModal').evaluate(el=>{el.classList.add('show');el.style.display='block';el.removeAttribute('aria-hidden');});
+ await page.getByRole('tab',{name:'Online',exact:true}).click();
+ await page.getByRole('radio',{name:'Airtel',exact:true}).check();
+ await page.getByLabel('Mobile money number').fill('0972827372');
+ await page.screenshot({path:`/tmp/nwc-full-payment-modal-${width}.png`,fullPage:true});
+ const dialog=await page.locator('#markPaidModal .modal-dialog').boundingBox();
+ assert(dialog.x>=0&&dialog.x+dialog.width<=width);
+ if(width===1440)assert(dialog.width===1040);
+ const footer=await page.locator('#markPaidModal .modal-footer').boundingBox();
+ assert(footer.y>=0&&footer.y+footer.height<=850);
+ assert(await page.locator('#markPaidModal .modal-body').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
+ await page.getByRole('tab',{name:'Offline',exact:true}).click();
+ await page.locator('input[name="payment_amount[]"]').first().fill('700');
+ assert.equal(await page.locator('input[name="payment_amount[]"]').first().inputValue(),'700');
+ assert(await page.locator('#confirmMarkPaidBtn').isVisible());
+ assert.deepEqual(errors,[]);
+ console.log(JSON.stringify({width,dialogWidth:dialog.width,footerVisible:true,noOverflow:true,tabs:true,offlineEditable:true}));
+ await page.close();
+}} finally {await browser.close();}
