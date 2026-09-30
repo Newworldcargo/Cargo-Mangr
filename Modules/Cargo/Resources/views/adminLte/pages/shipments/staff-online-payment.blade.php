@@ -139,6 +139,19 @@ document.addEventListener('DOMContentLoaded', function () {
             if (el) el.parentElement.classList.add('offline-payment-summary');
         });
     }
+    function resetOnlineSession() {
+        phone.value = '';
+        phone.removeAttribute('aria-invalid');
+        phoneError.hidden = true;
+        phoneError.textContent = '';
+        document.getElementById('online-phone-count').textContent = '0 / 10';
+        networks.querySelectorAll('input').forEach(input => input.checked = false);
+        document.getElementById('online-cash-reason').value = '';
+        document.getElementById('online-cash-ack').checked = false;
+        overrideError.textContent = '';
+        key = null;
+        error = '';
+    }
     function render() {
         const intent = state && state.data;
         const locked = busy || uncertain || !!(intent && intent.status !== 'failed');
@@ -147,7 +160,7 @@ document.addEventListener('DOMContentLoaded', function () {
         offline.disabled = locked && !cashAllowed;
         phone.disabled = locked;
         networks.disabled = locked;
-        if (locked && intent && intent.network) {
+        if (locked && intent && intent.network && !state.cashOverride) {
             const savedNetwork = networks.querySelector('input[value="' + intent.network + '"]');
             if (savedNetwork) savedNetwork.checked = true;
         }
@@ -167,9 +180,13 @@ document.addEventListener('DOMContentLoaded', function () {
         else message.textContent = state && state.available ? 'Ready to request the full bill amount.' : 'Online payment is not available yet. You can use offline payment.';
         send.textContent = intent && intent.status === 'failed' ? 'Send another prompt' : 'Send payment prompt';
         if (error && !locked) message.textContent = error;
+        if (state && state.cashOverride && intent && ['processing', 'requires_action'].includes(intent.status)) {
+            message.textContent = 'Switched to cash. The previous request is still being monitored. Do not approve its payment prompt.';
+        }
         if (wantsCash && !uncertain && state && state.canSwitchOffline) {
             wantsCash = false;
             overridePanel.hidden = true;
+            resetOnlineSession();
             mode('offline');
             const method = document.querySelector('#payment-rows select[name="method_of_payment[]"]');
             if (method) {

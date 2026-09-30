@@ -47,6 +47,8 @@ try {for (const width of [360,390,768,1440]) {
  await page.getByRole('button',{name:'Check payment status'}).click();
  await page.locator('#offline-payment-panel').waitFor({state:'visible'});
  assert.equal(await page.locator('#payment-rows select').first().inputValue(),'cash_payment');
+ assert.equal(await page.getByLabel('Mobile money number').inputValue(),'');
+ assert.equal(await page.locator('#online-payment-networks input:checked').count(),0);
  intent.status='processing';
  await page.getByRole('tab',{name:'Online',exact:true}).click();
  await page.getByRole('button',{name:'Switch to cash'}).click();
@@ -60,6 +62,11 @@ try {for (const width of [360,390,768,1440]) {
  await page.getByRole('tab',{name:'Online',exact:true}).click();
  await page.getByRole('button',{name:'Check payment status'}).click();
  assert(await page.getByRole('button',{name:'Send payment prompt',exact:true}).isDisabled());
+ assert.equal(await page.getByLabel('Mobile money number').inputValue(),'');
+ assert.equal(await page.locator('#online-payment-networks input:checked').count(),0);
+ assert.equal(await page.getByLabel('Reason for switching to cash').inputValue(),'');
+ assert(!(await page.getByLabel('The customer and I agreed to pay cash and not approve the online request.').isChecked()));
+ await page.getByText('Switched to cash. The previous request is still being monitored. Do not approve its payment prompt.').waitFor();
  assert(await page.locator('#markPaidModal .modal-body').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
  await page.getByRole('tab',{name:'Offline',exact:true}).click();
  assert(await page.locator('#finalTotal').isVisible());
