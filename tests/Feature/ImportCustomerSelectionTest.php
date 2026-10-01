@@ -207,6 +207,59 @@ class ImportCustomerSelectionTest extends TestCase
         $this->assertDatabaseCount('shipments', 1);
     }
 
+    public function test_import_history_preserves_original_values_account_and_actor_after_changes(): void
+    {
+        $this->prepareReimport();
+        $client = $this->customer();
+        $this->postJson($this->url(), ['version' => 0, 'customer_id' => $client->id])->assertOk();
+        $url = '/consignments/imports/'.$this->batch->uuid.'/confirm';
+        $this->post($url, ['included' => [$this->row->id => 1]])->assertRedirect();
+        $shipment = \Modules\Cargo\Entities\Shipment::where('code', 'TEST001')->firstOrFail();
+        $log = \App\Models\AuditLog::where('event', 'shipment_imported')->sole();
+        $this->assertEquals($this->actor->id, $log->user_id);
+        $this->assertSame('Wrong Spreadsheet Name', $log->old_values['raw_values']['B']);
+        $this->assertSame('Jane Banda', $log->new_values['customer']['name']);
+        $this->assertSame('Jane Banda', $log->new_values['imported_values']['consignee_name']);
+        $client->update(['name' => 'Later name']);
+        $this->row->update(['raw_values' => ['B' => 'Later row edit']]);
+        $history = app(\App\Services\ShipmentImportHistory::class)->forShipment($shipment);
+        $this->assertCount(1, $history['imports']);
+        $this->assertSame('Wrong Spreadsheet Name', $history['imports'][0]['raw_values']['B']);
+        $this->assertSame('Jane Banda', $history['imports'][0]['customer']['name']);
+        $html = view('cargo::adminLte.pages.shipments.import-history', compact('shipment'))->render();
+        $this->assertStringContainsString('Different names:', $html);
+        $this->assertStringContainsString('Wrong Spreadsheet Name', $html);
+        $this->assertStringContainsString('Later name', $html);
+        $this->post($url)->assertRedirect();
+        $this->assertSame(1, \App\Models\AuditLog::where('event', 'shipment_imported')->count());
+    }
+
+    public function test_historical_rows_and_merges_are_limited_to_this_shipment_and_escaped(): void
+    {
+        $consignment = $this->prepareReimport();
+        $shipment = $this->existingParcel($consignment->id);
+        $this->batch->update(['status' => 'completed', 'confirmed_at' => now()]);
+        $this->row->update(['shipment_id' => $shipment->id, 'import_action' => 'created',
+            'raw_values' => ['B' => '<script>alert(1)</script>']]);
+        foreach ([$shipment->id, $shipment->id + 1] as $id) {
+            \App\Models\AuditLog::create(['event' => 'customer_account_merged',
+                'auditable_type' => Client::class, 'auditable_id' => 999,
+                'old_values' => ['client_id' => 123, 'shipment_ids' => [$id]],
+                'new_values' => ['client_id' => 999, 'backup_file' => 'PRIVATE-BACKUP']]);
+        }
+        $history = app(\App\Services\ShipmentImportHistory::class)->forShipment($shipment);
+        $this->assertCount(1, $history['imports']);
+        $this->assertFalse($history['imports'][0]['snapshot']);
+        $this->assertCount(1, $history['merges']);
+        $html = view('cargo::adminLte.pages.shipments.import-history', compact('shipment'))->render();
+        $this->assertStringContainsString('&lt;script&gt;', $html);
+        $this->assertStringNotContainsString('<script>', $html);
+        $this->assertStringNotContainsString('PRIVATE-BACKUP', $html);
+        $this->assertStringContainsString('Historical import:', $html);
+        $this->actingAs(User::findOrFail($this->customer()->user_id));
+        $this->assertStringNotContainsString('Import history', view('cargo::adminLte.pages.shipments.import-history', compact('shipment'))->render());
+    }
+
     private function existingParcel(int $consignmentId): \Modules\Cargo\Entities\Shipment
     {
         return \Modules\Cargo\Entities\Shipment::create(['code' => 'TEST001', 'consignment_id' => $consignmentId,

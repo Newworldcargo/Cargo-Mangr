@@ -247,6 +247,8 @@
                 </div>
             </div>
 
+            @include('cargo::adminLte.pages.shipments.import-history')
+
             <!-- Modal for Confirm Payment -->
             @php
                 $baseUsdAmount = (float) ($shipment->amount_to_be_collected ?? 0);

@@ -415,6 +415,7 @@ class ConsignmentImportController extends Controller
                 $created++;
                 $row->update(['status' => 'imported', 'shipment_id' => $shipment->id, 'import_action' => 'created',
                     'removed_at' => null, 'removed_by' => null]);
+                app(\App\Services\ShipmentImportHistory::class)->record($shipment, $row, $client);
                 $ids[] = $shipment->id;
             }
             $batch->update(['status' => 'completed', 'confirmed_at' => now(), 'result' => ['consignment_id' => $consignment->id,
