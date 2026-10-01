@@ -779,7 +779,8 @@ class ConsignmentImportController extends Controller
         $phone=ConsignmentCustomerMatcher::phone($data['phone']) ?? $data['phone'];
         $phone2=ConsignmentCustomerMatcher::phone($data['phone_2'] ?? null);
         $name=trim($data['consignee_name']);
-        $client=$this->findClientForImport($phone,$name,$phone2);
+        $this->customerMatcher ??= new ConsignmentCustomerMatcher();
+        $client=$this->customerMatcher->find($phone, $name, $phone2, true, $batch->pickup_branch_id);
         if ($client) return $client;
         $email='imported+'.$phone.'.'.substr(sha1($this->normalise($name)),0,10).'@newworldcargo.invalid';
         $user=User::firstOrCreate(['email'=>$email], ['name'=>$name,'password'=>bcrypt(Str::random(40)),'responsible_mobile'=>$phone,'secondary_mobile'=>$phone2 ?: null,'role'=>4,'verified'=>0]);

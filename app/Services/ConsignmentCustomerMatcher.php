@@ -86,7 +86,7 @@ class ConsignmentCustomerMatcher
         return array_values(array_unique($ids));
     }
 
-    public function find(string $phone, string $name, ?string $secondary = null): ?Client
+    public function find(string $phone, string $name, ?string $secondary = null, bool $createStaffProfile = false, ?int $branchId = null): ?Client
     {
         $this->staffPhones ??= new ImportStaffPhoneGuard();
         $this->load();
@@ -107,15 +107,38 @@ class ConsignmentCustomerMatcher
         }
         $owner = array_key_first($owners);
         $profiles = $this->profiles[$owner] ?? [];
+        if (!$profiles && str_starts_with($owner, 'user:') && $this->staffPhones->usesStaffNumber([$phone, $secondary])) {
+            $userId = (int) substr($owner, 5);
+            // Do not silently replace an archived customer profile. Preview must stay read-only.
+            if (!Client::where('user_id', $userId)->exists()) {
+                if (!$createStaffProfile) return null;
+                return DB::transaction(function () use ($userId, $phone, $secondary, $branchId) {
+                    $user = \App\Models\User::whereKey($userId)->lockForUpdate()->firstOrFail();
+                    $profiles = Client::where('user_id', $userId)->lockForUpdate()->get();
+                    if ($profiles->isNotEmpty()) {
+                        if ($profiles->count() !== 1 || $profiles->first()->is_archived) {
+                            throw ValidationException::withMessages(['customer' => 'Review this account before importing: its customer profiles have changed.']);
+                        }
+                        $client = $profiles->first();
+                    } else {
+                        $client = Client::create(['code' => 0, 'user_id' => $user->id,
+                            'name' => $user->name, 'email' => $user->email, 'responsible_name' => $user->name,
+                            'responsible_mobile' => self::phone($phone), 'secondary_mobile' => self::phone($secondary),
+                            'branch_id' => $branchId, 'is_archived' => 0, 'created_by' => auth()->id()]);
+                        $client->update(['code' => $client->id]);
+                        app(AuditLogService::class)->createLog('staff_customer_profile_created', $client, null, [],
+                            ['user_id' => $user->id, 'client_id' => $client->id], 'Customer profile created for an existing staff account during import.');
+                    }
+                    $this->staffPhones->assertAllowed([$phone, $secondary], $client->id);
+                    $this->remember($client);
+                    return $client;
+                });
+            }
+        }
         if (count($profiles) !== 1) {
             throw ValidationException::withMessages(['customer' => 'This phone belongs to an account without a single active customer profile. Review the account before importing this row.']);
         }
-        // Buyers may use their agent's contact number. A unique customer phone
-        // match is authoritative, but staff contacts retain the stricter check.
-        if ($this->staffPhones->usesStaffNumber([$phone, $secondary])
-            && (!$this->name($name) || !in_array($this->name($name), $this->names[$owner] ?? [], true))) {
-            throw ValidationException::withMessages(['customer' => 'This phone is already linked to a different customer name. Confirm the name and number before importing this row.']);
-        }
+        // A unique phone owner takes priority over the spreadsheet consignee name.
         $client = Client::findOrFail(array_key_first($profiles));
         $this->staffPhones->assertAllowed([$phone, $secondary], $client->id);
         return $client;

@@ -260,6 +260,28 @@ class ImportCustomerSelectionTest extends TestCase
         $this->assertStringNotContainsString('Import history', view('cargo::adminLte.pages.shipments.import-history', compact('shipment'))->render());
     }
 
+    public function test_staff_phone_import_creates_customer_only_on_confirmation_and_preserves_staff_access(): void
+    {
+        $this->prepareReimport();
+        $this->actor->update(['responsible_mobile' => '0970000000']);
+        $before = $this->actor->fresh()->getAttributes();
+        $url = '/consignments/imports/'.$this->batch->uuid;
+        DB::table('currencies')->where('code', 'USD')->update(['default' => 1]);
+        $this->get($url.'/preview')->assertOk();
+        $this->assertSame('new', $this->row->fresh()->status);
+        $this->assertDatabaseCount('clients', 0);
+        $this->post($url.'/confirm', ['included' => [$this->row->id => 1]])->assertSessionHasNoErrors()->assertRedirect();
+        $client = Client::where('user_id', $this->actor->id)->sole();
+        $this->assertSame('Import Staff', $client->name);
+        $this->assertDatabaseHas('shipments', ['code' => 'TEST001', 'client_id' => $client->id, 'reciver_name' => 'Wrong Spreadsheet Name']);
+        $this->assertSame($before, $this->actor->fresh()->getAttributes());
+        $this->assertDatabaseHas('audit_logs', ['event' => 'staff_customer_profile_created', 'user_id' => $this->actor->id]);
+        $this->assertDatabaseHas('audit_logs', ['event' => 'shipment_imported', 'user_id' => $this->actor->id]);
+        $this->post($url.'/confirm')->assertRedirect();
+        $this->assertDatabaseCount('clients', 1);
+        $this->assertDatabaseCount('shipments', 1);
+    }
+
     private function existingParcel(int $consignmentId): \Modules\Cargo\Entities\Shipment
     {
         return \Modules\Cargo\Entities\Shipment::create(['code' => 'TEST001', 'consignment_id' => $consignmentId,

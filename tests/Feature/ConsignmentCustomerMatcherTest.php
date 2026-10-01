@@ -84,12 +84,12 @@ class ConsignmentCustomerMatcherTest extends TestCase
         (new ConsignmentCustomerMatcher())->find('0970000000', 'Jane Banda');
     }
 
-    public function test_account_without_customer_profile_is_flagged(): void
+    public function test_staff_account_without_customer_profile_is_allowed_without_writes_in_preview(): void
     {
         User::create(['name' => 'Jane Banda', 'email' => 'staff@example.test', 'password' => bcrypt('test'),
             'role' => 0, 'responsible_mobile' => '0970000000']);
-        $this->expectException(ValidationException::class);
-        (new ConsignmentCustomerMatcher())->find('0970000000', 'Jane Banda');
+        $this->assertNull((new ConsignmentCustomerMatcher())->find('0970000000', 'Jane Banda'));
+        $this->assertDatabaseCount('clients', 0);
     }
 
     public function test_multiple_profiles_for_one_account_need_review(): void
@@ -157,7 +157,7 @@ class ConsignmentCustomerMatcherTest extends TestCase
         $this->assertStringContainsString('more than one account', $row->fresh()->validation_errors['customer']);
     }
 
-    public function test_staff_number_for_another_name_is_rejected_in_preview_and_direct_resolution(): void
+    public function test_staff_number_for_another_name_is_accepted_without_renaming_the_account(): void
     {
         $client = $this->customer('Staff Customer', '+260970000000');
         User::find($client->user_id)->update(['role' => 0]);
@@ -170,17 +170,87 @@ class ConsignmentCustomerMatcherTest extends TestCase
         $method = new \ReflectionMethod(ConsignmentImportController::class, 'validateRows');
         $method->setAccessible(true);
         $method->invoke(new ConsignmentImportController(), $batch);
-        $this->assertSame('invalid', $row->fresh()->status);
-        $this->assertFalse((bool) $row->fresh()->included);
-        $this->assertStringContainsString('different customer name', $row->fresh()->validation_errors['customer']);
+        $this->assertSame('new', $row->fresh()->status);
+        $this->assertTrue((bool) $row->fresh()->included);
+        $this->assertStringContainsString('Staff Customer', $row->fresh()->validation_warnings['customer']);
         $method = new \ReflectionMethod(ConsignmentImportController::class, 'resolveClient');
         $method->setAccessible(true);
+        $result = $method->invoke(new ConsignmentImportController(), ['phone' => '0970000000', 'consignee_name' => 'Another Customer'], $batch);
+        $this->assertSame($client->id, $result->id);
+        $this->assertSame('Staff Customer', $result->name);
+        $this->assertDatabaseCount('users', 1);
+        $this->assertDatabaseCount('clients', 1);
+    }
+
+    public function test_import_creates_one_staff_customer_profile_without_changing_staff_credentials(): void
+    {
+        $user = User::create(['name' => 'Staff Owner', 'email' => 'owner@example.test', 'password' => bcrypt('test'),
+            'role' => 0, 'responsible_mobile' => '0970000000']);
+        $before = $user->fresh()->getAttributes();
+        $controller = new ConsignmentImportController();
+        $resolve = new \ReflectionMethod($controller, 'resolveClient');
+        $resolve->setAccessible(true);
+        $batch = new ConsignmentImportBatch();
+        $first = $resolve->invoke($controller, ['phone' => '0970000000', 'consignee_name' => 'Different buyer'], $batch);
+        $second = $resolve->invoke($controller, ['phone' => '+260970000000', 'consignee_name' => 'Another buyer'], $batch);
+        $this->assertSame($first->id, $second->id);
+        $this->assertEquals($user->id, $first->user_id);
+        $this->assertSame('Staff Owner', $first->name);
+        $this->assertSame($before, $user->fresh()->getAttributes());
+        $this->assertDatabaseCount('users', 1);
+        $this->assertDatabaseCount('clients', 1);
+        $this->assertDatabaseHas('audit_logs', ['event' => 'staff_customer_profile_created']);
+    }
+
+    public function test_staff_profile_only_number_can_create_customer_profile(): void
+    {
+        $user = User::create(['name' => 'Staff Owner', 'email' => 'owner@example.test', 'password' => bcrypt('test'), 'role' => 4]);
+        \Illuminate\Support\Facades\DB::table('staffs')->insert(['code' => 1, 'user_id' => $user->id, 'responsible_mobile' => '0970000000', 'is_archived' => 0]);
+        $matcher = new ConsignmentCustomerMatcher();
+        $this->assertNull($matcher->find('0970000000', 'Buyer'));
+        $client = $matcher->find('0970000000', 'Buyer', null, true);
+        $this->assertEquals($user->id, $client->user_id);
+        $this->assertSame('260970000000', $client->responsible_mobile);
+    }
+
+    public function test_archived_staff_customer_is_not_recreated(): void
+    {
+        $client = $this->customer('Staff Owner', '0970000000');
+        User::findOrFail($client->user_id)->update(['role' => 0]);
+        $client->update(['is_archived' => 1]);
+        $this->expectException(ValidationException::class);
+        (new ConsignmentCustomerMatcher())->find('0970000000', 'Buyer', null, true);
+    }
+
+    public function test_staff_customer_creation_and_audit_roll_back_with_failed_import(): void
+    {
+        User::create(['name' => 'Staff Owner', 'email' => 'owner@example.test', 'password' => bcrypt('test'),
+            'role' => 0, 'responsible_mobile' => '0970000000']);
         try {
-            $method->invoke(new ConsignmentImportController(), ['phone' => '0970000000', 'consignee_name' => 'Another Customer'], $batch);
-            $this->fail('Staff contact was accepted');
-        } catch (ValidationException $exception) {
-            $this->assertDatabaseCount('users', 1);
-            $this->assertDatabaseCount('clients', 1);
+            \Illuminate\Support\Facades\DB::transaction(function () {
+                (new ConsignmentCustomerMatcher())->find('0970000000', 'Buyer', null, true);
+                throw new \RuntimeException('Simulated import failure');
+            });
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Simulated import failure', $exception->getMessage());
         }
+        $this->assertDatabaseCount('clients', 0);
+        $this->assertDatabaseMissing('audit_logs', ['event' => 'staff_customer_profile_created']);
+        $this->assertDatabaseCount('users', 1);
+    }
+
+    public function test_shared_staff_number_cannot_automatically_create_a_customer(): void
+    {
+        foreach ([0, 1] as $role) {
+            User::create(['name' => 'Staff Owner', 'email' => $role.'@example.test', 'password' => bcrypt('test'),
+                'role' => $role, 'responsible_mobile' => '0970000000']);
+        }
+        try {
+            (new ConsignmentCustomerMatcher())->find('0970000000', 'Buyer', null, true);
+            $this->fail('Ambiguous ownership must be reviewed');
+        } catch (ValidationException $exception) {
+            $this->assertStringContainsString('more than one account', $exception->errors()['customer'][0]);
+        }
+        $this->assertDatabaseCount('clients', 0);
     }
 }
