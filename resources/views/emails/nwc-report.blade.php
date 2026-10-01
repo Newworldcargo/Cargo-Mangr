@@ -1,3 +1,4 @@
+@component('emails.layouts.brand', ['title' => 'Your New World Cargo report', 'preheader' => 'Your requested report is attached.'])
 <p>Hello,</p>
 
 <p>Please find attached the NWC report for the period
@@ -17,5 +18,4 @@
     <li>Average Rate: <strong>{{ number_format($summary['average_rate'] ?? 0, 4) }}</strong></li>
 </ul>
 
-<p>Regards,<br>
-NWC Reporting System</p>
+@endcomponent
