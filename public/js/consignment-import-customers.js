@@ -69,7 +69,7 @@ document.addEventListener('DOMContentLoaded', function () {
         var row = active.closest('[data-import-row]'), value = data.row;
         row.dataset.customerVersion = value.customer_selection_version;
         row.dataset.selectedCustomer = value.selected_customer_id || '';
-        var ready = ['new', 'update', 'unchanged'].includes(value.status);
+        var ready = value.status === 'new';
         var checkbox = row.querySelector('.import-row-checkbox');
         var wasDisabled = checkbox.disabled;
         checkbox.disabled = !ready;
@@ -88,10 +88,10 @@ document.addEventListener('DOMContentLoaded', function () {
             input.value = input.name.startsWith('phone_override_2') ? data.phone_2_display || '' : data.phone_display || '';
         });
         var s = data.summary;
-        document.getElementById('importLiveSummary').textContent = 'New: ' + s.new + ' | Updating: ' + s.update + ' | Unchanged: ' + s.unchanged + ' | Invalid: ' + s.invalid + ' | Conflicts: ' + s.conflict;
+        document.getElementById('importLiveSummary').textContent = 'New: ' + s.new + ' | Already imported: ' + (s.skipped || 0) + ' | Invalid: ' + s.invalid + ' | Conflicts: ' + s.conflict;
         var button = document.querySelector('[data-confirm-import]');
         if (button) {
-            var count = s.new + s.update + s.unchanged;
+            var count = s.new;
             button.textContent = button.dataset.confirmLabel + ' (' + count + ' ready)';
             button.disabled = count < 1 || button.dataset.setupComplete !== '1';
         }

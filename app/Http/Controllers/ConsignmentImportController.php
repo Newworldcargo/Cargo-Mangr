@@ -125,6 +125,10 @@ class ConsignmentImportController extends Controller
     public function preview(Request $request, string $uuid)
     {
         $batch = $this->batch($uuid);
+        if ($batch->status !== 'completed') {
+            $this->validateRows($batch);
+            $batch->refresh();
+        }
         return view('cargo::adminLte.pages.consignments.import-preview', $this->previewData($batch));
     }
 
@@ -182,6 +186,10 @@ class ConsignmentImportController extends Controller
                     ->where('spreadsheet_row', '>=', $batch->data_start_row)->lockForUpdate()->firstOrFail();
                 abort_if($this->isSpreadsheetSummaryRow($row->raw_values, $row->mapped_values ?? []), 422, 'Totals rows cannot be assigned to a customer.');
                 abort_if((int) $row->customer_selection_version !== (int) $request->version, 409, 'This row was changed elsewhere. Close and reopen the preview before editing it.');
+                $code = trim((string) ($row->raw_values[$batch->mappings['hawb_number'] ?? ''] ?? ''));
+                if ($code !== '' && Shipment::where('code', $code)->exists()) {
+                    throw ValidationException::withMessages(['customer' => 'This parcel already exists and will be skipped. Its customer and payment details cannot be changed through an import.']);
+                }
                 $selection = app(ImportCustomerSelection::class);
                 $client = null;
                 if ($request->boolean('create')) {
@@ -330,7 +338,7 @@ class ConsignmentImportController extends Controller
         }
         $this->assertBranchAllowed((int) $batch->pickup_branch_id);
         $this->assertBranchAllowed((int) $batch->destination_branch_id);
-        $eligibleRows=$batch->rows()->whereIn('status',['new','update','unchanged']);
+        $eligibleRows=$batch->rows()->where('sheet_name', $batch->selected_sheet)->where('status', 'new');
         $eligibleIds=$eligibleRows->pluck('id')->all();
         $selectedIds=array_values(array_intersect($eligibleIds,array_map('intval',array_keys($request->input('included',[])))));
         $eligibleRows->update(['included'=>false]);
@@ -342,7 +350,7 @@ class ConsignmentImportController extends Controller
                 'import_rows' => 'Fix or exclude every invalid and conflicting selected row before confirming.',
             ]);
         }
-        $rows = $batch->rows()->where('included', true)->whereIn('status', ['new','update','unchanged'])->get();
+        $rows = $batch->rows()->where('sheet_name', $batch->selected_sheet)->where('included', true)->where('status', 'new')->get();
         if ($rows->isEmpty()) {
             throw ValidationException::withMessages([
                 'import_rows' => 'There are no valid selected rows to import. Select at least one ready row and try again.',
@@ -375,30 +383,24 @@ class ConsignmentImportController extends Controller
                 $consignment = Consignment::create(['consignment_code' => $batch->consignment_code, 'name' => 'Imported consignment',
                     'source' => $pickupBranch->name, 'destination' => $destinationBranch->name, 'status' => $batch->consignment_status, 'cargo_type' => $batch->shipment_type,
                     'cargo_date' => $batch->consignment_date, 'mawb_num' => $first['mawb_num'] ?? null]);
-            } else {
-                $consignment->update(['source' => $pickupBranch->name, 'destination' => $destinationBranch->name, 'status' => $batch->consignment_status,
-                    'cargo_type' => $batch->shipment_type, 'cargo_date' => $batch->consignment_date,
-                    'mawb_num' => $first['mawb_num'] ?? $consignment->mawb_num]);
             }
-            $ids = []; $created = 0; $updated = 0; $unchanged = 0;
+            $ids = []; $created = 0;
+            $skipped = $batch->rows()->where('sheet_name', $batch->selected_sheet)->where('status', 'skipped')->count();
             foreach ($rows as $row) {
                 $data = $row->mapped_values;
+                // Check again under the import lock, before resolving or creating a customer.
+                if (Shipment::where('code', $data['hawb_number'])->lockForUpdate()->exists()) {
+                    $row->update(['status' => 'skipped', 'included' => false, 'validation_errors' => [],
+                        'validation_warnings' => ['hawb_number' => 'Already imported. Shipment and payment details were not changed.']]);
+                    $skipped++;
+                    continue;
+                }
                 // Spreadsheet weight cells are frequently blank or contain units (for example, "6.6kg").
                 // Both shipment weight columns are numeric and non-nullable, so persist the same normalized value.
                 $weight = $this->number($data['weight'] ?? null) ?? 0.0;
                 $amount = $this->number($data['amount'] ?? null) ?? 0.0;
                 $pieces = $this->number($data['pieces'] ?? null) ?? 1.0;
                 $client = $this->resolveClient($data, $batch);
-                $shipment = Shipment::where('code', $data['hawb_number'])->first();
-                if (!empty($data['_selected_customer_id']) && $shipment && (int) $shipment->client_id !== (int) $client->id) {
-                    throw ValidationException::withMessages(['customer' => 'Shipment ownership changed. Review the customer before importing.']);
-                }
-                if ($shipment && (int) $shipment->consignment_id !== (int) $consignment->id) {
-                    throw ValidationException::withMessages([
-                        'hawb_number' => 'A parcel code now belongs to another consignment. Save and review the preview again.',
-                    ]);
-                }
-                $importAction = !$shipment ? 'created' : ($row->status === 'update' ? 'updated' : 'unchanged');
                 $shipmentData = ['consignment_id' => $consignment->id, 'code' => $data['hawb_number'], 'branch_id' => $pickupBranch->id, 'next_destination' => $destinationBranch->name,
                     'client_id' => $client->id, 'client_phone' => $data['phone'], 'client_phone_2' => $data['phone_2'] ?? null,
                     'reciver_name' => $data['consignee_name'], 'reciver_phone' => $data['phone'], 'reciver_phone_2' => $data['phone_2'] ?? null,
@@ -406,30 +408,20 @@ class ConsignmentImportController extends Controller
                     'to_country_id' => $batch->to_country_id, 'to_state_id' => $batch->to_state_id, 'payment_type' => Shipment::POSTPAID,
                     'shipping_cost' => $amount, 'amount_to_be_collected' => $amount,
                     'total_weight' => $weight, 'shipping_date' => $batch->consignment_date->toDateString()];
-                if (!$shipment) {
-                    $shipment = Shipment::create($shipmentData + ['status_id' => Shipment::PENDING_STATUS, 'type' => Shipment::PICKUP,
-                        'client_status' => Shipment::CLIENT_STATUS_CREATED]);
-                    PackageShipment::create(['package_id' => $package->id, 'shipment_id' => $shipment->id, 'description' => $data['description'] ?? null,
-                        'weight' => $weight, 'qty' => $pieces]);
-                    $created++;
-                } elseif ($row->status === 'update') {
-                    $shipment->update($shipmentData);
-                    $packageRow = $shipment->packageShipments()->first();
-                    $packageData = ['description' => $data['description'] ?? null, 'weight' => $weight, 'qty' => $pieces];
-                    $packageRow ? $packageRow->update($packageData) : PackageShipment::create($packageData + ['package_id' => $package->id, 'shipment_id' => $shipment->id]);
-                    $updated++;
-                } else {
-                    $unchanged++;
-                }
-                $row->update(['status' => 'imported', 'shipment_id' => $shipment->id, 'import_action' => $importAction,
+                $shipment = Shipment::create($shipmentData + ['status_id' => Shipment::PENDING_STATUS, 'type' => Shipment::PICKUP,
+                    'client_status' => Shipment::CLIENT_STATUS_CREATED]);
+                PackageShipment::create(['package_id' => $package->id, 'shipment_id' => $shipment->id, 'description' => $data['description'] ?? null,
+                    'weight' => $weight, 'qty' => $pieces]);
+                $created++;
+                $row->update(['status' => 'imported', 'shipment_id' => $shipment->id, 'import_action' => 'created',
                     'removed_at' => null, 'removed_by' => null]);
                 $ids[] = $shipment->id;
             }
             $batch->update(['status' => 'completed', 'confirmed_at' => now(), 'result' => ['consignment_id' => $consignment->id,
-                'shipment_ids' => $ids, 'imported' => count($ids), 'created' => $created, 'updated' => $updated, 'unchanged' => $unchanged]]);
+                'shipment_ids' => $ids, 'imported' => count($ids), 'created' => $created, 'updated' => 0, 'unchanged' => 0, 'skipped' => $skipped]]);
         });
         $result = $batch->fresh()->result;
-        return redirect()->route('consignment.import.preview', $batch->uuid)->with('success', 'Import completed: '.$result['created'].' added, '.$result['updated'].' updated, '.$result['unchanged'].' unchanged.');
+        return redirect()->route('consignment.import.preview', $batch->uuid)->with('success', 'Import completed: '.$result['created'].' added, '.$result['skipped'].' existing parcels skipped. Existing shipment and payment details were not changed.');
         } finally {
             $lock->release();
         }
@@ -540,7 +532,7 @@ class ConsignmentImportController extends Controller
     private function validateRows(ConsignmentImportBatch $batch): void
     {
         $mappings = $batch->mappings ?: []; $seen=[];
-        $counts=['detected'=>0,'new'=>0,'update'=>0,'unchanged'=>0,'invalid'=>0,'conflict'=>0,'selected'=>0];
+        $counts=['detected'=>0,'new'=>0,'update'=>0,'unchanged'=>0,'skipped'=>0,'invalid'=>0,'conflict'=>0,'selected'=>0];
         $rows = $batch->rows()->where('sheet_name',$batch->selected_sheet)->where('spreadsheet_row','>=',$batch->data_start_row)->get();
         foreach ($rows as $row) {
             $mapped=[]; foreach ($mappings as $field=>$column) $mapped[$field]=trim((string)($row->raw_values[$column] ?? ''));
@@ -560,6 +552,17 @@ class ConsignmentImportController extends Controller
             }
             if (empty($mapped['destination'])) $mapped['destination'] = $batch->default_destination ?? '';
             $counts['detected']++; $errors=[]; $warnings=[];
+            $existing = !empty($mapped['hawb_number']) ? Shipment::where('code', $mapped['hawb_number'])->first() : null;
+            if ($existing) {
+                $sameConsignment = $batch->target_consignment_id && (int) $existing->consignment_id === (int) $batch->target_consignment_id;
+                $status = $sameConsignment ? 'skipped' : 'conflict';
+                $row->update(['included' => false, 'status' => $status, 'mapped_values' => $mapped, 'validation_errors' => [],
+                    'validation_warnings' => ['hawb_number' => $sameConsignment
+                        ? 'Already imported. Shipment and payment details will not be changed.'
+                        : 'This parcel code already exists in another consignment and cannot be imported again.']]);
+                $counts[$status]++;
+                continue;
+            }
             if ($row->selected_customer_id) {
                 try {
                     $mapped = app(ImportCustomerSelection::class)->apply($mapped, $row, $batch);
@@ -611,20 +614,6 @@ class ConsignmentImportController extends Controller
             $status = $errors ? 'invalid' : 'new';
             if (!$errors && isset($seen[$mapped['hawb_number']])) {
                 $status='conflict'; $warnings['hawb_number']='This parcel code appears more than once in this file.';
-            } elseif (!$errors) {
-                $existing = Shipment::where('code', $mapped['hawb_number'])->first();
-                if ($existing && (!$batch->target_consignment_id || (int) $existing->consignment_id !== (int) $batch->target_consignment_id)) {
-                    $status='conflict'; $warnings['hawb_number']='This parcel code belongs to another consignment.';
-                } elseif ($existing) {
-                    if (!empty($mapped['_selected_customer_id']) && (int) $existing->client_id !== (int) $mapped['_selected_customer_id']) {
-                        $row->update(['mapped_values' => $mapped, 'validation_errors' => ['customer' => 'This shipment belongs to another customer. Reassignment requires separate review.'], 'status' => 'invalid', 'included' => false]);
-                        $counts['invalid']++;
-                        continue;
-                    }
-                    $changes = $this->shipmentChanges($existing, $mapped, $batch);
-                    $status = $changes ? 'update' : 'unchanged';
-                    if ($changes) $warnings['changes'] = 'Will update: '.implode(', ', $changes).'.';
-                }
             }
             $seen[$mapped['hawb_number'] ?? $row->id] = true; $row->update(['mapped_values'=>$mapped,'validation_errors'=>$errors,'validation_warnings'=>$warnings,'status'=>$status]);
             if (in_array($status,['invalid','conflict'],true)) $row->update(['included'=>false]);

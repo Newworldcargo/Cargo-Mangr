@@ -181,4 +181,111 @@ class ImportCustomerSelectionTest extends TestCase
         $this->assertTrue($other->fresh()->included);
         $this->assertSame(0, $this->row->fresh()->customer_selection_version);
     }
+
+    private function prepareReimport(): \App\Models\Consignment
+    {
+        $consignment = \App\Models\Consignment::create(['consignment_code' => 'ADD-ONLY', 'name' => 'Original',
+            'status' => 'delivered', 'source' => 'Original source', 'destination' => 'Original destination', 'cargo_date' => '2026-09-01']);
+        $this->batch->update(['mode' => 'update', 'target_consignment_id' => $consignment->id,
+            'consignment_code' => 'ADD-ONLY', 'consignment_status' => 'pending', 'consignment_date' => '2026-09-30',
+            'destination_branch_id' => $this->batch->pickup_branch_id, 'from_country_id' => 1,
+            'from_state_id' => 1, 'to_country_id' => 1, 'to_state_id' => 1]);
+        DB::table('packages')->insert(['name' => 'Box', 'cost' => 0]);
+        return $consignment;
+    }
+
+    private function existingParcel(int $consignmentId): \Modules\Cargo\Entities\Shipment
+    {
+        return \Modules\Cargo\Entities\Shipment::create(['code' => 'TEST001', 'consignment_id' => $consignmentId,
+            'client_id' => 999, 'client_phone' => '260960000000', 'status_id' => 1, 'type' => 1,
+            'paid' => 1, 'shipping_cost' => 500, 'amount_to_be_collected' => 500,
+            'shipping_date' => '2026-09-01', 'total_weight' => 12]);
+    }
+
+    public function test_reimport_adds_only_missing_parcels_preserving_paid_shipments_and_consignment(): void
+    {
+        $consignment = $this->prepareReimport();
+        $shipment = $this->existingParcel($consignment->id);
+        $invoice = \App\Models\Transxn::create(['shipment_id' => $shipment->id, 'receipt_number' => 'PAID-1', 'total' => 500, 'currency' => 'ZMW', 'status' => 'completed']);
+        $receipt = \App\Models\ShipmentPaymentReceipt::create(['shipment_id' => $shipment->id, 'receipt_number' => 'PAID-1-1', 'amount' => 500, 'currency' => 'ZMW', 'method_of_payment' => 'cash_payment']);
+        $package = \Modules\Cargo\Entities\PackageShipment::create(['package_id' => DB::table('packages')->value('id'), 'shipment_id' => $shipment->id, 'description' => 'Original goods', 'weight' => 12, 'qty' => 3]);
+        $before = [$shipment->fresh()->getAttributes(), $consignment->fresh()->getAttributes(), $invoice->fresh()->getAttributes(), $receipt->fresh()->getAttributes(), $package->fresh()->getAttributes()];
+        // Existing parcel data may now be invalid or belong to a different named customer.
+        $this->row->update(['raw_values' => ['A' => 'TEST001', 'B' => 'Wrong name', 'C' => 'BAD PHONE', 'D' => 'Changed address'], 'status' => 'update', 'included' => true]);
+        $client = $this->customer('Remaining Customer', '260950000000');
+        $new = ConsignmentImportRow::create(['batch_id' => $this->batch->id, 'sheet_name' => 'Sheet1', 'spreadsheet_row' => 3,
+            'raw_values' => ['A' => 'TEST002', 'B' => $client->name, 'C' => $client->responsible_mobile, 'D' => 'Lusaka'], 'included' => true]);
+        $url = '/consignments/imports/'.$this->batch->uuid.'/confirm';
+        $payload = ['included' => [$this->row->id => 1, $new->id => 1]];
+        DB::table('currencies')->where('code', 'USD')->update(['default' => 1]);
+        $preview = $this->get('/consignments/imports/'.$this->batch->uuid.'/preview')
+            ->assertOk()->assertSee('Import new parcels')->assertSee('Already imported. Shipment and payment details will not be changed.');
+        $document = new \DOMDocument();
+        @$document->loadHTML($preview->getContent());
+        $xpath = new \DOMXPath($document);
+        $checkbox = $xpath->query('//input[@name="included['.$this->row->id.']"]')->item(0);
+        $this->assertTrue($checkbox->hasAttribute('disabled'));
+        $this->assertFalse($checkbox->hasAttribute('checked'));
+        if (getenv('NWC_IMPORT_PREVIEW') === '1') file_put_contents('/tmp/nwc-add-only-import.html', $preview->getContent());
+        $this->post($url, $payload)->assertSessionHasNoErrors()->assertRedirect();
+        $this->post($url, $payload)->assertSessionHasNoErrors()->assertRedirect();
+        $this->assertDatabaseCount('shipments', 2);
+        $this->assertDatabaseCount('clients', 1);
+        $this->assertDatabaseHas('shipments', ['code' => 'TEST002', 'client_id' => $client->id, 'consignment_id' => $consignment->id]);
+        $this->assertSame($before, [$shipment->fresh()->getAttributes(), $consignment->fresh()->getAttributes(), $invoice->fresh()->getAttributes(), $receipt->fresh()->getAttributes(), $package->fresh()->getAttributes()]);
+        $this->assertSame('skipped', $this->row->fresh()->status);
+        $this->assertFalse($this->row->fresh()->included);
+        $this->assertSame(1, $this->batch->fresh()->result['created']);
+        $this->assertSame(1, $this->batch->fresh()->result['skipped']);
+        $this->assertSame(0, $this->batch->fresh()->result['updated']);
+    }
+
+    public function test_existing_only_reimport_does_not_write_or_create_customers(): void
+    {
+        $consignment = $this->prepareReimport();
+        $shipment = $this->existingParcel($consignment->id);
+        $before = $shipment->fresh()->getAttributes();
+        $this->postJson('/consignments/imports/'.$this->batch->uuid.'/confirm', ['included' => [$this->row->id => 1]])
+            ->assertStatus(422)->assertJsonValidationErrors('import_rows');
+        $this->assertSame('skipped', $this->row->fresh()->status);
+        $this->assertSame($before, $shipment->fresh()->getAttributes());
+        $this->assertDatabaseCount('clients', 0);
+        $this->assertDatabaseCount('shipments', 1);
+        $this->postJson($this->url(), ['version' => 0, 'create' => true, 'first_name' => 'Another', 'last_name' => 'Person', 'phone' => '0950000000'])
+            ->assertStatus(422)->assertJsonValidationErrors('customer');
+        $this->assertDatabaseCount('clients', 0);
+    }
+
+    public function test_code_from_another_consignment_is_never_reassigned(): void
+    {
+        $consignment = $this->prepareReimport();
+        $other = \App\Models\Consignment::create(['consignment_code' => 'OTHER', 'name' => 'Other']);
+        $shipment = $this->existingParcel($other->id);
+        $this->postJson('/consignments/imports/'.$this->batch->uuid.'/confirm', ['included' => [$this->row->id => 1]])->assertStatus(422);
+        $this->assertSame('conflict', $this->row->fresh()->status);
+        $this->assertEquals($other->id, $shipment->fresh()->consignment_id);
+        $this->assertDatabaseCount('clients', 0);
+    }
+
+    public function test_parcel_created_after_validation_is_skipped_inside_confirmation(): void
+    {
+        $consignment = $this->prepareReimport();
+        $this->row->update(['raw_values' => ['A' => 'TEST001', 'B' => 'New Customer', 'C' => '0950000000', 'D' => 'Lusaka']]);
+        $inserted = false;
+        $shipment = null;
+        DB::listen(function ($query) use (&$inserted, &$shipment, $consignment) {
+            if (!$inserted && str_contains($query->sql, 'select * from "packages"')) {
+                $inserted = true;
+                $shipment = $this->existingParcel($consignment->id);
+            }
+        });
+        $this->post('/consignments/imports/'.$this->batch->uuid.'/confirm', ['included' => [$this->row->id => 1]])->assertSessionHasNoErrors();
+        $this->assertTrue($inserted);
+        $this->assertSame('skipped', $this->row->fresh()->status);
+        $this->assertSame(0, $this->batch->fresh()->result['created']);
+        $this->assertSame(1, $this->batch->fresh()->result['skipped']);
+        $this->assertDatabaseCount('clients', 0);
+        $this->assertDatabaseCount('shipments', 1);
+        $this->assertEquals(500, $shipment->fresh()->shipping_cost);
+    }
 }
