@@ -110,7 +110,10 @@ class ConsignmentCustomerMatcher
         if (count($profiles) !== 1) {
             throw ValidationException::withMessages(['customer' => 'This phone belongs to an account without a single active customer profile. Review the account before importing this row.']);
         }
-        if (!$this->name($name) || !in_array($this->name($name), $this->names[$owner] ?? [], true)) {
+        // Buyers may use their agent's contact number. A unique customer phone
+        // match is authoritative, but staff contacts retain the stricter check.
+        if ($this->staffPhones->usesStaffNumber([$phone, $secondary])
+            && (!$this->name($name) || !in_array($this->name($name), $this->names[$owner] ?? [], true))) {
             throw ValidationException::withMessages(['customer' => 'This phone is already linked to a different customer name. Confirm the name and number before importing this row.']);
         }
         $client = Client::findOrFail(array_key_first($profiles));

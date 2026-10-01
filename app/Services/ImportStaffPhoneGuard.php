@@ -10,6 +10,16 @@ class ImportStaffPhoneGuard
 {
     private ?array $phones = null;
 
+    public function usesStaffNumber(array $numbers): bool
+    {
+        $this->load();
+        foreach ($numbers as $number) {
+            $phone = ConsignmentCustomerMatcher::phone($number);
+            if ($phone && isset($this->phones[$phone])) return true;
+        }
+        return false;
+    }
+
     public function assertAllowed(array $numbers, ?int $customerId = null): void
     {
         $this->load();

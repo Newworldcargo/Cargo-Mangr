@@ -599,7 +599,7 @@ class ConsignmentImportController extends Controller
                         try {
                             $client=$this->findClientForImport($mapped['phone'], $mapped['consignee_name'] ?? '', $mapped['phone_2']);
                             $warnings['customer']=$client
-                                ? 'Existing customer: '.$client->name.' (profile #'.$client->id.'). This shipment will appear in their existing history.'
+                                ? 'Matched by phone: '.$client->name.' (profile #'.$client->id.'). The consignee name from the file will be kept; the shipment will appear in this account.'
                                 : 'A new customer profile will be created when you confirm the import.';
                         } catch (ValidationException $exception) {
                             $errors['customer']=$exception->errors()['customer'][0];

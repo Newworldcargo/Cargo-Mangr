@@ -194,6 +194,19 @@ class ImportCustomerSelectionTest extends TestCase
         return $consignment;
     }
 
+    public function test_import_uses_unique_phone_owner_but_preserves_the_spreadsheet_consignee(): void
+    {
+        $this->prepareReimport();
+        $client = $this->customer();
+        $before = $client->fresh()->getAttributes();
+        $this->post('/consignments/imports/'.$this->batch->uuid.'/confirm', ['included' => [$this->row->id => 1]])
+            ->assertSessionHasNoErrors()->assertRedirect();
+        $this->assertDatabaseHas('shipments', ['code' => 'TEST001', 'client_id' => $client->id, 'reciver_name' => 'Wrong Spreadsheet Name']);
+        $this->assertSame($before, $client->fresh()->getAttributes());
+        $this->assertDatabaseCount('clients', 1);
+        $this->assertDatabaseCount('shipments', 1);
+    }
+
     private function existingParcel(int $consignmentId): \Modules\Cargo\Entities\Shipment
     {
         return \Modules\Cargo\Entities\Shipment::create(['code' => 'TEST001', 'consignment_id' => $consignmentId,

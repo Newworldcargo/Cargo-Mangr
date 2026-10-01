@@ -66,11 +66,14 @@ class ConsignmentCustomerMatcherTest extends TestCase
         (new ConsignmentCustomerMatcher())->find('0970000000', 'Jane Banda', '0960000000');
     }
 
-    public function test_different_name_is_not_silently_linked_to_phone_owner(): void
+    public function test_unique_customer_phone_takes_priority_over_buyers_name_without_renaming_account(): void
     {
-        $this->customer('Jane Banda', '+260970000000');
-        $this->expectException(ValidationException::class);
-        (new ConsignmentCustomerMatcher())->find('0970000000', 'Someone Else');
+        $client = $this->customer('Jane Banda', '+260970000000');
+        $match = (new ConsignmentCustomerMatcher())->find('0970000000', 'Someone Else');
+        $this->assertSame($client->id, $match->id);
+        $this->assertSame('Jane Banda', $client->fresh()->name);
+        $this->assertSame('Jane Banda', User::find($client->user_id)->name);
+        $this->assertDatabaseCount('clients', 1);
     }
 
     public function test_archived_profile_does_not_become_a_new_duplicate(): void
@@ -111,7 +114,7 @@ class ConsignmentCustomerMatcherTest extends TestCase
         $batch = new ConsignmentImportBatch();
         $data = ['phone' => '0970000000', 'consignee_name' => 'Jane Banda'];
         $first = $method->invoke($controller, $data, $batch);
-        $second = $method->invoke($controller, ['phone' => '+260970000000', 'consignee_name' => 'Banda Jane', 'phone_2' => '0960000000'], $batch);
+        $second = $method->invoke($controller, ['phone' => '+260970000000', 'consignee_name' => 'Different Buyer', 'phone_2' => '0960000000'], $batch);
         $this->assertSame($first->id, $second->id);
         $this->assertDatabaseCount('users', 1);
         $this->assertDatabaseCount('clients', 1);
@@ -127,7 +130,7 @@ class ConsignmentCustomerMatcherTest extends TestCase
         $controller = new ConsignmentImportController();
         $method = new \ReflectionMethod($controller, 'resolveClient');
         $method->setAccessible(true);
-        $result = $method->invoke($controller, ['phone' => '0970000000', 'consignee_name' => 'Jane Banda'], new ConsignmentImportBatch());
+        $result = $method->invoke($controller, ['phone' => '0970000000', 'consignee_name' => 'Buyer Representative'], new ConsignmentImportBatch());
         $this->assertSame($client->id, $result->id);
         $this->assertSame($before, User::find($client->user_id)->getRawOriginal());
         $this->assertSame($client->getRawOriginal(), $client->fresh()->getRawOriginal());
