@@ -375,23 +375,35 @@ class LipilaPaymentsTest extends TestCase
 
     public function test_confirmed_payment_records_receipt_and_settles_only_once(): void
     {
+        config(['messaging.activation_ready' => true]);
+        \Illuminate\Support\Facades\Queue::fake();
+        \Illuminate\Support\Facades\Mail::fake();
+        \App\Models\MessagingSetting::create(['id' => 1, 'email_enabled' => true]);
         $invoice = $this->invoice(); $this->pending(); $intent = $this->start($invoice);
+        $this->assertSame(0, \App\Models\OutboundMessage::count());
         $this->complete($intent); $this->complete($intent->fresh());
         $this->assertSame('succeeded', $intent->fresh()->status);
         $this->assertSame('completed', $invoice->fresh()->status);
         $this->assertEquals(1, $invoice->shipment->fresh()->paid);
         $this->assertSame(1, ShipmentPaymentReceipt::count());
+        $this->assertSame(1, \App\Models\OutboundMessage::count());
+        $this->assertSame('ZMW 100.00', \App\Models\OutboundMessage::sole()->content['details']['Amount received']);
+        \Illuminate\Support\Facades\Mail::assertNothingSent();
         $this->assertDatabaseHas('shipment_payment_receipts', ['amount' => 100, 'currency' => 'ZMW']);
         $this->getJson('/api/v1/shipments/' . $invoice->shipment_id . '/payments')->assertOk()->assertJsonPath('data.remaining.amountMinor', 0)->assertJsonCount(1, 'data.receipts');
     }
 
     public function test_wrong_amount_currency_or_concurrent_cash_payment_goes_to_review(): void
     {
+        config(['messaging.activation_ready' => true]);
+        \Illuminate\Support\Facades\Queue::fake();
+        \App\Models\MessagingSetting::create(['id' => 1, 'email_enabled' => true]);
         $invoice = $this->invoice(); $this->pending(); $intent = $this->start($invoice);
         $this->complete($intent, ['amount' => 99]);
         $this->assertSame('review', $intent->fresh()->status);
         $this->assertSame('pending', $invoice->fresh()->status);
         $this->assertSame(0, ShipmentPaymentReceipt::count());
+        $this->assertSame(0, \App\Models\OutboundMessage::count());
     }
 
     public function test_changed_bill_is_not_overwritten_by_confirmation(): void

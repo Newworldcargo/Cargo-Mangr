@@ -32,6 +32,20 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot()
     {
+        // Persist notification intent with the business transaction; dispatch waits for commit.
+        \App\Models\ShipmentPaymentReceipt::created(function ($receipt) {
+            app(\App\Services\Messaging\CustomerEmails::class)->payment($receipt);
+        });
+        \Modules\Cargo\Entities\OnlineBookingRequest::saved(function ($booking) {
+            if ($booking->wasRecentlyCreated || $booking->wasChanged(['reference', 'shipment_id'])) {
+                app(\App\Services\Messaging\CustomerEmails::class)->booking($booking);
+            }
+        });
+        \App\Models\User::updated(function ($user) {
+            if ($user->wasChanged('verified') && $user->verified) {
+                app(\App\Services\Messaging\CustomerEmails::class)->welcome($user);
+            }
+        });
         // Theme::set('html');
         // Theme::clear();
 

@@ -57,6 +57,7 @@ class SendOutboundMessage implements ShouldQueue
             else {
                 $content = $message->content;
                 if ($message->purpose === 'otp') Mail::to($message->recipient)->send(new \App\Mail\OTPMail($content['otp'], $content['name'] ?? 'Customer'));
+                elseif (($content['template'] ?? null) === 'customer-lifecycle') Mail::to($message->recipient)->send(new \App\Mail\CustomerLifecycleMail($content));
                 else Mail::raw($content['body'], function ($mail) use ($message, $content) { $mail->to($message->recipient)->subject($content['subject'] ?? 'New World Cargo'); });
             }
             $message->update(['status' => 'accepted', 'accepted_at' => now(), 'provider_id' => $providerId, 'last_error' => null]);
