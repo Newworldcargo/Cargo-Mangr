@@ -26,13 +26,18 @@
                     </div>
                 </div>
             </div>
+            <form method="get" action="{{ route('search.index') }}" class="d-flex mt-3" style="gap:8px">
+                <label for="search-page-query" class="sr-only">Search shipments and consignments</label>
+                <input id="search-page-query" name="q" type="search" value="{{ $query }}" maxlength="100" minlength="2" required class="form-control" placeholder="Reference, phone, customer or receipt">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-search" aria-hidden="true"></i><span class="sr-only">Search</span></button>
+            </form>
         </div>
     </div>
 
     <!-- Search Results Content -->
     <div class="search-content py-4">
         <div class="container-fluid">
-            @if($query)
+            @if($query || request('user_id'))
                 @if(empty($results))
                     <div class="text-center py-4">
                         <div class="empty-state">
@@ -53,7 +58,7 @@
                         <div class="d-flex align-items-center">
                             <span class="badge bg-light text-dark me-2">{{ $totalResults }}</span>
                             <small class="text-muted">
-                                result{{ $totalResults !== 1 ? 's' : '' }} across {{ count($results) }} categor{{ count($results) !== 1 ? 'ies' : 'y' }}
+                                result{{ $totalResults !== 1 ? 's' : '' }} shown across {{ count($results) }} categor{{ count($results) !== 1 ? 'ies' : 'y' }}
                             </small>
                         </div>
                     </div>
@@ -97,6 +102,7 @@
                                     </div>
                                 @endforeach
                             </div>
+                            <div class="mt-3">{{ $section['pagination']->links('pagination::simple-bootstrap-4') }}</div>
                         </div>
                     @endforeach
                 @endif
@@ -105,7 +111,7 @@
                     <div class="empty-state">
                         <i class="fas fa-search fa-2x text-muted mb-3"></i>
                         <h5 class="text-muted mb-2">Start Searching</h5>
-                        <p class="text-muted small">Use the search bar in the header to find consignments, shipments, and users.</p>
+                        <p class="text-muted small">Enter a reference, phone number, customer name or receipt number.</p>
                     </div>
                 </div>
             @endif
@@ -127,6 +133,8 @@
 .search-header h4 {
     font-size: 1.1rem;
     font-weight: 500;
+    overflow-wrap: anywhere;
+    min-width: 0;
 }
 
 .search-content {
@@ -224,6 +232,8 @@
 
 .result-title {
     flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .result-link {
@@ -441,4 +451,4 @@
 }
 </style>
 
-@endsection 
+@endsection

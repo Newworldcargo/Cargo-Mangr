@@ -31,7 +31,8 @@
             <input type="text" 
                    id="globalSearchInput"
                    class="form-control search-input" 
-                   placeholder="Search consignments, shipments, users..."
+                   placeholder="Search references, phones, customers..."
+                   aria-label="Search shipments and consignments"
                    autocomplete="off">
         </div>
         
@@ -39,9 +40,9 @@
         <div id="searchResults" class="search-results-dropdown" style="display: none;">
             <div class="search-results-header">
                 <h6 class="mb-0">Search Results</h6>
-                <button type="button" class="btn-close" id="closeSearchResults"></button>
+                <button type="button" class="btn btn-sm btn-light" id="closeSearchResults" aria-label="Close search results" title="Close search results" style="min-width:40px;min-height:40px"><i class="fas fa-times" aria-hidden="true"></i></button>
             </div>
-            <div id="searchResultsContent" class="search-results-content">
+            <div id="searchResultsContent" class="search-results-content" aria-live="polite">
                 <!-- Results will be populated here -->
             </div>
             <div class="search-results-footer">
@@ -335,6 +336,9 @@
     color: #666;
 }
 
+.search-result-content h6 { color: #122c39; overflow-wrap: anywhere; }
+.search-result-item:focus-visible { outline: 2px solid #122c39; outline-offset: -2px; }
+
 .search-results-footer {
     padding: 12px 16px;
     border-top: 1px solid #eee;
@@ -384,6 +388,11 @@ document.addEventListener('DOMContentLoaded', function() {
     
     let searchTimeout;
     let currentQuery = '';
+    let activeRequest;
+    let searchVersion = 0;
+    searchInput.maxLength = 100;
+    searchInput.setAttribute('aria-controls', 'searchResults');
+    searchInput.setAttribute('aria-expanded', 'false');
 
     // Search input event
     searchInput.addEventListener('input', function() {
@@ -391,6 +400,8 @@ document.addEventListener('DOMContentLoaded', function() {
         currentQuery = query;
         
         clearTimeout(searchTimeout);
+        activeRequest?.abort();
+        searchVersion++;
         
         if (query.length < 2) {
             hideSearchResults();
@@ -400,6 +411,24 @@ document.addEventListener('DOMContentLoaded', function() {
         searchTimeout = setTimeout(() => {
             performLiveSearch(query);
         }, 300);
+    });
+
+    searchInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') hideSearchResults();
+        if (e.key === 'ArrowDown') {
+            const first = searchResultsContent.querySelector('a.search-result-item');
+            if (first) { e.preventDefault(); first.focus(); }
+        }
+    });
+    searchResultsContent.addEventListener('keydown', function(e) {
+        const links = [...searchResultsContent.querySelectorAll('a.search-result-item')];
+        const index = links.indexOf(document.activeElement);
+        if (e.key === 'Escape') { hideSearchResults(); searchInput.focus(); }
+        if (index >= 0 && ['ArrowDown', 'ArrowUp'].includes(e.key)) {
+            e.preventDefault();
+            const next = e.key === 'ArrowDown' ? index + 1 : index - 1;
+            if (next < 0) searchInput.focus(); else links[Math.min(next, links.length - 1)]?.focus();
+        }
     });
 
 
@@ -435,21 +464,24 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function performLiveSearch(query) {
         if (query !== currentQuery) return; // Prevent race conditions
+        const version = searchVersion;
+        activeRequest = new AbortController();
         
         searchResultsContent.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i> Searching...</div>';
         showSearchResults();
 
-        fetch(`{{ route('search.live') }}?q=${encodeURIComponent(query)}`)
+        fetch(`{{ route('search.live') }}?q=${encodeURIComponent(query)}`, { signal: activeRequest.signal, headers: { Accept: 'application/json' } })
             .then(response => {
                 if (response.status === 401) {
                     // User not authenticated, redirect to login
                     window.location.href = '{{ route("signin") }}';
                     return;
                 }
+                if (!response.ok) throw new Error('Search unavailable');
                 return response.json();
             })
             .then(data => {
-                if (query !== currentQuery) return; // Prevent race conditions
+                if (query !== currentQuery || version !== searchVersion) return;
                 
                 if (data && data.success) {
                     displaySearchResults(data.results, query);
@@ -458,53 +490,61 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             })
             .catch(error => {
-                if (query !== currentQuery) return;
+                if (error.name === 'AbortError' || query !== currentQuery || version !== searchVersion) return;
                 searchResultsContent.innerHTML = '<div class="no-results">Error loading results</div>';
             });
     }
 
     function displaySearchResults(results, query) {
+        viewAllResults.href = `{{ route('search.index') }}?q=${encodeURIComponent(query)}`;
         if (Object.keys(results).length === 0) {
-            searchResultsContent.innerHTML = '<div class="no-results">No results found</div>';
+            searchResultsContent.innerHTML = '<div class="no-results">No quick matches found</div>';
             return;
         }
 
-        let html = '';
+        searchResultsContent.replaceChildren();
         
         Object.keys(results).forEach(category => {
             const section = results[category];
             const items = section.data.slice(0, 3); // Show max 3 items per category
             
-            html += `<div class="search-category">
-                <i class="${section.icon} me-1"></i> ${section.title} (${section.data.length})
-            </div>`;
+            const heading = document.createElement('div');
+            heading.className = 'search-category';
+            heading.textContent = `${section.title} (${items.length}${section.hasMore ? '+' : ''})`;
+            searchResultsContent.appendChild(heading);
             
             items.forEach(item => {
-                html += `
-                <div class="search-result-item" onclick="window.location.href='${item.url}'">
-                    <div class="d-flex align-items-center">
-                        <div class="search-result-icon bg-${section.color} bg-opacity-10">
-                            <i class="${item.icon} text-${section.color}"></i>
-                        </div>
-                        <div class="search-result-content flex-grow-1">
-                            <h6>${item.title}</h6>
-                            <p>${item.subtitle}</p>
-                        </div>
-                    </div>
-                </div>`;
+                const target = new URL(item.url, window.location.origin);
+                if (target.origin !== window.location.origin || !['http:', 'https:'].includes(target.protocol)) return;
+                const link = document.createElement('a');
+                link.className = 'search-result-item d-block text-decoration-none';
+                link.href = target.href;
+                const content = document.createElement('div');
+                content.className = 'search-result-content';
+                const title = document.createElement('h6');
+                title.textContent = item.title;
+                const subtitle = document.createElement('p');
+                subtitle.textContent = item.subtitle;
+                content.append(title, subtitle);
+                link.appendChild(content);
+                searchResultsContent.appendChild(link);
             });
         });
 
-        searchResultsContent.innerHTML = html;
         viewAllResults.href = `{{ route('search.index') }}?q=${encodeURIComponent(query)}`;
     }
 
     function showSearchResults() {
         searchResults.style.display = 'block';
+        searchInput.setAttribute('aria-expanded', 'true');
     }
 
     function hideSearchResults() {
         searchResults.style.display = 'none';
+        searchInput.setAttribute('aria-expanded', 'false');
+        clearTimeout(searchTimeout);
+        activeRequest?.abort();
+        searchVersion++;
     }
 });
 </script>
