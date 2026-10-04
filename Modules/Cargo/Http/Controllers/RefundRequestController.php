@@ -18,22 +18,56 @@ class RefundRequestController extends Controller
     {
         $this->authorizeAccess();
 
+        $request->validate([
+            'q' => 'nullable|string|max:100',
+            'status' => 'nullable|in:pending,approved,declined',
+            'per_page' => 'nullable|integer|in:20,50,100',
+            'page' => 'nullable|integer|min:1',
+        ]);
+        $search = trim((string) $request->input('q', ''));
+        $perPage = (int) ($request->input('per_page') ?: 20);
         $status = $request->filled('status') ? trim((string) $request->status) : null;
 
         $query = RefundRequest::with([
             'shipment.client',
             'requester',
             'reviewer',
-        ])->orderByDesc('created_at');
+        ])->orderByDesc('created_at')->orderByDesc('id');
 
         if ($status) {
             $query->where('status', $status);
         }
 
-        $refundRequests = $query->paginate(20);
+        if ($search !== '') {
+            // Treat wildcard characters as literal input, not instructions to scan everything.
+            $pattern = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $search) . '%';
+            $query->where(function ($matches) use ($search, $pattern) {
+                $matches->whereRaw("reason LIKE ? ESCAPE '!'", [$pattern])
+                    ->orWhereHas('shipment', function ($shipment) use ($pattern) {
+                        $shipment->whereRaw("code LIKE ? ESCAPE '!'", [$pattern])
+                            ->orWhereRaw("client_phone LIKE ? ESCAPE '!'", [$pattern])
+                            ->orWhereRaw("client_phone_2 LIKE ? ESCAPE '!'", [$pattern])
+                            ->orWhereHas('client', function ($client) use ($pattern) {
+                                $client->whereRaw("name LIKE ? ESCAPE '!'", [$pattern])
+                                    ->orWhereRaw("email LIKE ? ESCAPE '!'", [$pattern])
+                                    ->orWhereRaw("responsible_mobile LIKE ? ESCAPE '!'", [$pattern])
+                                    ->orWhereRaw("secondary_mobile LIKE ? ESCAPE '!'", [$pattern]);
+                            });
+                    })
+                    ->orWhereHas('transaction', fn ($transaction) => $transaction->whereRaw("receipt_number LIKE ? ESCAPE '!'", [$pattern]))
+                    ->orWhereHas('requester', fn ($user) => $user->whereRaw("name LIKE ? ESCAPE '!'", [$pattern]))
+                    ->orWhereHas('reviewer', fn ($user) => $user->whereRaw("name LIKE ? ESCAPE '!'", [$pattern]));
+                if (ctype_digit($search)) {
+                    $matches->orWhere('id', $search)->orWhere('shipment_id', $search);
+                }
+            });
+        }
+
+        $refundRequests = $query->paginate($perPage, ['*'], 'page', (int) ($request->input('page') ?: 1))
+            ->appends($request->only(['q', 'status', 'per_page']));
 
         $adminTheme = env('ADMIN_THEME', 'adminLte');
-        return view('cargo::' . $adminTheme . '.pages.refund-requests.index', compact('refundRequests', 'status'));
+        return view('cargo::' . $adminTheme . '.pages.refund-requests.index', compact('refundRequests', 'status', 'search', 'perPage'));
     }
 
     public function show($id)
