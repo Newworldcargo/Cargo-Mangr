@@ -16,6 +16,8 @@ use Modules\CustomerPortalApi\Models\PortalPaymentIntent;
 
 class LipilaPayments
 {
+    public const CUSTOMER_RETRY_SECONDS = 300;
+
     public function __construct(private LipilaGateway $gateway) {}
 
     public function create(Transxn $invoice, int $clientId, array $input, ?int $initiatedBy = null): PortalPaymentIntent
@@ -23,6 +25,26 @@ class LipilaPayments
         $input = $this->validateInput($input);
         if (!$this->gateway->ready()) throw ValidationException::withMessages(['payment' => 'Online payments are currently unavailable.']);
         $requestKey = $input['idempotencyKey'] ?? null;
+        if ($initiatedBy === null && isset($input['restartIntentId'])
+            && !($requestKey && PortalPaymentIntent::where('client_id', $clientId)->where('request_key', $requestKey)->exists())) {
+            $previous = PortalPaymentIntent::where('intent_id', $input['restartIntentId'])
+                ->where('client_id', $clientId)->where('invoice_id', $invoice->id)->first();
+            abort_unless($previous && (int) $invoice->shipment->client_id === $clientId, 404);
+            if (!$this->customerCanRestart($previous)) {
+                throw ValidationException::withMessages(['payment' => 'Check the payment status before trying again.']);
+            }
+            // Never release an unknown outcome merely because the browser timer elapsed.
+            $data = $this->gateway->status($previous->intent_id);
+            if (!$data || ($data['referenceId'] ?? null) !== $previous->intent_id
+                || ($data['type'] ?? null) !== 'Collection' || ($data['currency'] ?? null) !== $previous->currency
+                || PaymentAttemptGuard::minorUnits($data['amount'] ?? null) !== (int) $previous->amount_minor
+                || !in_array($data['status'] ?? '', ['Pending', 'Failed', 'Successful'], true)) {
+                throw ValidationException::withMessages(['payment' => 'We could not check the previous payment. Please try again shortly.']);
+            }
+            $this->applyStatus($previous, $data);
+            $previous->refresh();
+            if ($previous->status !== 'processing') return $previous;
+        }
         $fingerprint = hash('sha256', json_encode([$invoice->id, $input['method'], $input['phone'], $input['billing'] ?? null]));
         if (isset($input['network'])) $fingerprint = hash('sha256', $fingerprint . ':' . $input['network']);
         $created = false;
@@ -46,8 +68,9 @@ class LipilaPayments
             $existing = app(PaymentAttemptGuard::class)->unresolved($shipment->id);
             $restarting = isset($input['restartIntentId']);
             if ($restarting) {
-                if (!$initiatedBy || !$existing || $existing->intent_id !== $input['restartIntentId']
-                    || !$existing->cash_override_at || $existing->superseded_by || $existing->provider !== 'lipila'
+                if (!$existing || $existing->intent_id !== $input['restartIntentId']
+                    || ($initiatedBy ? !$existing->cash_override_at : !$this->customerCanRestart($existing))
+                    || $existing->superseded_by || $existing->provider !== 'lipila'
                     || $existing->method !== 'mobile-money' || $input['method'] !== 'mobile-money'
                     || !in_array($existing->status, ['processing', 'requires_action'], true)
                     || (int) $existing->client_id !== $clientId || (int) $existing->invoice_id !== (int) $invoice->id) {
@@ -89,7 +112,8 @@ class LipilaPayments
                 app(AuditLogService::class)->createLog('online_payment_restarted', $newIntent, null, [], [
                     'previous_intent_id' => $existing->intent_id, 'intent_id' => $newIntent->intent_id,
                     'staff_id' => $initiatedBy, 'shipment_id' => $shipment->id,
-                ], 'Staff confirmed no payment received and requested a new prompt. Previous request remains monitored.');
+                    'client_id' => $clientId,
+                ], ($initiatedBy ? 'Staff' : 'Customer') . ' confirmed no payment received and requested a new prompt. Previous request remains monitored.');
             }
             return $newIntent;
         });
@@ -149,6 +173,14 @@ class LipilaPayments
             $lock->release();
         }
         return $intent->fresh();
+    }
+
+    public function customerCanRestart(PortalPaymentIntent $intent): bool
+    {
+        return $intent->provider === 'lipila' && $intent->method === 'mobile-money'
+            && !$intent->initiated_by && !$intent->cash_override_at && !$intent->superseded_by && $intent->status === 'processing'
+            && (!$intent->provider_environment || $intent->provider_environment === config('lipila.base_url'))
+            && $intent->created_at && $intent->created_at->copy()->addSeconds(self::CUSTOMER_RETRY_SECONDS)->isPast();
     }
 
     private function applyStatus(PortalPaymentIntent $intent, array $data): void

@@ -18,6 +18,9 @@ class PortalPaymentIntentResource extends JsonResource
             'network' => $this->billing_snapshot['network'] ?? null,
             'checkoutUrl' => $this->status === 'requires_action' ? $this->checkout_url : null,
             'canRetry' => $this->status === 'failed',
+            'canRestart' => app(\Modules\CustomerPortalApi\Services\LipilaPayments::class)->customerCanRestart($this->resource),
+            'retryAvailableAt' => $this->provider === 'lipila' && $this->method === 'mobile-money' && !$this->initiated_by && $this->created_at
+                ? $this->created_at->copy()->addSeconds(\Modules\CustomerPortalApi\Services\LipilaPayments::CUSTOMER_RETRY_SECONDS)->toIso8601String() : null,
             'message' => [
                 'processing' => 'Your payment is being checked. Do not pay again while confirmation is pending.',
                 'requires_action' => 'Continue to secure checkout to complete your card payment.',

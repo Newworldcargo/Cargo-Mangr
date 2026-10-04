@@ -247,6 +247,81 @@ class LipilaPaymentsTest extends TestCase
         ]];
     }
 
+    public function test_customer_timed_out_restart_is_idempotent_and_late_payments_are_reconciled(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $old = $this->start($invoice);
+        $old->update(['created_at' => now()->subMinutes(6)]);
+        Http::swap(new \Illuminate\Http\Client\Factory());
+        Http::fake(fn ($request) => Http::response(['referenceId' => $request['referenceId'], 'status' => 'Pending', 'type' => 'Collection', 'currency' => 'ZMW', 'amount' => 100]));
+        $input = ['method' => 'mobile-money', 'phone' => '260972827372', 'restartIntentId' => $old->intent_id,
+            'restartAcknowledged' => true, 'idempotencyKey' => (string) \Illuminate\Support\Str::uuid()];
+        $service = app(LipilaPayments::class);
+        $new = $service->create($invoice, (int) $invoice->shipment->client_id, $input);
+        $replay = $service->create($invoice, (int) $invoice->shipment->client_id, $input);
+        $this->assertEquals($new->id, $replay->id);
+        $this->assertEquals($new->id, $old->fresh()->superseded_by);
+        $this->assertSame('processing', $old->fresh()->status);
+        $this->assertFalse($service->customerCanRestart($new));
+        $this->assertCount(1, Http::recorded(fn ($request) => $request->method() === 'POST'));
+        $this->complete($old); $this->complete($new);
+        $this->assertSame('succeeded', $old->fresh()->status);
+        $this->assertSame('review', $new->fresh()->status);
+        $this->assertDatabaseCount('shipment_payment_receipts', 1);
+        $receipt = ShipmentPaymentReceipt::first();
+        $this->getJson('/api/v1/shipments/' . $invoice->shipment_id . '/receipts/payment-' . $receipt->id)
+            ->assertOk()->assertJsonPath('data.mimeType', 'text/html;charset=utf-8');
+    }
+
+    public function test_customer_retry_checks_provider_and_returns_success_without_a_new_charge(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $old = $this->start($invoice);
+        $old->update(['created_at' => now()->subMinutes(6)]);
+        Http::swap(new \Illuminate\Http\Client\Factory());
+        Http::fake(fn ($request) => Http::response(['referenceId' => $request['referenceId'], 'status' => 'Successful', 'type' => 'Collection', 'currency' => 'ZMW', 'amount' => 100]));
+        $result = app(LipilaPayments::class)->create($invoice, (int) $invoice->shipment->client_id, [
+            'method' => 'mobile-money', 'phone' => '260972827372', 'restartIntentId' => $old->intent_id, 'restartAcknowledged' => true,
+        ]);
+        $this->assertSame('succeeded', $result->status);
+        $this->assertCount(0, Http::recorded(fn ($request) => $request->method() === 'POST'));
+        $this->assertDatabaseCount('customer_portal_payment_intents', 1);
+    }
+
+    public function test_customer_retry_requires_timeout_acknowledgement_and_a_verified_status(): void
+    {
+        $invoice = $this->invoice(); $this->pending(); $old = $this->start($invoice);
+        $input = ['method' => 'mobile-money', 'phone' => '260972827372', 'restartIntentId' => $old->intent_id, 'restartAcknowledged' => true];
+        foreach (['too_soon', 'no_acknowledgement', 'unknown_status', 'staff_attempt'] as $case) {
+            $old->update(['created_at' => $case === 'too_soon' ? now() : now()->subMinutes(6), 'initiated_by' => $case === 'staff_attempt' ? auth()->id() : null]);
+            Http::swap(new \Illuminate\Http\Client\Factory());
+            Http::fake(['*' => Http::response([], 503)]);
+            try {
+                app(LipilaPayments::class)->create($invoice, (int) $invoice->shipment->client_id, array_merge($input, ['restartAcknowledged' => $case !== 'no_acknowledgement']));
+                $this->fail('Unsafe retry allowed: ' . $case);
+            } catch (\Illuminate\Validation\ValidationException $exception) {
+                $this->assertNotEmpty($exception->errors());
+            }
+            $this->assertNull($old->fresh()->superseded_by);
+            $this->assertDatabaseCount('customer_portal_payment_intents', 1);
+            $this->assertCount(0, Http::recorded(fn ($request) => $request->method() === 'POST'));
+        }
+    }
+
+    public function test_customer_endpoint_accepts_retry_only_for_own_invoice_with_acknowledgement(): void
+    {
+        $this->withSession(['_token' => 'retry-test-token'])->withHeader('X-CSRF-Token', 'retry-test-token');
+        $invoice = $this->invoice(); $this->pending(); $old = $this->start($invoice);
+        $old->update(['created_at' => now()->subMinutes(6)]);
+        Http::swap(new \Illuminate\Http\Client\Factory());
+        Http::fake(fn ($request) => Http::response(['referenceId' => $request['referenceId'], 'status' => 'Pending', 'type' => 'Collection', 'currency' => 'ZMW', 'amount' => 100]));
+        $input = ['invoiceId' => $invoice->id, 'method' => 'mobile-money', 'phone' => '0972827372', 'restartIntentId' => $old->intent_id];
+        $this->postJson('/api/v1/payments/intents', $input)->assertStatus(422);
+        $this->postJson('/api/v1/payments/intents', $input + ['restartAcknowledged' => true])->assertCreated();
+        $other = User::create(['name' => 'Other', 'email' => 'other-retry@example.test', 'password' => bcrypt('test'), 'role' => 4, 'verified' => true]);
+        Client::create(['user_id' => $other->id, 'code' => 2, 'name' => 'Other', 'email' => $other->email]);
+        $this->actingAs($other, 'web')->postJson('/api/v1/payments/intents', $input + ['restartAcknowledged' => true])->assertNotFound();
+        $this->assertCount(1, Http::recorded(fn ($request) => $request->method() === 'POST'));
+    }
+
     public function test_staff_restart_creates_one_new_attempt_and_replay_never_sends_twice(): void
     {
         [$invoice, $old, $url, $input] = $this->restartFixture();

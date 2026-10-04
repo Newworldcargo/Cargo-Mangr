@@ -69,6 +69,8 @@ class PaymentController extends PortalController
             $input['phone'] = $phone;
             $input['idempotencyKey'] = $request->header('Idempotency-Key', $request->input('idempotencyKey'));
             $rules = ['phone' => ['required', 'regex:/^260[79][0-9]{8}$/'], 'idempotencyKey' => ['nullable', 'uuid']];
+            $rules['restartIntentId'] = ['sometimes', 'required', 'uuid'];
+            $rules['restartAcknowledged'] = [$request->has('restartIntentId') ? 'required' : 'sometimes', 'accepted'];
             if ($request->input('method') === 'card') {
                 $rules['phone'] = ['required', 'regex:/^[1-9][0-9]{7,14}$/'];
                 foreach (['firstName', 'lastName', 'city', 'address', 'zip'] as $field) $rules['billing.' . $field] = ['required', 'string', 'max:150'];
