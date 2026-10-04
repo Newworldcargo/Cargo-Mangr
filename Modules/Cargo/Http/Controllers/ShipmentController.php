@@ -2280,6 +2280,20 @@ class ShipmentController extends Controller
                 $request->reason
             );
 
+            $refundRecord = RefundRequest::create([
+                'shipment_id' => $shipment->id,
+                'transxn_id' => $shipment->receipt->id,
+                'requested_by' => $user->id,
+                'reviewed_by' => $user->id,
+                'status' => RefundRequest::STATUS_APPROVED,
+                'refund_type' => $refundType,
+                'amount' => $result['refund_amount'],
+                'reason' => $request->reason,
+                'review_notes' => 'Processed directly by an authorized refund approver.',
+                'reviewed_at' => now(),
+                'refunded_at' => now(),
+            ]);
+
             $auditLogService->createLog(
                 'refund_processed',
                 $shipment,
@@ -2289,6 +2303,7 @@ class ShipmentController extends Controller
                     'refund_type' => $refundType,
                     'refund_amount' => $result['refund_amount'],
                     'refunded_total' => $result['refunded_total'],
+                    'refund_request_id' => $refundRecord->id,
                 ],
                 'Refund processed by ' . ($user->name ?? 'System')
             );
