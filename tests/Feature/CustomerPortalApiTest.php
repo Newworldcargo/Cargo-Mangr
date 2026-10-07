@@ -90,6 +90,31 @@ class CustomerPortalApiTest extends TestCase
         ])->assertStatus(422)->assertJsonPath('error.code', 'SENSITIVE_TELEMETRY_REJECTED');
     }
 
+    public function test_wallet_deposit_is_credited_once_after_provider_confirmation()
+    {
+        list($user) = $this->createCustomer('deposit-confirmed@example.test');
+        config(['customerportalapi.payment_provider' => 'local-uat', 'customerportalapi.booking_pricing.currency' => 'ZMW']);
+        $request = fn () => $this->actingAs($user, 'web')->withSession(['_token' => 'test-csrf-token'])
+            ->withHeader('X-CSRF-Token', 'test-csrf-token')->postJson('/api/v1/wallet/top-ups', [
+                'amount' => 250, 'phone' => '+260971234567', 'provider' => 'MTN', 'requestId' => 'deposit-once',
+            ]);
+        $first = $request()->assertCreated()->assertJsonPath('data.status', 'succeeded');
+        $request()->assertOk()->assertJsonPath('data.id', $first->json('data.id'));
+        $this->actingAs($user, 'web')->getJson('/api/v1/wallet')->assertOk()->assertJsonPath('data.availableBalance.amountMinor', 25000);
+        $this->assertSame(1, \Modules\CustomerPortalApi\Models\PortalWalletLedger::where('type', 'topup')->count());
+    }
+
+    public function test_unconfirmed_wallet_deposit_does_not_increase_available_balance()
+    {
+        list($user) = $this->createCustomer('deposit-pending@example.test');
+        config(['customerportalapi.payment_provider' => 'test-provider', 'customerportalapi.payment_webhook_url' => 'https://provider.example/intent', 'customerportalapi.booking_pricing.currency' => 'ZMW']);
+        \Illuminate\Support\Facades\Http::fake(['provider.example/*' => \Illuminate\Support\Facades\Http::response(['status' => 'requires_action', 'providerReference' => 'pending-1'], 200)]);
+        $this->actingAs($user, 'web')->withSession(['_token' => 'test-csrf-token'])->withHeader('X-CSRF-Token', 'test-csrf-token')
+            ->postJson('/api/v1/wallet/top-ups', ['amount' => 250, 'phone' => '+260971234567', 'provider' => 'MTN', 'requestId' => 'deposit-pending'])
+            ->assertCreated()->assertJsonPath('data.status', 'requires_action');
+        $this->actingAs($user, 'web')->getJson('/api/v1/wallet')->assertOk()->assertJsonPath('data.availableBalance.amountMinor', 0);
+    }
+
     public function test_local_uat_payment_settles_once_and_reuses_the_intent()
     {
         list($user, $client) = $this->createCustomer('payment@example.test');
@@ -111,7 +136,7 @@ class CustomerPortalApiTest extends TestCase
         $request = fn () => $this->actingAs($user, 'web')
             ->withSession(['_token' => 'test-csrf-token'])
             ->withHeader('X-CSRF-Token', 'test-csrf-token')
-            ->postJson('/api/v1/payments/intents', ['invoiceId' => $invoice->id, 'method' => 'mobile-money']);
+            ->postJson('/api/v1/payments/intents', ['invoiceId' => $invoice->id, 'method' => 'mobile-money', 'phone' => '+260971234567', 'provider' => 'MTN']);
 
         $first = $request();
         $first->assertCreated()->assertJsonPath('data.status', 'succeeded');

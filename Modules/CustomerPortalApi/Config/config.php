@@ -43,6 +43,8 @@ return [
 
     'payment_webhook_token' => env('CUSTOMER_PORTAL_PAYMENT_WEBHOOK_TOKEN'),
 
+    'payment_status_url' => env('CUSTOMER_PORTAL_PAYMENT_STATUS_URL'),
+
     'booking_pricing' => [
         'currency' => env('CUSTOMER_PORTAL_BOOKING_CURRENCY', 'USD'),
         'quote_minutes' => (int) env('CUSTOMER_PORTAL_BOOKING_QUOTE_MINUTES', 15),

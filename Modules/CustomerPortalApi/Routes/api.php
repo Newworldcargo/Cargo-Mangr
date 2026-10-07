@@ -97,6 +97,7 @@ Route::middleware([PortalAuthenticate::class, 'throttle:customer-portal'])->grou
     Route::get('wallet', [WalletController::class, 'show']);
     Route::get('wallet/transactions', [WalletController::class, 'transactions']);
     Route::post('wallet/top-ups', [WalletController::class, 'topUp']);
+    Route::get('wallet/top-ups/{deposit}', [WalletController::class, 'showTopUp'])->whereNumber('deposit');
 
     Route::post('files/upload-intents', [FileController::class, 'createIntent']);
     Route::put('files/{fileId}/content', [FileController::class, 'upload'])->whereUuid('fileId');

@@ -37,8 +37,8 @@ class ShipmentResource extends JsonResource
             'service' => $this->portalService($mode),
             'packageName' => $this->packageName(),
             'parcelOwner' => (string) ($this->reciver_name ?: ''),
-            'origin' => optional($consignment)->source ?: $this->originAddress(),
-            'destination' => optional($consignment)->destination ?: $this->getRawOriginal('reciver_address'),
+            'origin' => $this->trackingAddress('pickup', optional($consignment)->source ?: $this->originAddress()),
+            'destination' => $this->trackingAddress('destination', optional($consignment)->destination ?: $this->getRawOriginal('reciver_address')),
             'etaAt' => $this->isoDate(optional($consignment)->eta),
             'etaLabel' => $this->displayDate(optional($consignment)->eta) ?: 'To be confirmed',
             'status' => $status['status'],
@@ -65,7 +65,21 @@ class ShipmentResource extends JsonResource
             return $service;
         }
 
-        return $mode ? 'import' : 'local';
+        if ($mode || ($this->from_country_id && $this->to_country_id && (string) $this->from_country_id !== (string) $this->to_country_id)) return 'import';
+        if ($this->from_state_id && $this->to_state_id && (string) $this->from_state_id !== (string) $this->to_state_id) return 'intercity';
+        return 'local';
+    }
+
+    private function trackingAddress($side, $fallback)
+    {
+        $draft = $this->portalDraft();
+        $form = is_array(optional($draft)->payload) ? ($draft->payload['form'] ?? []) : [];
+        $latitude = $form[$side . 'Latitude'] ?? null;
+        $longitude = $form[$side . 'Longitude'] ?? null;
+        if (!is_numeric($latitude) || !is_numeric($longitude) || abs((float) $latitude) > 90 || abs((float) $longitude) > 180) return $fallback;
+        $label = (string) ($form[$side] ?? $fallback ?? '');
+        return ['city' => $label, 'area' => $label, 'detail' => $label,
+            'latitude' => (float) $latitude, 'longitude' => (float) $longitude];
     }
 
     private function portalCurrency()

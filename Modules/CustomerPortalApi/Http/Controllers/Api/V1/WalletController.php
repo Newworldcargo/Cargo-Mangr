@@ -5,6 +5,8 @@ namespace Modules\CustomerPortalApi\Http\Controllers\Api\V1;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
+use Modules\CustomerPortalApi\Services\MobilePaymentGateway;
 use Modules\CustomerPortalApi\Http\Resources\WalletResource;
 use Modules\CustomerPortalApi\Models\PortalWallet;
 use Modules\CustomerPortalApi\Models\PortalWalletLedger;
@@ -49,38 +51,87 @@ class WalletController extends PortalController
     public function topUp(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'amount' => ['required', 'numeric', 'min:0.01'],
+            'amount' => ['required', 'numeric', 'min:0.01', 'max:100000'],
+            'phone' => ['required', 'regex:/^\\+[1-9][0-9]{7,14}$/'],
+            'provider' => ['required', 'in:MTN,Airtel,Zamtel'],
+            'requestId' => ['required', 'string', 'max:120'],
         ]);
-
-        if ($validator->fails()) {
-            return $this->problem($request, 'VALIDATION_FAILED', 'Please correct the highlighted fields.', 422, $validator->errors()->toArray());
-        }
-
+        if ($validator->fails()) return $this->problem($request, 'VALIDATION_FAILED', 'Enter a valid amount and mobile money account.', 422, $validator->errors()->toArray());
+        $gateway = app(MobilePaymentGateway::class);
+        if (!$gateway->enabled()) return $this->problem($request, 'PAYMENT_PROVIDER_NOT_CONFIGURED', 'Payment processing is not enabled.', 503);
         $wallet = $this->wallet();
-        $amountMinor = (int) round(((float) $request->input('amount')) * 100);
-
-        DB::transaction(function () use ($wallet, $amountMinor, $request) {
-            PortalWalletLedger::create([
-                'wallet_id' => $wallet->id,
-                'amount_minor' => $amountMinor,
-                'bucket' => 'available',
-                'type' => 'topup',
-                'status' => 'posted',
-                'reference_type' => 'customer_portal_topup',
-                'metadata' => [
-                    'source' => 'customer_portal_api',
-                    'request_id' => (string) $request->attributes->get('portal_request_id'),
-                ],
+        $created = false;
+        $entry = DB::transaction(function () use ($wallet, $request, &$created) {
+            PortalWallet::whereKey($wallet->id)->lockForUpdate()->firstOrFail();
+            $existing = PortalWalletLedger::where('wallet_id', $wallet->id)->where('type', 'topup')
+                ->where('metadata->requestId', $request->input('requestId'))->first();
+            if ($existing) return $existing;
+            $created = true;
+            return PortalWalletLedger::create([
+                'wallet_id' => $wallet->id, 'amount_minor' => (int) round($request->input('amount') * 100),
+                'bucket' => 'pending', 'type' => 'topup', 'status' => 'pending',
+                'reference_type' => 'mobile_money_deposit',
+                'metadata' => ['requestId' => $request->input('requestId'), 'intentId' => (string) Str::uuid(),
+                    'paymentStatus' => 'processing', 'phone' => $request->input('phone'), 'provider' => $request->input('provider')],
             ]);
-
-            $wallet->revision = ((int) ($wallet->revision ?: 1)) + 1;
-            $wallet->save();
         });
+        if ($created) {
+            try {
+                $payload = $gateway->create([
+                    'intentId' => $entry->metadata['intentId'], 'purpose' => 'wallet-topup',
+                    'customerId' => (string) $wallet->client_id, 'method' => 'mobile-money',
+                    'currency' => $wallet->currency, 'amountMinor' => $entry->amount_minor,
+                    'phone' => $request->input('phone'), 'mobileMoneyProvider' => $request->input('provider'),
+                ]);
+                $entry = $this->applyTopUp($entry, $payload);
+            } catch (\Throwable $e) {
+                // A timeout may occur after the provider accepted payment. Retain
+                // the pending entry so a retry cannot collect a second deposit.
+                report($e);
+            }
+        }
+        return $this->success($request, $this->depositPayload($entry), $created ? 201 : 200);
+    }
 
-        $wallet = $wallet->fresh();
-        $this->attachBalances($wallet);
+    public function showTopUp(Request $request, $deposit)
+    {
+        $wallet = $this->wallet();
+        $entry = PortalWalletLedger::whereKey($deposit)->where('wallet_id', $wallet->id)
+            ->where('reference_type', 'mobile_money_deposit')->first();
+        if (!$entry) return $this->problem($request, 'NOT_FOUND', 'Deposit not found.', 404);
+        if ($entry->status === 'pending') {
+            try {
+                $payload = app(MobilePaymentGateway::class)->status($entry->metadata['intentId'], $entry->metadata['providerReference'] ?? null);
+                if ($payload) $entry = $this->applyTopUp($entry, $payload);
+            } catch (\Throwable $e) { report($e); }
+        }
+        return $this->success($request, $this->depositPayload($entry));
+    }
 
-        return $this->success($request, (new WalletResource($wallet))->resolve($request), 201);
+    private function depositPayload($entry)
+    {
+        return ['id' => (string) $entry->id, 'status' => $entry->metadata['paymentStatus'] ?? 'processing'];
+    }
+
+    private function applyTopUp($entry, array $payload)
+    {
+        return DB::transaction(function () use ($entry, $payload) {
+            $wallet = PortalWallet::whereKey($entry->wallet_id)->lockForUpdate()->firstOrFail();
+            $entry = PortalWalletLedger::whereKey($entry->id)->lockForUpdate()->firstOrFail();
+            if ($entry->status !== 'pending') return $entry;
+            $gateway = app(MobilePaymentGateway::class);
+            $status = (string) ($payload['status'] ?? 'processing');
+            $metadata = $entry->metadata;
+            $metadata['paymentStatus'] = $status;
+            $metadata['providerReference'] = $payload['providerReference'] ?? ($metadata['providerReference'] ?? null);
+            $entry->metadata = $metadata;
+            if ($gateway->successful($status)) {
+                $entry->bucket = 'available'; $entry->status = 'posted';
+                $wallet->revision++; $wallet->save();
+            } elseif ($gateway->failed($status)) { $entry->status = 'failed'; }
+            $entry->save();
+            return $entry;
+        });
     }
 
     private function wallet()
@@ -89,7 +140,7 @@ class WalletController extends PortalController
 
         return PortalWallet::firstOrCreate(
             ['client_id' => $client->id],
-            ['currency' => 'USD', 'status' => 'active', 'revision' => 1]
+            ['currency' => config('customerportalapi.booking_pricing.currency', 'ZMW'), 'status' => 'active', 'revision' => 1]
         );
     }
 
