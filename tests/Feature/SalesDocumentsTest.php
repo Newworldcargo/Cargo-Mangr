@@ -163,4 +163,22 @@ class SalesDocumentsTest extends TestCase
         $this->assertSame('cancelled',DB::table('billing_deliveries')->find($delivery->id)->status);
         Mail::assertNothingSent();
     }
+
+    public function test_sales_lists_reuse_table_controls_and_paginate_on_the_server(): void
+    {
+        for ($i=0;$i<12;$i++) $this->create();
+        $response=$this->get(route('billing.invoices.index',['per_page'=>10,'status'=>'draft']))
+            ->assertOk()->assertSee('table-row-dashed')->assertSee('btn-action-table')
+            ->assertSee('Showing 1 to 10 of 12 entries')
+            ->assertViewHas('records',fn($records)=>$records->count()===10 && $records->perPage()===10);
+        $this->get(route('billing.invoices.index',['per_page'=>10,'status'=>'draft','page'=>2]))
+            ->assertOk()->assertSee('Showing 11 to 12 of 12 entries');
+        $this->get(route('billing.invoices.index',['per_page'=>-1]))->assertSessionHasErrors('per_page');
+        $this->create('quotations');
+        $quotes=$this->get(route('billing.quotations.index'))->assertOk()->assertSee('Valid until')->assertSee('btn-action-table');
+        if(getenv('NWC_SALES_PREVIEW')==='1') {
+            file_put_contents('/tmp/nwc-sales-invoices-list.html',$response->getContent());
+            file_put_contents('/tmp/nwc-sales-quotations-list.html',$quotes->getContent());
+        }
+    }
 }

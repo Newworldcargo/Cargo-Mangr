@@ -31,6 +31,7 @@ class SalesController extends Controller
             'q' => 'nullable|string|max:100',
             'status' => 'nullable|in:' . implode(',', array_keys($statuses)),
             'page' => 'nullable|integer|min:1|max:100000',
+            'per_page' => 'nullable|integer|in:10,25,50,100',
         ]);
         $ready = Schema::hasTable('billing_' . $type);
         $records = new LengthAwarePaginator([], 0, 25);
@@ -42,7 +43,7 @@ class SalesController extends Controller
                 $query->where('number', 'like', $prefix);
             }
             if (!empty($filters['status'])) $query->where('status', $filters['status']);
-            $records = $query->orderByDesc('id')->paginate(25)->withQueryString();
+            $records = $query->orderByDesc('id')->paginate((int) ($filters['per_page'] ?? 25))->withQueryString();
         }
         return view('billing::index', compact('records', 'statuses', 'ready', 'type') + ['title' => ucfirst($type)]);
     }
