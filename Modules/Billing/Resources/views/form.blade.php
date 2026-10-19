@@ -2,9 +2,9 @@
 @section('pageTitle', ($document ? 'Edit ' : 'New ') . ($type === 'invoices' ? 'invoice' : 'quotation'))
 @section('content')
 @include('billing::styles')
-<div class="container-fluid py-3 sales-page"><h1 class="h3">{{ $document ? 'Edit' : 'New' }} {{ $type === 'invoices' ? 'invoice' : 'quotation' }}</h1>
+<div class="container-fluid py-3 sales-page"><a class="sales-back" href="{{ route('billing.' . $type . '.index') }}"><i class="fas fa-arrow-left" aria-hidden="true"></i> {{ ucfirst($type) }}</a><header class="sales-page-heading"><h1>{{ $document ? 'Edit' : 'New' }} {{ $type === 'invoices' ? 'invoice' : 'quotation' }}</h1><span class="sales-status">Draft</span></header>
 @if ($errors->any())<div class="alert alert-danger" role="alert">@foreach ($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
-<form method="post" action="{{ $document ? route('billing.documents.update', ['type' => $type, 'id' => $document->id]) : route('billing.documents.store', ['type' => $type]) }}">
+<form class="sales-editor" method="post" action="{{ $document ? route('billing.documents.update', ['type' => $type, 'id' => $document->id]) : route('billing.documents.store', ['type' => $type]) }}">
 @csrf @if ($document) @method('PUT') @endif
 <input type="hidden" name="request_key" value="{{ old('request_key', $key) }}"><input type="hidden" name="revision" value="{{ old('revision', $document->revision ?? 1) }}">
 <div class="row my-4"><div class="col-md-6 mb-3"><label for="branch">Branch</label><select id="branch" class="form-control" name="branch_id" required><option value="">Choose a branch</option>@foreach ($branches as $branch)<option value="{{ $branch->id }}" {{ (string) old('branch_id', $document->branch_id ?? '') === (string) $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>@endforeach</select></div>

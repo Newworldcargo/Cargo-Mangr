@@ -6,6 +6,7 @@
     $listUrl = route('billing.' . $type . '.index');
     $statusColors = ['draft' => 'secondary', 'issued' => 'primary', 'partially_paid' => 'warning', 'paid' => 'success', 'accepted' => 'success', 'declined' => 'danger', 'void' => 'secondary', 'converted' => 'info'];
 @endphp
+<header class="sales-list-heading"><div><p>Sales</p><h1>{{ $title }}</h1></div><span>{{ $records->total() }} {{ $records->total() === 1 ? 'document' : 'documents' }}</span></header>
 <div class="card sales-list">
     <form method="get" action="{{ $listUrl }}" class="card-header border-0 pt-6 sales-list-toolbar">
         <div class="card-title">
@@ -86,6 +87,7 @@
 @section('styles')
 <link rel="stylesheet" href="{{ asset('assets/lte/plugins/custom/datatables/datatables.bundle.css') }}">
 <style>
+.sales-list-heading{display:flex;justify-content:space-between;align-items:flex-end;padding:8px 8px 24px;gap:16px;color:#263441}.sales-list-heading p{font-size:12px;color:#71808d;margin:0 0 6px}.sales-list-heading h1{font-size:24px;font-weight:600;margin:0}.sales-list-heading>span{font-size:12px;color:#71808d}.sales-list{border:1px solid #e0e6ec!important;border-radius:6px!important;box-shadow:none!important}.sales-list-table td{padding:16px 10px!important;font-size:13px}.sales-list-table th{font-size:11px!important}.sales-list-table .badge{padding:5px 8px;font-size:11px;border-radius:4px}.sales-list-table small{font-size:11px}.sales-list-table .badge-primary{background:#eaf3fc;color:#07539b}.sales-list-table .badge-success{background:#e7f5ed;color:#236f4a}.sales-list-table .badge-warning{background:#fff4d6;color:#7d5b00}.sales-list-table .badge-danger{background:#fcecec;color:#a33e3e}
 .sales-list-table td a:not(.btn){color:#07539b!important}.sales-list-table td a:not(.btn):hover{text-decoration:underline}@media(max-width:600px){.sales-list .btn-action-table{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center}}
 .sales-list-toolbar{gap:12px;align-items:center}.sales-list-toolbar .card-title{margin:0}.sales-list-controls{gap:4px}.sales-list-search{max-width:100%}.sales-list-search>i{left:16px;z-index:1;color:#687785}.sales-list-search input{padding-left:42px!important;max-width:100%}.sales-list-length{width:112px}.sales-list-status{width:160px}.sales-list-table th{white-space:nowrap}.sales-list .btn-primary{background:#07539b!important;border-color:#07539b!important;color:white!important}.sales-list .btn-light-primary{color:#07539b!important;background:#eaf3fc!important}.sales-list-footer{gap:12px}.sales-list-footer .pagination{margin-bottom:0}.sales-list .badge{white-space:nowrap}.sales-list .btn:focus-visible,.sales-list input:focus-visible,.sales-list select:focus-visible{outline:2px solid #07539b;outline-offset:2px}@media(max-width:600px){.sales-list-toolbar .card-title,.sales-list-toolbar .card-toolbar,.sales-list-search{width:100%}.sales-list-search input{width:100%!important}.sales-list .card-body,.sales-list .card-header{padding-left:16px;padding-right:16px}.sales-list-footer nav{max-width:100%;overflow-x:auto}}
 </style>
