@@ -51,6 +51,11 @@ class ImportCustomerSelection
 
     public function create(array $data, ConsignmentImportBatch $batch): Client
     {
+        return $this->createForBranch($data, (int) $batch->pickup_branch_id, $batch->from_country_id, $batch->from_state_id);
+    }
+
+    public function createForBranch(array $data, int $branchId, ?int $countryId = null, ?int $stateId = null): Client
+    {
         $phone = ConsignmentCustomerMatcher::phone($data['phone']);
         $secondary = empty($data['phone_2']) ? null : ConsignmentCustomerMatcher::phone($data['phone_2']);
         if (!$phone || (!empty($data['phone_2']) && !$secondary) || $phone === $secondary) {
@@ -78,15 +83,15 @@ class ImportCustomerSelection
             'role' => 4, 'verified' => false, 'responsible_mobile' => $phone, 'secondary_mobile' => $secondary]);
         $client = Client::create(['code' => 0, 'user_id' => $user->id, 'name' => $name, 'email' => $email,
             'responsible_name' => $data['contact_name'] ?: $name, 'responsible_mobile' => $phone, 'secondary_mobile' => $secondary,
-            'national_id' => $data['national_id'] ?? null, 'branch_id' => $batch->pickup_branch_id,
+            'national_id' => $data['national_id'] ?? null, 'branch_id' => $branchId,
             'is_archived' => 0, 'created_by' => auth()->id()]);
         $client->update(['code' => $client->id]);
         if (!empty($data['address'])) {
-            if (!$batch->from_country_id || !$batch->from_state_id) {
+            if (!$countryId || !$stateId) {
                 throw ValidationException::withMessages(['address' => 'Save the pickup branch location in the import setup before adding an address.']);
             }
             \Modules\Cargo\Entities\ClientAddress::create(['client_id' => $client->id, 'address' => $data['address'],
-                'country_id' => $batch->from_country_id, 'state_id' => $batch->from_state_id]);
+                'country_id' => $countryId, 'state_id' => $stateId]);
         }
         return $client;
     }

@@ -35,6 +35,21 @@ class SalesDocumentsTest extends TestCase
             'items'=>[['description'=>'Delivery','quantity'=>'1','unit_price'=>'100','discount'=>'0','tax_percent'=>'0']], 'terms'=>'Payment due in 14 days.'];
     }
 
+    public function test_customer_modal_creation_rejects_duplicate_contacts_and_is_audited(): void
+    {
+        $data = ['type'=>'invoices','branch_id'=>$this->branch->id,'first_name'=>'New','last_name'=>'Customer',
+            'email'=>'new.customer@example.com','phone'=>'+260971234567'];
+        $response = $this->postJson(route('billing.customers.store'), $data)->assertCreated()->assertJsonPath('name', 'New Customer');
+        $this->assertDatabaseHas('clients', ['id'=>$response->json('id'),'responsible_mobile'=>'260971234567']);
+        $this->assertDatabaseHas('audit_logs', ['event'=>'sales_customer_created','auditable_id'=>$response->json('id')]);
+        $count = User::count();
+        $this->postJson(route('billing.customers.store'), array_merge($data,['email'=>'another@example.com','phone'=>'0971234567']))->assertUnprocessable()->assertJsonValidationErrors('phone');
+        $this->postJson(route('billing.customers.store'), array_merge($data,['phone'=>'0971234568']))->assertUnprocessable()->assertJsonValidationErrors('email');
+        $this->assertSame($count, User::count());
+        $this->actingAs(User::create(['name'=>'No permission','email'=>'none@example.com','password'=>bcrypt('test'),'role'=>0]));
+        $this->postJson(route('billing.customers.store'), $data)->assertForbidden();
+    }
+
     private function create(string $type='invoices'): int
     {
         $this->post(route('billing.documents.store',['type'=>$type]),$this->input())->assertSessionHasNoErrors()->assertRedirect();

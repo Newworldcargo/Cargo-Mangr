@@ -7,6 +7,7 @@ use Modules\Billing\Http\Controllers\DocumentController;
 Route::get('quotations', [SalesController::class, 'quotations'])->name('quotations.index');
 Route::get('invoices', [SalesController::class, 'invoices'])->name('invoices.index');
 Route::get('customers', [DocumentController::class, 'customers'])->name('customers');
+Route::post('customers', [DocumentController::class, 'createCustomer'])->name('customers.store');
 Route::get('invoices/{id}/receipts/{payment}', [DocumentController::class, 'receipt'])->whereNumber('id')->whereNumber('payment')->name('documents.receipt');
 Route::group(['where' => ['type' => 'invoices|quotations', 'id' => '[0-9]+']], function () {
     Route::get('{type}/create', [DocumentController::class, 'create'])->name('documents.create');

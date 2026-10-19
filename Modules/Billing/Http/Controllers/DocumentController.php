@@ -59,6 +59,46 @@ class DocumentController extends Controller
         })->orderBy('name')->limit(20)->get(['id', 'name', 'email']));
     }
 
+    public function createCustomer(Request $request)
+    {
+        $access = app(SalesAccess::class);
+        $user = $request->user();
+        abort_unless((int) $user->role === 1 || $user->can('create-customers'), 403);
+        $data = $request->validate([
+            'type' => 'required|in:invoices,quotations', 'branch_id' => 'required|integer',
+            'first_name' => 'required|string|min:2|max:80', 'last_name' => 'required|string|min:2|max:80',
+            'email' => 'required|email|max:191', 'phone' => 'required|string|max:40',
+            'phone_2' => 'nullable|string|max:40',
+        ]);
+        abort_unless($access->canAct($user, 'create', $data['type']) || $access->canAct($user, 'edit', $data['type']), 403);
+        $branch = Branch::where('is_archived', 0)->findOrFail($data['branch_id']);
+        if ((int) $user->role !== 1) abort_unless(app(BranchAccessService::class)->branchIdsFor($user)->contains($branch->id), 403);
+        $numbers = array_unique(array_filter(array_map(fn ($field) => \App\Services\ConsignmentCustomerMatcher::phone($data[$field] ?? ''), ['phone', 'phone_2'])));
+        sort($numbers);
+        $locks = [];
+        try {
+            foreach ($numbers as $number) {
+                $lock = \Illuminate\Support\Facades\Cache::lock('portal-register-phone:' . hash('sha256', $number), 300);
+                abort_unless($lock->get(), 409, 'This contact is being saved. Please try again shortly.');
+                $locks[] = $lock;
+            }
+            $emailLock = \Illuminate\Support\Facades\Cache::lock('sales-customer-email:' . hash('sha256', strtolower(trim($data['email']))), 300);
+            abort_unless($emailLock->get(), 409, 'This contact is being saved. Please try again shortly.');
+            $locks[] = $emailLock;
+            $client = DB::transaction(function () use ($data, $branch, $user) {
+                $client = app(\App\Services\ImportCustomerSelection::class)->createForBranch($data + ['contact_name' => ''], $branch->id);
+                \App\Models\AuditLog::create(['user_id' => $user->id, 'event' => 'sales_customer_created',
+                    'auditable_type' => Client::class, 'auditable_id' => $client->id,
+                    'description' => 'Customer created from a sales document.',
+                    'new_values' => ['customer_id' => $client->id, 'branch_id' => $branch->id]]);
+                return $client;
+            });
+            return response()->json($client->only(['id', 'name', 'email', 'branch_id']), 201);
+        } finally {
+            foreach ($locks as $lock) $lock->release();
+        }
+    }
+
     public function store(Request $request, string $type, ?int $id = null)
     {
         $this->authorizeAction($request, $type, $id ? 'edit' : 'create');
