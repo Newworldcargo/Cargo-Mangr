@@ -12,5 +12,6 @@
     "DriverAppAddon": true,
     "CustomerAppAddon": true,
     "CustomerPortalApi": true,
-    "Rates": true
+    "Rates": true,
+    "Billing": true
 }

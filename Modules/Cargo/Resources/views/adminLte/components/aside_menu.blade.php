@@ -250,8 +250,10 @@ $user_role == $driver)
 
 
 @if (
-    auth()->user()->can('access-finance-transactions')
-    || auth()->user()->can('approve-refund-requests')
+    !Route::has('billing.invoices.index') && (
+        auth()->user()->can('access-finance-transactions')
+        || auth()->user()->can('approve-refund-requests')
+    )
 )
 <li
     class="nav-item {{ areActiveRoutes(['transxn.index', 'refund-requests.index', 'refund-requests.show'], 'menu-is-opening menu-open active') }}">

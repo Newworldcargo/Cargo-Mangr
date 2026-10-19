@@ -1,0 +1,28 @@
+@extends('cargo::adminLte.layouts.master')
+@section('pageTitle', ($document ? 'Edit ' : 'New ') . ($type === 'invoices' ? 'invoice' : 'quotation'))
+@section('content')
+@include('billing::styles')
+<div class="container-fluid py-3 sales-page"><h1 class="h3">{{ $document ? 'Edit' : 'New' }} {{ $type === 'invoices' ? 'invoice' : 'quotation' }}</h1>
+@if ($errors->any())<div class="alert alert-danger" role="alert">@foreach ($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
+<form method="post" action="{{ $document ? route('billing.documents.update', ['type' => $type, 'id' => $document->id]) : route('billing.documents.store', ['type' => $type]) }}">
+@csrf @if ($document) @method('PUT') @endif
+<input type="hidden" name="request_key" value="{{ old('request_key', $key) }}"><input type="hidden" name="revision" value="{{ old('revision', $document->revision ?? 1) }}">
+<div class="row my-4"><div class="col-md-6 mb-3"><label for="branch">Branch</label><select id="branch" class="form-control" name="branch_id" required><option value="">Choose a branch</option>@foreach ($branches as $branch)<option value="{{ $branch->id }}" {{ (string) old('branch_id', $document->branch_id ?? '') === (string) $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>@endforeach</select></div>
+<div class="col-md-6 mb-3"><label for="customer-search">Customer</label><input class="form-control" id="customer-search" type="search" autocomplete="off" placeholder="Search name or email" value="{{ $document ? (json_decode($document->customer_snapshot, true)['name'] ?? '') : '' }}"><input type="hidden" id="client-id" name="client_id" value="{{ old('client_id', $document->client_id ?? '') }}"><div id="customer-results" class="list-group" aria-live="polite"></div></div>
+<div class="col-md-6 mb-3"><label for="issued">Issue date</label><input class="form-control" id="issued" type="date" name="issue_date" value="{{ old('issue_date', $document->issue_date ?? date('Y-m-d')) }}" required></div>
+<div class="col-md-6 mb-3"><label for="due">{{ $type === 'invoices' ? 'Due date' : 'Valid until' }}</label><input class="form-control" id="due" type="date" name="due_date" value="{{ old('due_date', $document->due_date ?? now()->addDays(14)->toDateString()) }}" required></div></div>
+<h2 class="h5">Items</h2><div class="sales-lines-editor" id="lines">@foreach ($lines as $index => $line)<div class="sales-form-row">@foreach (['description' => 'Description', 'quantity' => 'Quantity', 'unit_price' => 'Unit price', 'discount' => 'Discount amount', 'tax_percent' => 'Tax %'] as $field => $label)<label>{{ $label }}<input class="form-control" name="items[{{ $index }}][{{ $field }}]" value="{{ $line[$field] ?? '' }}" {{ $field === 'description' ? '' : 'inputmode=decimal' }} required></label>@endforeach<button class="btn btn-outline-danger align-self-end mb-2" type="button" data-remove title="Remove item" aria-label="Remove item"><i class="fas fa-trash" aria-hidden="true"></i></button></div>@endforeach</div>
+<button id="add-line" class="btn btn-outline-primary mb-4" type="button"><i class="fas fa-plus" aria-hidden="true"></i> Add item</button>
+<div class="mb-4"><label for="terms">Terms and payment instructions</label><textarea id="terms" class="form-control" name="terms" maxlength="5000" rows="4">{{ old('terms', $document->terms ?? '') }}</textarea></div>
+<div class="sales-toolbar"><a href="{{ route('billing.' . $type . '.index') }}" class="btn btn-outline-secondary">Cancel</a><button class="btn btn-primary" type="submit">Save draft</button></div></form></div>
+<script>
+(() => {
+const lines=document.getElementById('lines');let index={{ count($lines) }};
+document.getElementById('add-line').onclick=()=>{if(lines.children.length>=100)return;const row=lines.firstElementChild.cloneNode(true);row.querySelectorAll('input').forEach(input=>{input.name=input.name.replace(/items\[\d+\]/,'items['+index+']');input.value=input.name.includes('[quantity]')?'1':input.name.includes('[discount]')||input.name.includes('[tax_percent]')?'0':'';});index++;lines.append(row);};
+lines.addEventListener('click',event=>{const button=event.target.closest('[data-remove]');if(button&&lines.children.length>1)button.parentElement.remove();});
+const search=document.getElementById('customer-search'),results=document.getElementById('customer-results'),selected=document.getElementById('client-id'),branch=document.getElementById('branch');let timer,generation=0;
+branch.onchange=()=>{generation++;selected.value='';search.value='';results.replaceChildren();};
+search.oninput=()=>{selected.value='';clearTimeout(timer);const version=++generation;results.replaceChildren();if(search.value.trim().length<2)return;if(!branch.value){results.textContent='Choose a branch first.';return;}timer=setTimeout(async()=>{results.textContent='Searching...';try{const url=new URL(@json(route('billing.customers')));url.searchParams.set('q',search.value);url.searchParams.set('branch_id',branch.value);const response=await fetch(url,{headers:{Accept:'application/json'}});if(!response.ok)throw Error();const rows=await response.json();if(version!==generation)return;results.replaceChildren();if(!rows.length)results.textContent='No matching customers.';rows.forEach(customer=>{const button=document.createElement('button');button.type='button';button.className='list-group-item list-group-item-action';button.textContent=customer.name+' '+(customer.email||'');button.onclick=()=>{generation++;selected.value=customer.id;search.value=customer.name;results.replaceChildren();};results.append(button);});}catch(error){if(version===generation)results.textContent='Search could not be completed. Please try again.';}},300);};
+})();
+</script>
+@endsection

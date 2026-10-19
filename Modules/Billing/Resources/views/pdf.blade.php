@@ -1,0 +1,11 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{font-family:DejaVu Sans,sans-serif;font-size:10px;color:#17232d}h1{color:#07539b;font-size:24px}h2{font-size:16px}h3{font-size:12px}table{width:100%;border-collapse:collapse;margin:20px 0}th{background:#07539b;color:white}th,td{padding:8px 5px;border-bottom:1px solid #ddd;text-align:right}td:first-child,th:first-child{text-align:left;width:30%}p{overflow-wrap:break-word}footer{border-top:3px solid #f6c620;margin-top:30px;padding-top:15px}.totals{margin-left:50%;width:50%}
+</style></head><body>
+<img src="{{ public_path('assets/lte/cargo-logo-email.png') }}" width="150" height="60" alt="New World Cargo">
+<h1>{{ $type === 'invoices' ? 'Invoice' : 'Quotation' }}</h1><h2>{{ $document->number ?: 'DRAFT' }}</h2>
+@php $customer=json_decode($document->customer_snapshot,true);$issuer=json_decode($document->issuer_snapshot,true);$money=fn($minor)=>$document->currency.' '.number_format($minor/100,2); @endphp
+<p>{{ $issuer['name'] }} | {{ $issuer['branch'] ?? '' }}</p><h3>Prepared for</h3><p>{{ $customer['name'] }}<br>{{ $customer['email'] ?? '' }}</p><p>Date: {{ $document->issue_date }} | {{ $type === 'invoices' ? 'Due' : 'Valid until' }}: {{ $document->due_date }}</p>
+<table><thead><tr><th>Description</th><th>Quantity</th><th>Unit price</th><th>Discount</th><th>Tax</th><th>Total</th></tr></thead><tbody>@foreach($items as $item)<tr><td>{{ $item->description }}</td><td>{{ number_format($item->quantity_hundredths/100,2) }}</td><td>{{ $money($item->unit_price_minor) }}</td><td>{{ $money($item->discount_minor) }}</td><td>{{ $money($item->tax_minor) }}</td><td>{{ $money($item->total_minor) }}</td></tr>@endforeach</tbody></table>
+<table class="totals"><tr><td>Subtotal</td><td>{{ $money($document->subtotal_minor) }}</td></tr><tr><td>Discount</td><td>{{ $money($document->discount_minor) }}</td></tr><tr><td>Tax</td><td>{{ $money($document->tax_minor) }}</td></tr><tr><td><strong>Total</strong></td><td><strong>{{ $money($document->total_minor) }}</strong></td></tr></table>
+@if($document->terms)<h3>Terms and payment instructions</h3><p style="white-space:pre-wrap">{{ $document->terms }}</p>@endif
+<footer>Thank you for choosing New World Cargo.</footer></body></html>
