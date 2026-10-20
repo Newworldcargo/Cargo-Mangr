@@ -9,6 +9,7 @@ const assert = require('assert/strict');
             for (const screen of ['form', 'document', 'settings', 'shipping-rates']) {
                 const html = fs.readFileSync('/tmp/nwc-sales-' + screen + '.html', 'utf8');
                 const page = await browser.newPage({ viewport: { width, height: 1000 } });
+                let previewFields;
                 await page.route('**/*', async route => {
                     const url = new URL(route.request().url());
                     const asset = process.cwd() + '/public' + url.pathname;
@@ -17,8 +18,17 @@ const assert = require('assert/strict');
                     if (url.pathname.endsWith('/sales/customers')) return route.fulfill({ json: [{ id: 1, name: 'Test Customer', email: 'customer@test.example' }] });
                     if (url.pathname.endsWith('/sales/catalogue')) return route.fulfill({json:{currency:'ZMW',profile:{legal_name:'Test Cargo'},agents:[{id:1,name:'Sales Admin'}],taxes:[{id:1,label:'Test VAT',basis_points:1600,effective_from:'2000-01-01',effective_until:null}],services:[{id:11,name:'Road freight',unit:'kg',price_minor:11600,tax_id:1,tax_mode:'inclusive'}]}});
                     if (url.pathname.endsWith('/sales/preview')) {
-                        const qty=Number(route.request().postData()?.match(/name="items\[0\]\[quantity\]"\r\n\r\n([^\r]+)/)?.[1]??1);
-                        return route.fulfill({json:{currency:'ZMW',subtotal_minor:10000*qty,discount_minor:0,tax_minor:1600*qty,total_minor:11600*qty,items:[{total_minor:11600*qty}]}});
+                        previewFields = await new Response(route.request().postDataBuffer(), {
+                            headers: { 'Content-Type': route.request().headers()['content-type'] }
+                        }).formData();
+                        const qty=Number(previewFields.get('items[0][quantity]')||1);
+                        const gross=Math.round(Number(previewFields.get('items[0][unit_price]')||0)*100*qty);
+                        const discount=Math.round(Number(previewFields.get('items[0][discount]')||0)*100);
+                        const net=gross-discount;
+                        const inclusive=previewFields.get('items[0][tax_mode]')==='inclusive';
+                        const tax=inclusive?net-Math.round(net/1.16):Math.round(net*.16);
+                        const total=inclusive?net:net+tax;
+                        return route.fulfill({json:{currency:'ZMW',subtotal_minor:inclusive?gross-tax:gross,discount_minor:discount,tax_minor:tax,total_minor:total,items:[{total_minor:total}]}});
                     }
                     if (url.pathname === '/sales-preview') return route.fulfill({ contentType: 'text/html', body: html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '') });
                     return route.abort();
@@ -43,6 +53,24 @@ const assert = require('assert/strict');
                     await page.locator('[name="items[0][quantity]"]').fill('2');
                     await expect(page.locator('[data-total="total_minor"]')).toHaveText('ZMW 232.00');
                     await expect(page.locator('.invoice-line-amount')).toHaveText('ZMW 232.00');
+                    const price=page.locator('[name="items[0][unit_price]"]');
+                    await expect(price).toHaveCSS('border-top-style','solid');
+                    await expect(price).toHaveCSS('border-top-color','rgb(170, 183, 194)');
+                    await expect(page.locator('.invoice-brand')).toHaveCSS('background-color','rgb(1, 38, 66)');
+                    await price.fill('150');
+                    await expect(page.locator('[data-total="total_minor"]')).toHaveText('ZMW 300.00');
+                    await page.locator('.invoice-line-options summary').click();
+                    await page.locator('[name="items[0][discount]"]').fill('10');
+                    await expect(page.locator('[data-total="total_minor"]')).toHaveText('ZMW 290.00');
+                    await page.locator('[name="items[0][tax_mode]"]').selectOption('exclusive');
+                    await expect(page.locator('[data-total="total_minor"]')).toHaveText('ZMW 336.40');
+                    await page.locator('[name="items[0][unit]"]').selectOption('cbm');
+                    await expect.poll(()=>previewFields?.get('items[0][unit]')).toBe('cbm');
+                    await page.locator('[name="items[0][cargo_volume]"]').fill('0.25');
+                    await expect.poll(()=>previewFields?.get('items[0][cargo_volume]')).toBe('0.25');
+                    await expect(page.locator('[data-total="total_minor"]')).toHaveText('ZMW 336.40');
+                    await page.screenshot({path:`/tmp/nwc-sales-bordered-${width}.png`,fullPage:true});
+                    await page.locator('.invoice-line-options summary').click();
                     const rowBounds=await page.locator('#lines').boundingBox(),totalBounds=await page.locator('#live-totals').boundingBox();
                     assert(totalBounds.y>=rowBounds.y+rowBounds.height,'Totals must follow the item table');
                     await page.locator('[name="items[0][quantity]"]').fill('1');
