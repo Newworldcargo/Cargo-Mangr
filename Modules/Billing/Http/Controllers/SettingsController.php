@@ -37,7 +37,7 @@ class SettingsController extends Controller
         $rules = [
             'profile'=>['legal_name'=>'required|string|max:160','address'=>'required|string|max:1000','tpin'=>'required_if:vat_status,registered|nullable|string|max:40','vat_status'=>'required|in:registered,not_registered','payment_instructions'=>'nullable|string|max:2000'],
             'tax'=>['label'=>'required|string|max:100','category'=>'required|in:standard,zero_rated,exempt,non_vat','rate'=>'required|string|max:6','effective_from'=>'required|date_format:Y-m-d','effective_until'=>'nullable|date_format:Y-m-d|after_or_equal:effective_from','active'=>'required|boolean'],
-            'service'=>['name'=>'required|string|max:160','unit'=>'required|in:'.implode(',',SalesConfiguration::UNITS),'price'=>'required|string|max:20','tax_id'=>'required|integer','tax_mode'=>'required|in:exclusive,inclusive','active'=>'required|boolean'],
+            'service'=>['name'=>'required|string|max:160','unit'=>'required|in:'.implode(',',SalesConfiguration::UNITS),'price'=>'required|string|max:20','tax_id'=>'required_if:active,1|nullable|integer','tax_mode'=>'required|in:exclusive,inclusive','active'=>'required|boolean'],
         ];
         abort_unless(isset($rules[$section]),404);
         $data = $request->validate($rules[$section]);
@@ -49,7 +49,8 @@ class SettingsController extends Controller
             if ($section === 'service') {
                 $data['price_minor'] = InvoiceAmounts::decimal($data['price']); unset($data['price']);
                 $data['currency'] = app(BranchAccessService::class)->currencyFor(null,$branch,true);
-                if (!DB::table('billing_tax_rates')->where('branch_id',$branch->id)->where('active',true)->where('id',$data['tax_id'])->exists()) throw new \DomainException('Choose an active tax category for this branch.');
+                $data['tax_id']=$data['tax_id']??null;
+                if (($data['active'] || $data['tax_id']!==null) && !DB::table('billing_tax_rates')->where('branch_id',$branch->id)->where('active',true)->where('id',$data['tax_id'])->exists()) throw new \DomainException('Choose an active tax category for this branch.');
             }
         } catch (\DomainException $error) { throw ValidationException::withMessages(['settings'=>$error->getMessage()]); }
         $table = ['profile'=>'billing_profiles','tax'=>'billing_tax_rates','service'=>'billing_services'][$section];

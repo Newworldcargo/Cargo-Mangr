@@ -38,6 +38,20 @@ class SalesDocumentsTest extends TestCase
             'items'=>[['description'=>'Delivery','quantity'=>'1','unit_price'=>'100','discount'=>'0','tax_percent'=>'0','tax_id'=>$this->taxId,'tax_mode'=>'exclusive','unit'=>'service']], 'terms'=>'Payment due in 14 days.'];
     }
 
+    public function test_reference_service_can_be_saved_without_inventing_a_tax_category(): void
+    {
+        $service=['branch_id'=>$this->branch->id,'name'=>'Reference sea freight','unit'=>'cbm','price'=>'0',
+            'tax_mode'=>'exclusive','active'=>0,'tax_id'=>null];
+        $this->post(route('billing.settings.save',['section'=>'service']),$service)->assertSessionHasNoErrors();
+        $row=DB::table('billing_services')->first();
+        $this->assertNull($row->tax_id);
+        $this->assertEquals(0,$row->active);
+        $this->getJson(route('billing.catalogue',['branch_id'=>$this->branch->id]))->assertOk()->assertJsonCount(0,'services');
+        $service['id']=$row->id;$service['active']=1;
+        $this->post(route('billing.settings.save',['section'=>'service']),$service)->assertSessionHasErrors('tax_id');
+        $this->assertDatabaseHas('billing_services',['id'=>$row->id,'active'=>0,'tax_id'=>null]);
+    }
+
     public function test_shipping_rate_bands_conversion_snapshots_and_configuration_controls(): void
     {
         $origin=Branch::create(['name'=>'Origin','email'=>'origin@test.example','code'=>2,'user_id'=>auth()->id(),'default_currency'=>'USD']);
