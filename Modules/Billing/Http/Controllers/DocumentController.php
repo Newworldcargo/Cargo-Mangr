@@ -43,6 +43,7 @@ class DocumentController extends Controller
             'type' => $type, 'document' => $document, 'branches' => $branches->orderBy('name')->get(),
             'lines' => old('items', $lines ?: [['description' => '', 'quantity' => '1', 'unit_price' => '', 'discount' => '0', 'tax_percent' => '0']]),
             'key' => (string) Str::uuid(),
+            'shipmentDetails' => old('shipment_details', $document ? json_decode($document->shipment_details ?? 'null', true) : null),
         ]);
     }
 
@@ -52,11 +53,29 @@ class DocumentController extends Controller
         abort_unless($access->canView($request->user(), 'invoices') || $access->canView($request->user(), 'quotations'), 403);
         $data = $request->validate(['q' => 'required|string|min:2|max:100', 'branch_id' => 'required|integer']);
         if ((int) $request->user()->role !== 1) abort_unless(app(BranchAccessService::class)->branchIdsFor($request->user())->contains((int) $data['branch_id']), 403);
-        $query = Client::where('is_archived', 0)->where('branch_id', $data['branch_id']);
-        $term = addcslashes($data['q'], '\\%_') . '%';
-        return response()->json($query->where(function ($query) use ($term) {
-            $query->where('name', 'like', $term)->orWhere('email', 'like', $term);
-        })->orderBy('name')->limit(20)->get(['id', 'name', 'email']));
+        $query = $access->customers($request->user(), (int) $data['branch_id']);
+        $words = preg_split('/\s+/u', trim($data['q']), -1, PREG_SPLIT_NO_EMPTY);
+        foreach ($words as $word) {
+            $term = '%' . addcslashes(mb_strtolower($word), '\\%_') . '%';
+            $query->where(function ($query) use ($term) {
+                $query->whereRaw('LOWER(name) LIKE ?', [$term])->orWhereRaw('LOWER(email) LIKE ?', [$term]);
+            });
+        }
+        return response()->json($query->orderBy('name')->limit(20)->get(['id', 'name', 'email']));
+    }
+
+    public function shipments(Request $request)
+    {
+        $access = app(SalesAccess::class);
+        abort_unless($access->canView($request->user(), 'invoices') || $access->canView($request->user(), 'quotations'), 403);
+        $data = $request->validate(['q' => 'required|string|min:2|max:100', 'branch_id' => 'required|integer']);
+        if ((int) $request->user()->role !== 1) abort_unless(app(BranchAccessService::class)->branchIdsFor($request->user())->contains((int) $data['branch_id']), 403);
+        $permissions = app(\Modules\Cargo\Services\ShipmentOperationAccessService::class);
+        $rows = \Modules\Cargo\Entities\Shipment::where('branch_id', $data['branch_id'])
+            ->where('code', 'like', addcslashes(trim($data['q']), '\\%_') . '%')->orderBy('code')->limit(20)->get()
+            ->filter(fn ($shipment) => $permissions->canView($request->user(), $shipment))
+            ->map(fn ($shipment) => ['code' => $shipment->code, 'url' => route('shipments.show', $shipment->id)])->values();
+        return response()->json($rows);
     }
 
     public function createCustomer(Request $request)
@@ -114,8 +133,9 @@ class DocumentController extends Controller
         ]);
         $branch = Branch::findOrFail($data['branch_id']);
         if ((int) $request->user()->role !== 1) abort_unless(app(BranchAccessService::class)->branchIdsFor($request->user())->contains($branch->id), 403);
-        $client = Client::where('is_archived', 0)->where('branch_id', $branch->id)->findOrFail($data['client_id']);
+        $client = app(SalesAccess::class)->customers($request->user(), $branch->id)->findOrFail($data['client_id']);
         $data['currency'] = app(BranchAccessService::class)->currencyFor(null, $branch, true);
+        $data['shipment_details'] = \Modules\Billing\Services\ShipmentDetails::validated($request->all());
         $data['customer_snapshot'] = ['name' => $client->name, 'email' => $client->email];
         $data['issuer_snapshot'] = ['name' => 'New World Cargo', 'branch' => $branch->name];
         try {
@@ -177,6 +197,7 @@ class DocumentController extends Controller
         $data += [
             'client_id' => $document->client_id, 'branch_id' => $document->branch_id, 'currency' => $document->currency,
             'customer_snapshot' => json_decode($document->customer_snapshot, true), 'issuer_snapshot' => json_decode($document->issuer_snapshot, true),
+            'shipment_details' => json_decode($document->shipment_details ?? 'null', true),
             'issue_date' => now()->toDateString(), 'due_date' => now()->addDays(14)->toDateString(), 'terms' => $document->terms,
             'items' => array_map(fn ($item) => [
                 'description' => $item->description, 'quantity' => number_format($item->quantity_hundredths / 100, 2, '.', ''),

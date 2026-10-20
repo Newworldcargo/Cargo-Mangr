@@ -53,6 +53,9 @@ final class InvoiceLedger
             'issuer_snapshot' => $this->json($input['issuer_snapshot']),
             'terms' => (string) ($input['terms'] ?? ''), 'created_by' => $actorId,
         ]);
+        if (array_key_exists('shipment_details', $input)) {
+            $record['shipment_details'] = $input['shipment_details'] ? $this->json($input['shipment_details']) : null;
+        }
         return [$record, $items];
     }
 

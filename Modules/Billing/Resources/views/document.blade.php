@@ -20,6 +20,20 @@
         <div><h2>{{ $type === 'invoices' ? 'Bill to' : 'Prepared for' }}</h2><strong>{{ $customer['name'] }}</strong><p>{{ $customer['email'] ?? '' }}</p></div>
         <div class="sales-document-state"><span class="sales-status sales-status-{{ $document->status }}">{{ ucfirst(str_replace('_', ' ', $document->status)) }}</span></div>
     </section>
+    @php $shipping = json_decode($document->shipment_details ?? 'null', true); @endphp
+    @if ($shipping)
+    <section class="sales-shipping-summary mb-4">
+        <h2>Shipment details</h2>
+        <p><strong>{{ $shipping['from_country'] }}@if(!empty($shipping['from_region'])) / {{ $shipping['from_region'] }}@endif &rarr; {{ $shipping['to_country'] }}@if(!empty($shipping['to_region'])) / {{ $shipping['to_region'] }}@endif</strong></p>
+        <p>{{ $shipping['shipment_type'] === 'pickup' ? 'Pickup' : 'Drop off' }} &middot; {{ $shipping['shipping_date'] }} {{ $shipping['collection_time'] ?? '' }}</p>
+        <p>Sender: {{ $shipping['sender_phone'] }} &middot; {{ $shipping['sender_address'] }}</p>
+        <p>Receiver: {{ $shipping['receiver_name'] }} &middot; {{ $shipping['receiver_phone'] }} &middot; {{ $shipping['receiver_address'] }}</p>
+        @foreach($shipping['packages'] as $package)<p>{{ $package['quantity'] }} &times; {{ $package['type'] }}: {{ $package['description'] }} ({{ $package['weight'] }} kg each) @if(!empty($package['length']) && !empty($package['width']) && !empty($package['height'])) &middot; {{ $package['length'] }} &times; {{ $package['width'] }} &times; {{ $package['height'] }} cm @endif</p>@endforeach
+        <p><strong>Total weight: {{ $shipping['total_weight_kg'] }} kg</strong></p>
+        @if(!empty($shipping['order_id']))<p>Order: {{ $shipping['order_id'] }}</p>@endif
+        @if(!empty($shipping['delivery_time']))<p>Expected delivery: {{ $shipping['delivery_time'] }}</p>@endif
+    </section>
+    @endif
     <div class="table-responsive sales-items-wrap"><table class="sales-lines"><thead><tr><th scope="col">Description</th><th scope="col">Qty</th><th scope="col">Unit price</th><th scope="col">Discount</th><th scope="col">Tax</th><th scope="col">Amount</th></tr></thead><tbody>
         @foreach ($items as $item)<tr><td data-label="Description"><strong>{{ $item->description }}</strong></td><td data-label="Quantity">{{ number_format($item->quantity_hundredths / 100, 2) }}</td><td data-label="Unit price">{{ $money($item->unit_price_minor) }}</td><td data-label="Discount">{{ $money($item->discount_minor) }}</td><td data-label="Tax">{{ $money($item->tax_minor) }}</td><td data-label="Amount"><strong>{{ $money($item->total_minor) }}</strong></td></tr>@endforeach
     </tbody></table></div>

@@ -35,6 +35,69 @@ class SalesDocumentsTest extends TestCase
             'items'=>[['description'=>'Delivery','quantity'=>'1','unit_price'=>'100','discount'=>'0','tax_percent'=>'0']], 'terms'=>'Payment due in 14 days.'];
     }
 
+    public function test_customer_search_matches_reordered_names_and_unassigned_customers_can_be_billed(): void
+    {
+        $this->client->update(['name'=>'Alex  Martin Tembo', 'branch_id'=>null]);
+        foreach (['martin alex tembo',' Tembo   Martin ', 'alex'] as $term) {
+            $this->getJson(route('billing.customers', ['q'=>$term,'branch_id'=>$this->branch->id]))
+                ->assertOk()->assertJsonFragment(['id'=>$this->client->id]);
+        }
+        $this->create();
+        $this->assertDatabaseHas('billing_invoices',['client_id'=>$this->client->id,'branch_id'=>$this->branch->id]);
+        $this->assertNull($this->client->fresh()->branch_id);
+        $this->client->update(['is_archived'=>1]);
+        $this->getJson(route('billing.customers',['q'=>'martin tembo','branch_id'=>$this->branch->id]))->assertExactJson([]);
+    }
+
+    public function test_shipment_details_survive_edit_issue_and_quotation_conversion(): void
+    {
+        $shipping = ['shipment_type'=>'pickup','shipping_date'=>now()->toDateString(),'collection_time'=>'09:30',
+            'sender_phone'=>'+260971234567','sender_address'=>'Lusaka','receiver_name'=>'Receiver','receiver_phone'=>'+260971234568',
+            'receiver_address'=>'Kitwe','from_country'=>'Zambia','to_country'=>'Zambia','payment_type'=>'postpaid','payment_method'=>'cash',
+            'packages'=>[['type'=>'Box','description'=>'Clothing','quantity'=>2,'weight'=>'1.5','length'=>10,'width'=>20,'height'=>30]],
+            'total_weight_kg'=>'999','source_shipment_id'=>123];
+        $data = $this->input()+['document_mode'=>'shipment','shipment_details'=>$shipping];
+        $count = DB::table('shipments')->count();
+        $this->post(route('billing.documents.store',['type'=>'quotations']),$data)->assertSessionHasNoErrors()->assertRedirect();
+        $id = DB::table('billing_quotations')->max('id');
+        $stored = json_decode(DB::table('billing_quotations')->find($id)->shipment_details,true);
+        $this->assertSame('3.000',$stored['total_weight_kg']);
+        $this->assertArrayNotHasKey('source_shipment_id',$stored);
+        $this->get(route('billing.documents.edit',['type'=>'quotations','id'=>$id]))->assertOk()->assertSee('Clothing');
+        $this->action($id,'issue',[],'quotations')->assertSessionHasNoErrors();
+        $this->action($id,'accept',['note'=>'Customer accepted by email.'],'quotations')->assertSessionHasNoErrors();
+        $this->action($id,'convert',[],'quotations')->assertSessionHasNoErrors();
+        $invoice = DB::table('billing_invoices')->first();
+        $this->assertSame($stored,json_decode($invoice->shipment_details,true));
+        $this->get(route('billing.documents.print',['type'=>'invoices','id'=>$invoice->id]))->assertOk()->assertSee('Clothing')->assertSee('3.000 kg');
+        $this->assertSame($count,DB::table('shipments')->count());
+        $this->assertSame(0,DB::table('billing_payments')->count());
+        $invalid=$this->input()+['document_mode'=>'shipment','shipment_details'=>[]];
+        $this->post(route('billing.documents.store',['type'=>'invoices']),$invalid)->assertSessionHasErrors('shipment_details.receiver_name');
+        $plain=$this->input()+['document_mode'=>'plain','shipment_details'=>['bad'=>'ignored']];
+        $this->post(route('billing.documents.store',['type'=>'invoices']),$plain)->assertSessionHasNoErrors();
+        $this->assertNull(DB::table('billing_invoices')->orderByDesc('id')->first()->shipment_details);
+    }
+
+    public function test_unassigned_customer_search_does_not_remove_staff_branch_boundaries(): void
+    {
+        $staff=User::create(['name'=>'Sales staff','email'=>'scoped@test.example','password'=>bcrypt('test'),'role'=>0]);
+        $staff->givePermissionTo('view-billing-invoices');
+        $this->branch->update(['user_id'=>$staff->id]);
+        $this->client->update(['name'=>'Alex Martin Tembo','branch_id'=>null]);
+        $this->actingAs($staff);
+        $url=route('billing.customers',['q'=>'martin alex','branch_id'=>$this->branch->id]);
+        $this->getJson($url)->assertExactJson([]);
+        $this->getJson(route('billing.customers',['q'=>'martin','branch_id'=>99999]))->assertForbidden();
+        \Modules\Cargo\Entities\Shipment::create(['code'=>'SALES-TEST-1','client_id'=>$this->client->id,'branch_id'=>$this->branch->id,
+            'status_id'=>1,'type'=>1,'shipping_date'=>now()->toDateString(),'client_phone'=>'260971234567',
+            'from_country_id'=>1,'from_state_id'=>1,'to_country_id'=>1,'to_state_id'=>1]);
+        $this->getJson($url)->assertOk()->assertJsonFragment(['id'=>$this->client->id]);
+        $this->getJson(route('billing.shipments',['q'=>'SALES-TEST','branch_id'=>$this->branch->id]))->assertExactJson([]);
+        $staff->update(['role'=>1]);
+        $this->getJson(route('billing.shipments',['q'=>'SALES-TEST','branch_id'=>$this->branch->id]))->assertOk()->assertJsonFragment(['code'=>'SALES-TEST-1']);
+    }
+
     public function test_customer_modal_creation_rejects_duplicate_contacts_and_is_audited(): void
     {
         $data = ['type'=>'invoices','branch_id'=>$this->branch->id,'first_name'=>'New','last_name'=>'Customer',

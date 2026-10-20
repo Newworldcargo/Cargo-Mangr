@@ -7,6 +7,20 @@ use Modules\Cargo\Services\BranchAccessService;
 
 final class SalesAccess
 {
+    public function customers($user, int $branchId)
+    {
+        return \Modules\Cargo\Entities\Client::where('is_archived', 0)->where(function ($query) use ($user, $branchId) {
+            $query->where('branch_id', $branchId)->orWhere(function ($unassigned) use ($user, $branchId) {
+                $unassigned->whereNull('branch_id');
+                if ((int) $user->role !== User::ADMIN) {
+                    $unassigned->whereExists(function ($shipments) use ($branchId) {
+                        $shipments->selectRaw('1')->from('shipments')->whereColumn('shipments.client_id', 'clients.id')->where('shipments.branch_id', $branchId);
+                    });
+                }
+            });
+        });
+    }
+
     public function canAct($user, string $action, string $type): bool
     {
         return $this->canView($user, $type) && ((int) $user->role === User::ADMIN || $user->can($action . '-billing-' . $type));

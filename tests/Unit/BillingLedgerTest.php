@@ -29,6 +29,8 @@ class BillingLedgerTest extends TestCase
         (new \CreateBillingLedger())->up();
         require_once __DIR__ . '/../../Modules/Billing/Database/Migrations/2026_10_19_000002_add_sales_documents.php';
         (new \AddSalesDocuments())->up();
+        require_once __DIR__ . '/../../Modules/Billing/Database/Migrations/2026_10_20_000001_add_sales_shipment_details.php';
+        (new \AddSalesShipmentDetails())->up();
         $this->ledger = new InvoiceLedger($this->db);
     }
 
