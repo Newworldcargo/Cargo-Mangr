@@ -52,6 +52,26 @@ class SalesDocumentsTest extends TestCase
         $this->assertDatabaseHas('billing_services',['id'=>$row->id,'active'=>0,'tax_id'=>null]);
     }
 
+    public function test_compact_document_and_pdf_share_content_without_internal_notes(): void
+    {
+        $data=$this->input();$data['items']=array_fill(0,36,$data['items'][0]);
+        $data['details']=['customer_notes'=>'Customer delivery instructions','internal_notes'=>'PRIVATE ACCOUNT NOTE','order_reference'=>'COMPACT-PO'];
+        $this->post(route('billing.documents.store',['type'=>'invoices']),$data)->assertSessionHasNoErrors();
+        $document=DB::table('billing_invoices')->first();
+        $items=DB::table('billing_invoice_items')->where('invoice_id',$document->id)->orderBy('position')->get()->all();
+        foreach(['billing::document','billing::pdf'] as $view){
+            $html=view($view,['document'=>$document,'type'=>'invoices','items'=>$items])->render();
+            $this->assertStringContainsString('COMPACT-PO',$html);
+            $this->assertStringContainsString('Customer delivery instructions',$html);
+            $this->assertStringContainsString('Grand total',$html);
+            $this->assertStringNotContainsString('PRIVATE ACCOUNT NOTE',$html);
+            $this->assertLessThan(strpos($html,'Grand total'),strpos($html,'36. Delivery'));
+        }
+        $bytes=app(DocumentPdf::class)->get('invoices',$document->id);
+        $this->assertStringStartsWith('%PDF',$bytes);
+        if(getenv('NWC_SALES_PREVIEW')==='1')file_put_contents('/tmp/nwc-sales-long-document.pdf',$bytes);
+    }
+
     public function test_shipping_rate_bands_conversion_snapshots_and_configuration_controls(): void
     {
         $origin=Branch::create(['name'=>'Origin','email'=>'origin@test.example','code'=>2,'user_id'=>auth()->id(),'default_currency'=>'USD']);

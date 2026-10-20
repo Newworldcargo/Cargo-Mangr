@@ -1,15 +1,18 @@
 <!doctype html><html><head><meta charset="utf-8"><style>
-body{font-family:DejaVu Sans,sans-serif;font-size:10px;color:#17232d}h1{color:#07539b;font-size:24px}h2{font-size:16px}h3{font-size:12px}table{width:100%;border-collapse:collapse;margin:20px 0}th{background:#07539b;color:white}th,td{padding:8px 5px;border-bottom:1px solid #ddd;text-align:right}td:first-child,th:first-child{text-align:left;width:30%}p{overflow-wrap:break-word}footer{border-top:3px solid #f6c620;margin-top:30px;padding-top:15px}.totals{margin-left:50%;width:50%}
+@page{margin:24px}
+body{font-family:DejaVu Sans,sans-serif;font-size:10px;color:#263441}
+.compact-document{border:0!important;padding:0!important;max-width:none!important;min-height:0!important;font-size:10px!important}
+.compact-document h1{font-size:20px}.compact-document h2{font-size:10px}.compact-document p{overflow-wrap:break-word}
+.invoice-heading,.invoice-parties,.invoice-bottom-fields{page-break-inside:avoid}
+.sales-lines{width:100%;border-collapse:collapse;table-layout:fixed;font-size:9px!important}
+.sales-lines th,.sales-lines td{text-align:right;vertical-align:top;border-bottom:1px solid #dde3e9;padding:7px 4px!important;overflow-wrap:break-word}
+.sales-lines td:first-child,.sales-lines th:first-child{text-align:left;width:32%}
+.sales-lines tr{page-break-inside:avoid}.sales-lines thead{display:table-header-group}.d-block{display:block;font-size:8px}
+.sales-document-bottom{page-break-inside:avoid}
+.sales-totals{display:block!important;width:46%!important;margin-left:54%!important;font-size:10px!important}
+.sales-totals dt{float:left;width:55%;margin:0;padding:5px 0;clear:left}.sales-totals dd{margin:0 0 0 55%;text-align:right;padding:5px 0}
+.sales-totals .sales-grand{font-size:12px!important}.invoice-footer{display:block!important;page-break-inside:avoid}.invoice-footer span{display:inline-block;width:49%;font-size:9px}.invoice-footer span:last-child{text-align:right}
+.sales-terms p{white-space:pre-wrap;line-height:1.5}.small{font-size:9px}
 </style></head><body>
-<img src="{{ public_path('assets/lte/cargo-logo-email.png') }}" width="150" height="60" alt="New World Cargo">
-<h1>{{ $type === 'invoices' ? 'Invoice' : 'Quotation' }}</h1><h2>{{ $document->number ?: 'DRAFT' }}</h2>
-@php $customer=json_decode($document->customer_snapshot,true);$issuer=json_decode($document->issuer_snapshot,true);$money=fn($minor)=>$document->currency.' '.number_format($minor/100,2); @endphp
-<p>{{ $issuer['name'] }} | {{ $issuer['branch'] ?? '' }}</p><h3>Prepared for</h3><p>{{ $customer['name'] }}<br>{{ $customer['email'] ?? '' }}</p><p>Date: {{ $document->issue_date }} | {{ $type === 'invoices' ? 'Due' : 'Valid until' }}: {{ $document->due_date }}</p>
-@include('billing::document-metadata')
-<table><thead><tr><th>Description</th><th>Quantity</th><th>Unit price</th><th>Discount (excl. tax)</th><th>Tax</th><th>Total</th></tr></thead><tbody>@foreach($items as $item)<tr><td>{{ $item->description }}</td><td>{{ number_format(($item->quantity_thousandths??$item->quantity_hundredths*10)/1000,3) }} {{ $item->unit??'' }}</td><td>{{ $money($item->unit_price_minor) }}<br>{{ ($item->tax_mode??'exclusive')==='inclusive'?'Incl. tax':'Excl. tax' }}</td><td>{{ $money($item->discount_minor) }}</td><td>{{ $money($item->tax_minor) }}</td><td>{{ $money($item->total_minor) }}</td></tr>@endforeach</tbody></table>
-@include('billing::pricing-details')
-@include('billing::tax-summary')
-<table class="totals"><tr><td>Subtotal</td><td>{{ $money($document->subtotal_minor) }}</td></tr><tr><td>Discount</td><td>{{ $money($document->discount_minor) }}</td></tr><tr><td>Tax</td><td>{{ $money($document->tax_minor) }}</td></tr><tr><td><strong>Total</strong></td><td><strong>{{ $money($document->total_minor) }}</strong></td></tr></table>
-@if($document->terms)<h3>Terms and payment instructions</h3><p style="white-space:pre-wrap">{{ $document->terms }}</p>@endif
-@if(!empty($issuer['payment_instructions']))<h3>Payment instructions</h3><p style="white-space:pre-wrap">{{ $issuer['payment_instructions'] }}</p>@endif
-<footer>Thank you for choosing New World Cargo.</footer></body></html>
+@include('billing::document',['pdfMode'=>true,'originalDocument'=>true])
+</body></html>
