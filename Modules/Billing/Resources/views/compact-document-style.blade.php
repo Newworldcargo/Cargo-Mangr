@@ -31,5 +31,30 @@
 .compact-document .sales-document-bottom{display:block;margin:10px 0 16px}.compact-document .sales-document-bottom .sales-totals{margin-left:auto}.compact-document .sales-terms p{line-height:1.5;color:#526271;font-size:11px}
 @media(max-width:650px){.compact-sales-page{padding:10px!important}.compact-document{padding:16px 12px;min-height:0}.invoice-company,.invoice-heading-meta{display:block;width:100%;padding:0;text-align:left}.invoice-heading-meta{margin-top:14px}.compact-document .invoice-heading-meta label{grid-template-columns:1fr 155px}.invoice-parties,.invoice-bottom-fields{display:block}.invoice-parties>section,.invoice-bottom-fields>section{display:block;width:100%;padding:0!important;margin-bottom:12px}.compact-document .form-control{min-height:40px;height:40px;font-size:14px}.compact-document textarea.form-control{height:auto}.invoice-line-head{display:none}.compact-document .sales-service-line{grid-template-columns:24px minmax(0,1fr) minmax(0,1fr) 36px;gap:6px;padding-top:12px}.invoice-description{grid-column:2/4}.compact-document .sales-service-line>[data-remove]{grid-column:4;grid-row:1;min-height:40px}.compact-document .sales-service-line>div:nth-of-type(2){grid-column:2}.compact-document .sales-service-line>div:nth-of-type(3){grid-column:3}.invoice-mobile-label{display:block}.invoice-line-amount{grid-column:2/4}.invoice-line-amount:before{content:'Amount ';font-weight:400;color:#526271}.invoice-line-options{grid-column:2/-1}.invoice-line-options-grid{grid-template-columns:1fr 1fr}.invoice-line-options summary,.invoice-extra summary{min-height:40px;line-height:20px;padding:10px 0}.compact-document .sales-preview-summary{min-height:145px}.compact-document .invoice-footer{flex-direction:column}.compact-document .sales-totals{width:100%}.compact-document .sales-service-line label{grid-column:auto}.compact-document .sales-tabs{gap:12px}.compact-document .sales-tabs .nav-link{white-space:normal}}
 @media(max-width:650px){.compact-document .form-control{min-height:44px;height:44px;font-size:16px}.compact-document .sales-service-line{grid-template-columns:24px minmax(0,1fr) minmax(0,1fr) 44px}.compact-document .sales-service-line>[data-remove]{width:44px;min-height:44px}.compact-sales-page .btn,.compact-document .service-suggestions button{min-height:44px}.compact-document #add-customer,.compact-document #add-line{min-height:44px}}
+/* Screen editing follows the admin content width; paper sizing is for export only. */
+@unless($pdfMode ?? false)
+@media screen{
+.compact-document{width:100%;max-width:none;min-height:0;font-size:14px}
+.compact-sales-page>.sales-page-heading{max-width:none}
+.compact-document .invoice-heading-meta h1{font-size:26px}
+.compact-document .invoice-brand img{width:150px;height:60px}
+.compact-document .invoice-company>strong{font-size:14px}
+.compact-document label,.compact-document h2,.compact-document .sales-tabs .nav-link,.compact-document .invoice-line-head,.compact-document .sales-lines,.compact-document .sales-lines th,.compact-document .sales-lines td,.compact-document .sales-terms p{font-size:14px}
+.compact-document .invoice-extra summary,.compact-document .invoice-line-options summary,.compact-document #catalogue-status,.compact-document #totals-status,.compact-document .tariff-price-label,.compact-document .invoice-footer,.compact-document small{font-size:13px}
+.compact-document #add-customer,.compact-document #add-line{font-size:14px;min-height:40px}
+.compact-document #customer-results,.compact-document .service-suggestions{font-size:14px}
+.compact-document .sales-totals{width:360px;font-size:14px}
+.compact-document .sales-totals .sales-grand{font-size:18px}
+.compact-document .sales-totals dt{color:#526271}
+.compact-document .invoice-heading-meta label{grid-template-columns:1fr 165px}
+}
+@media screen and (min-width:651px){
+.compact-document{padding:24px}
+.compact-document .form-control{font-size:14px;min-height:40px;height:40px;padding:6px 8px}
+.compact-document textarea.form-control{height:auto}
+.invoice-line-head,.compact-document .sales-service-line{grid-template-columns:28px minmax(0,1fr) 90px 110px 115px 40px}
+.compact-document .sales-service-line .btn{width:40px;min-height:40px}
+}
+@endunless
 @media print{.compact-document{border:0;padding:0;max-width:none;min-height:0}.invoice-heading,.invoice-parties,.invoice-footer,tr{break-inside:avoid;page-break-inside:avoid}thead{display:table-header-group}.invoice-heading-meta h1{font-size:20px}}
 </style>

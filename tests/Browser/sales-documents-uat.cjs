@@ -5,7 +5,7 @@ const assert = require('assert/strict');
 (async () => {
     const browser = await chromium.launch({ args: ['--no-sandbox'] });
     try {
-        for (const width of [1440, 390]) {
+        for (const width of [1440, 768, 390]) {
             for (const screen of ['form', 'document', 'settings', 'shipping-rates']) {
                 const html = fs.readFileSync('/tmp/nwc-sales-' + screen + '.html', 'utf8');
                 const page = await browser.newPage({ viewport: { width, height: 1000 } });
@@ -37,7 +37,18 @@ const assert = require('assert/strict');
                 await page.locator('.preloader').evaluateAll(nodes => nodes.forEach(node => node.remove()));
                 await page.addScriptTag({ path: 'public/assets/lte/plugins/jquery/jquery.min.js' });
                 await page.addScriptTag({ path: 'public/assets/lte/plugins/bootstrap/js/bootstrap.bundle.min.js' });
+                await page.addScriptTag({ path: 'public/assets/lte/js/adminlte.min.js' });
+                if (width < 992) {
+                    await page.evaluate(() => window.jQuery('[data-widget="pushmenu"]').PushMenu('collapse'));
+                    await expect(page.locator('body')).toHaveClass(/sidebar-collapse/);
+                }
+                if (screen === 'form' || screen === 'document') {
+                    await expect(page.locator('.compact-document')).toHaveCSS('max-width','none');
+                    await expect(page.locator('.compact-document')).toHaveCSS('font-size','14px');
+                    await expect(page.locator('.compact-document .sales-grand').first()).toHaveCSS('font-size','18px');
+                }
                 if (screen === 'form') {
+                    await expect(page.locator('[name="items[0][quantity]"]')).toHaveCSS('font-size',width>650?'14px':'16px');
                     const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map(match => match[1]).filter(text => text.includes("getElementById('lines')"));
                     assert.equal(scripts.length,2);
                     for(const script of scripts) await page.addScriptTag({ content: script });
