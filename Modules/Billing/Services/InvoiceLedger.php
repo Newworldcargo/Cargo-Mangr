@@ -56,6 +56,7 @@ final class InvoiceLedger
         if (array_key_exists('shipment_details', $input)) {
             $record['shipment_details'] = $input['shipment_details'] ? $this->json($input['shipment_details']) : null;
         }
+        if (array_key_exists('document_details', $input)) $record['document_details'] = $this->json($input['document_details']);
         return [$record, $items];
     }
 

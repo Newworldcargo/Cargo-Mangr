@@ -13,7 +13,7 @@
             <div class="d-flex align-items-center position-relative my-1 sales-list-search">
                 <i class="fas fa-search position-absolute" aria-hidden="true"></i>
                 <label for="sales-search" class="sr-only">Search {{ strtolower($title) }} by reference</label>
-                <input id="sales-search" name="q" type="search" maxlength="100" class="form-control form-control-solid w-250px ps-15" placeholder="Search reference" value="{{ request('q') }}">
+                <input id="sales-search" name="q" type="search" maxlength="100" class="form-control form-control-solid w-250px ps-15" placeholder="Reference, customer or email" value="{{ request('q') }}">
             </div>
         </div>
         <div class="card-toolbar">
@@ -34,6 +34,7 @@
                 @endif
             </div>
         </div>
+        <div class="row w-100 m-0"><div class="col-md-3 mb-2"><label for="filter-branch">Branch</label><select id="filter-branch" class="form-control" name="branch_id"><option value="">All permitted branches</option>@foreach($branches as $branch)<option value="{{ $branch->id }}" {{ (string)request('branch_id')===(string)$branch->id?'selected':'' }}>{{ $branch->name }}</option>@endforeach</select></div><div class="col-md-3 mb-2"><label for="filter-from">Issued from</label><input id="filter-from" type="date" class="form-control" name="from" value="{{ request('from') }}"></div><div class="col-md-3 mb-2"><label for="filter-until">Issued until</label><input id="filter-until" type="date" class="form-control" name="until" value="{{ request('until') }}"></div><div class="col-md-3 mb-2"><label for="filter-agent">Sales agent</label><input id="filter-agent" class="form-control" name="agent" maxlength="100" value="{{ request('agent') }}"></div></div>
     </form>
     <div class="card-body pt-6">
         @if ($errors->any())<div class="alert alert-danger" role="alert">{{ $errors->first() }}</div>@endif

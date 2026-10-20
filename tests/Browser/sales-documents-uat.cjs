@@ -6,7 +6,7 @@ const assert = require('assert/strict');
     const browser = await chromium.launch({ args: ['--no-sandbox'] });
     try {
         for (const width of [1440, 390]) {
-            for (const screen of ['form', 'document']) {
+            for (const screen of ['form', 'document', 'settings']) {
                 const html = fs.readFileSync('/tmp/nwc-sales-' + screen + '.html', 'utf8');
                 const page = await browser.newPage({ viewport: { width, height: 1000 } });
                 await page.route('**/*', async route => {
@@ -15,6 +15,8 @@ const assert = require('assert/strict');
                     if (url.pathname.startsWith('/assets/') && fs.existsSync(asset)) return route.fulfill({ path: asset });
                     if (url.pathname.endsWith('/sales/customers') && route.request().method() === 'POST') return route.fulfill({ status: 201, json: { id: 42, name: 'New Customer', email: 'new@example.com', branch_id: await page.locator('#branch').inputValue() } });
                     if (url.pathname.endsWith('/sales/customers')) return route.fulfill({ json: [{ id: 1, name: 'Test Customer', email: 'customer@test.example' }] });
+                    if (url.pathname.endsWith('/sales/catalogue')) return route.fulfill({json:{currency:'ZMW',profile:{legal_name:'Test Cargo'},agents:[{id:1,name:'Sales Admin'}],taxes:[{id:1,label:'Test VAT',basis_points:1600,effective_from:'2000-01-01',effective_until:null}],services:[{id:11,name:'Road freight',unit:'kg',price_minor:11600,tax_id:1,tax_mode:'inclusive'}]}});
+                    if (url.pathname.endsWith('/sales/preview')) return route.fulfill({json:{currency:'ZMW',subtotal_minor:10000,discount_minor:0,tax_minor:1600,total_minor:11600}});
                     if (url.pathname === '/sales-preview') return route.fulfill({ contentType: 'text/html', body: html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '') });
                     return route.abort();
                 });
@@ -23,10 +25,18 @@ const assert = require('assert/strict');
                 await page.addScriptTag({ path: 'public/assets/lte/plugins/jquery/jquery.min.js' });
                 await page.addScriptTag({ path: 'public/assets/lte/plugins/bootstrap/js/bootstrap.bundle.min.js' });
                 if (screen === 'form') {
-                    const script = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map(match => match[1]).find(text => text.includes("getElementById('lines')"));
-                    assert(script);
-                    await page.addScriptTag({ content: script });
+                    const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map(match => match[1]).filter(text => text.includes("getElementById('lines')"));
+                    assert.equal(scripts.length,2);
+                    for(const script of scripts) await page.addScriptTag({ content: script });
                     await page.locator('#branch').selectOption({ label: 'Test Lusaka' });
+                    await page.locator('[data-service]').selectOption('11');
+                    await expect(page.locator('[name="items[0][description]"]')).toHaveValue('Road freight');
+                    await expect(page.locator('[name="items[0][unit_price]"]')).toHaveValue('116.00');
+                    await expect(page.locator('[name="items[0][tax_mode]"]')).toHaveValue('inclusive');
+                    await expect(page.locator('[data-total="total_minor"]')).toHaveText('ZMW 116.00');
+                    await page.locator('#payment-terms').selectOption('net30');
+                    const issueDate=await page.locator('#issued').inputValue();const dueDate=new Date(issueDate+'T12:00:00Z');dueDate.setUTCDate(dueDate.getUTCDate()+30);
+                    await expect(page.locator('#due')).toHaveValue(dueDate.toISOString().slice(0,10));
                     await page.locator('#customer-search').fill('Test');
                     await page.getByRole('button', { name: 'Test Customer customer@test.example' }).click();
                     await expect(page.locator('#client-id')).toHaveValue('1');
@@ -66,6 +76,14 @@ const assert = require('assert/strict');
                     await page.getByRole('tab',{name:'Plain invoice',exact:true}).click();
                     await page.locator('#branch').selectOption('');
                     await expect(page.locator('#client-id')).toHaveValue('');
+                } else if(screen==='settings') {
+                    await page.getByRole('tab',{name:'Tax categories',exact:true}).click();
+                    await expect(page.locator('#tax-settings')).toBeVisible();
+                    await page.getByRole('tab',{name:'Services',exact:true}).click();
+                    await expect(page.locator('#service-settings')).toBeVisible();
+                    await expect(page.locator('#service-settings')).toContainText('Service test');
+                    await page.getByRole('tab',{name:'Billing profile',exact:true}).click();
+                    await expect(page.locator('[name="legal_name"]')).toHaveValue('Configured Company');
                 } else {
                     await page.getByRole('button', { name: 'More options' }).click();
                     await expect(page.getByRole('link', { name: 'Download PDF', exact: true })).toBeVisible();

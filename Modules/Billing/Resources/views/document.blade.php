@@ -20,6 +20,7 @@
         <div><h2>{{ $type === 'invoices' ? 'Bill to' : 'Prepared for' }}</h2><strong>{{ $customer['name'] }}</strong><p>{{ $customer['email'] ?? '' }}</p></div>
         <div class="sales-document-state"><span class="sales-status sales-status-{{ $document->status }}">{{ ucfirst(str_replace('_', ' ', $document->status)) }}</span></div>
     </section>
+    @include('billing::document-metadata')
     @php $shipping = json_decode($document->shipment_details ?? 'null', true); @endphp
     @if ($shipping)
     <section class="sales-shipping-summary mb-4">
@@ -35,12 +36,14 @@
     </section>
     @endif
     <div class="table-responsive sales-items-wrap"><table class="sales-lines"><thead><tr><th scope="col">Description</th><th scope="col">Qty</th><th scope="col">Unit price</th><th scope="col">Discount</th><th scope="col">Tax</th><th scope="col">Amount</th></tr></thead><tbody>
-        @foreach ($items as $item)<tr><td data-label="Description"><strong>{{ $item->description }}</strong></td><td data-label="Quantity">{{ number_format($item->quantity_hundredths / 100, 2) }}</td><td data-label="Unit price">{{ $money($item->unit_price_minor) }}</td><td data-label="Discount">{{ $money($item->discount_minor) }}</td><td data-label="Tax">{{ $money($item->tax_minor) }}</td><td data-label="Amount"><strong>{{ $money($item->total_minor) }}</strong></td></tr>@endforeach
+        @foreach ($items as $item)<tr><td data-label="Description"><strong>{{ $item->description }}</strong></td><td data-label="Quantity">{{ number_format(($item->quantity_thousandths ?? $item->quantity_hundredths*10) / 1000, 3) }} {{ $item->unit??'' }}</td><td data-label="Unit price">{{ $money($item->unit_price_minor) }}<small class="d-block">{{ ($item->tax_mode??'exclusive')==='inclusive'?'Includes tax':'Excludes tax' }}</small></td><td data-label="Discount (excl. tax)">{{ $money($item->discount_minor) }}</td><td data-label="Tax">{{ $money($item->tax_minor) }}</td><td data-label="Amount"><strong>{{ $money($item->total_minor) }}</strong></td></tr>@endforeach
     </tbody></table></div>
     <div class="sales-document-bottom">
         <section class="sales-terms">@if ($document->terms)<h2>Terms &amp; payment instructions</h2><p>{{ $document->terms }}</p>@endif</section>
         <dl class="sales-totals"><dt>Subtotal</dt><dd>{{ $money($document->subtotal_minor) }}</dd><dt>Discount</dt><dd>{{ $money($document->discount_minor) }}</dd><dt>Tax</dt><dd>{{ $money($document->tax_minor) }}</dd><dt class="sales-grand">Total</dt><dd class="sales-grand">{{ $money($document->total_minor) }}</dd>
         @if ($type === 'invoices' && empty($originalDocument))<dt>Amount paid</dt><dd>{{ $money($document->paid_minor) }}</dd><dt class="sales-balance">Balance due</dt><dd class="sales-balance">{{ $money($document->total_minor - $document->paid_minor) }}</dd>@endif</dl>
     </div>
+    @include('billing::tax-summary')
+    @if(!empty($issuer['payment_instructions']))<section class="sales-terms"><h2>Payment instructions</h2><p style="white-space:pre-wrap">{{ $issuer['payment_instructions'] }}</p></section>@endif
     <footer><strong>Thank you for choosing New World Cargo.</strong><span>{{ $issuer['branch'] ?? '' }}</span></footer>
 </article>

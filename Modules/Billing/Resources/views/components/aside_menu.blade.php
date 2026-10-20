@@ -4,9 +4,10 @@
     $showInvoices = $salesAccess->canView(auth()->user(), 'invoices');
     $showTransactions = auth()->user()?->can('access-finance-transactions');
     $showRefunds = auth()->user()?->can('approve-refund-requests');
+    $showSettings = (int)auth()->user()?->role === 1 || auth()->user()?->can('manage-billing-settings');
     $salesActive = request()->routeIs('billing.*', 'transxn.index', 'refund-requests.*');
 @endphp
-@if ($showQuotations || $showInvoices || $showTransactions || $showRefunds)
+@if ($showQuotations || $showInvoices || $showTransactions || $showRefunds || $showSettings)
 <li class="nav-item {{ $salesActive ? 'menu-open' : '' }}">
     <a href="#" class="nav-link {{ $salesActive ? 'active' : '' }}" aria-label="Sales menu">
         <i class="fas fa-briefcase fa-fw" aria-hidden="true"></i>
@@ -40,6 +41,9 @@
                 <i class="fas fa-file-invoice-dollar fa-fw" aria-hidden="true"></i><p>Invoices</p>
             </a>
         </li>
+        @endif
+        @if ((int)auth()->user()?->role === 1 || auth()->user()?->can('manage-billing-settings'))
+        <li class="nav-item"><a href="{{ route('billing.settings') }}" class="nav-link {{ request()->routeIs('billing.settings*')?'active':'' }}"><i class="fas fa-cog fa-fw" aria-hidden="true"></i><p>Sales settings</p></a></li>
         @endif
     </ul>
 </li>

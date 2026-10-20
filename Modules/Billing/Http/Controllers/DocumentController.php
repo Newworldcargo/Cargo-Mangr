@@ -33,14 +33,13 @@ class DocumentController extends Controller
         $branches = Branch::query();
         if ((int) $request->user()->role !== 1) $branches->whereIn('id', app(BranchAccessService::class)->branchIdsFor($request->user()));
         $items = $document ? $this->items($type, $document) : [];
-        $lines = array_map(fn ($line) => [
-            'description' => $line->description, 'quantity' => number_format($line->quantity_hundredths / 100, 2, '.', ''),
-            'unit_price' => number_format($line->unit_price_minor / 100, 2, '.', ''),
-            'discount' => number_format($line->discount_minor / 100, 2, '.', ''),
-            'tax_percent' => number_format($line->tax_basis_points / 100, 2, '.', ''),
-        ], $items);
+        $lines = array_map([\Modules\Billing\Services\InvoiceAmounts::class,'editableLine'], $items);
+        $branchList = $branches->orderBy('name')->get();
+        $selectedBranch = (int) old('branch_id',$document->branch_id ?? 0);
+        $catalogue = $branchList->contains('id',$selectedBranch) ? app(\Modules\Billing\Services\SalesConfiguration::class)->catalogue($selectedBranch) : null;
         return view('billing::form', [
-            'type' => $type, 'document' => $document, 'branches' => $branches->orderBy('name')->get(),
+            'type' => $type, 'document' => $document, 'branches' => $branchList, 'catalogue'=>$catalogue,
+            'details'=>old('details',$document ? json_decode($document->document_details ?? 'null',true) : []),
             'lines' => old('items', $lines ?: [['description' => '', 'quantity' => '1', 'unit_price' => '', 'discount' => '0', 'tax_percent' => '0']]),
             'key' => (string) Str::uuid(),
             'shipmentDetails' => old('shipment_details', $document ? json_decode($document->shipment_details ?? 'null', true) : null),
@@ -62,6 +61,33 @@ class DocumentController extends Controller
             });
         }
         return response()->json($query->orderBy('name')->limit(20)->get(['id', 'name', 'email']));
+    }
+
+    public function catalogue(Request $request)
+    {
+        $access=app(SalesAccess::class);
+        abort_unless($access->canView($request->user(),'invoices') || $access->canView($request->user(),'quotations'),403);
+        $request->validate(['branch_id'=>'required|integer']);
+        $configuration=app(\Modules\Billing\Services\SalesConfiguration::class);
+        $branch=$configuration->branch($request->user(),(int)$request->branch_id);
+        return response()->json($configuration->catalogue($branch->id));
+    }
+
+    public function preview(Request $request)
+    {
+        $access=app(SalesAccess::class);
+        abort_unless($access->canView($request->user(),'invoices') || $access->canView($request->user(),'quotations'),403);
+        $data=$request->validate(['branch_id'=>'required|integer','issue_date'=>'required|date_format:Y-m-d','items'=>'required|array|min:1|max:100',
+            'items.*.description'=>'nullable|string|max:500','items.*.quantity'=>'required|string|max:20','items.*.unit_price'=>'required|string|max:20',
+            'items.*.discount'=>'nullable|string|max:20','items.*.tax_id'=>'required|integer','items.*.tax_mode'=>'required|in:inclusive,exclusive',
+            'items.*.unit'=>'required|in:'.implode(',',\Modules\Billing\Services\SalesConfiguration::UNITS),'items.*.service_id'=>'nullable|integer']);
+        $config=app(\Modules\Billing\Services\SalesConfiguration::class);
+        $branch=$config->branch($request->user(),(int)$data['branch_id']);
+        $items=$config->lines($data['items'],$branch->id,$data['issue_date']);
+        foreach($items as &$item) $item['description']=$item['description'] ?: 'Service';
+        try { $amounts=\Modules\Billing\Services\InvoiceAmounts::calculate($items); }
+        catch(DomainException $error) { throw ValidationException::withMessages(['items'=>$error->getMessage()]); }
+        return response()->json(['currency'=>app(BranchAccessService::class)->currencyFor(null,$branch,true)]+$amounts);
     }
 
     public function shipments(Request $request)
@@ -121,7 +147,7 @@ class DocumentController extends Controller
     public function store(Request $request, string $type, ?int $id = null)
     {
         $this->authorizeAction($request, $type, $id ? 'edit' : 'create');
-        if ($id) $this->document($request, $type, $id);
+        $existingDocument = $id ? $this->document($request, $type, $id) : null;
         $data = $request->validate([
             'request_key' => 'required|uuid', 'revision' => 'nullable|integer|min:1',
             'client_id' => 'required|integer', 'branch_id' => 'required|integer',
@@ -130,14 +156,31 @@ class DocumentController extends Controller
             'items.*.description' => 'required|string|max:500', 'items.*.quantity' => 'required|string|max:20',
             'items.*.unit_price' => 'required|string|max:20', 'items.*.discount' => 'required|string|max:20',
             'items.*.tax_percent' => 'required|string|max:20',
+            'items.*.tax_id'=>'required|integer','items.*.tax_mode'=>'required|in:inclusive,exclusive',
+            'items.*.unit'=>'required|in:'.implode(',',\Modules\Billing\Services\SalesConfiguration::UNITS), 'items.*.service_id'=>'nullable|integer',
+            'details.sales_agent_id'=>'nullable|integer','details.order_reference'=>'nullable|string|max:120',
+            'details.customer_address'=>'nullable|string|max:1000','details.customer_tpin'=>'nullable|string|max:40',
+            'details.customer_notes'=>'nullable|string|max:2000','details.internal_notes'=>'nullable|string|max:2000',
+            'details.service_from'=>'nullable|date_format:Y-m-d','details.service_until'=>'nullable|date_format:Y-m-d|after_or_equal:details.service_from',
+            'details.payment_terms'=>'nullable|in:custom,receipt,net7,net14,net30,net60',
         ]);
         $branch = Branch::findOrFail($data['branch_id']);
         if ((int) $request->user()->role !== 1) abort_unless(app(BranchAccessService::class)->branchIdsFor($request->user())->contains($branch->id), 403);
         $client = app(SalesAccess::class)->customers($request->user(), $branch->id)->findOrFail($data['client_id']);
         $data['currency'] = app(BranchAccessService::class)->currencyFor(null, $branch, true);
+        if($existingDocument && $existingDocument->currency !== $data['currency']) throw ValidationException::withMessages(['branch_id'=>'This draft uses a different currency. Create a new draft in the selected branch currency instead of relabelling its prices.']);
         $data['shipment_details'] = \Modules\Billing\Services\ShipmentDetails::validated($request->all());
+        $configuration=app(\Modules\Billing\Services\SalesConfiguration::class);
+        $data['items']=$configuration->lines($data['items'],$branch->id,$data['issue_date']);
+        $data['document_details']=$configuration->details($data,$branch->id,$request->user());
+        $paymentTerms=$data['document_details']['payment_terms'] ?? 'custom';
+        if($paymentTerms !== 'custom') $data['due_date']=\Carbon\Carbon::parse($data['issue_date'])->addDays($paymentTerms === 'receipt' ? 0 : (int)substr($paymentTerms,3))->toDateString();
         $data['customer_snapshot'] = ['name' => $client->name, 'email' => $client->email];
         $data['issuer_snapshot'] = ['name' => 'New World Cargo', 'branch' => $branch->name];
+        if($profile=DB::table('billing_profiles')->where('branch_id',$branch->id)->first()) {
+            $data['issuer_snapshot']=['name'=>$profile->legal_name,'branch'=>$branch->name,'address'=>$profile->address,'tpin'=>$profile->tpin,
+                'vat_status'=>$profile->vat_status,'payment_instructions'=>$profile->payment_instructions];
+        }
         try {
             if ($type === 'quotations') {
                 $id = app(QuotationLedger::class)->save($data, $request->user()->id, $id, (int) ($data['revision'] ?? 1));
@@ -157,8 +200,9 @@ class DocumentController extends Controller
         $document = $this->document($request, $type, $id);
         $items = $this->items($type, $document);
         $payments = $type === 'invoices' ? DB::table('billing_payments')->where('invoice_id', $id)->orderBy('id')->get() : collect();
-        $events = DB::table($type === 'invoices' ? 'billing_events' : 'billing_quotation_events')
-            ->where($type === 'invoices' ? 'invoice_id' : 'quotation_id', $id)->orderByDesc('id')->paginate(20);
+        $eventTable=$type === 'invoices' ? 'billing_events' : 'billing_quotation_events';
+        $events = DB::table($eventTable)->leftJoin('users','users.id','=',$eventTable.'.actor_id')->select($eventTable.'.*','users.name as actor_name')
+            ->where($type === 'invoices' ? 'invoice_id' : 'quotation_id', $id)->orderByDesc($eventTable.'.id')->paginate(20);
         $deliveries = DB::table('billing_deliveries')->where('type', $type)->where('document_id', $id)->orderByDesc('id')->limit(50)->get();
         return view('billing::show', compact('type', 'document', 'items', 'payments', 'events', 'deliveries'));
     }
@@ -198,13 +242,12 @@ class DocumentController extends Controller
             'client_id' => $document->client_id, 'branch_id' => $document->branch_id, 'currency' => $document->currency,
             'customer_snapshot' => json_decode($document->customer_snapshot, true), 'issuer_snapshot' => json_decode($document->issuer_snapshot, true),
             'shipment_details' => json_decode($document->shipment_details ?? 'null', true),
+            'document_details' => json_decode($document->document_details ?? '[]',true),
             'issue_date' => now()->toDateString(), 'due_date' => now()->addDays(14)->toDateString(), 'terms' => $document->terms,
-            'items' => array_map(fn ($item) => [
-                'description' => $item->description, 'quantity' => number_format($item->quantity_hundredths / 100, 2, '.', ''),
-                'unit_price' => number_format($item->unit_price_minor / 100, 2, '.', ''),
-                'discount' => number_format($item->discount_minor / 100, 2, '.', ''), 'tax_percent' => number_format($item->tax_basis_points / 100, 2, '.', ''),
-            ], $this->items($type, $document)),
+            'items' => array_map([\Modules\Billing\Services\InvoiceAmounts::class,'editableLine'], $this->items($type, $document)),
         ];
+        $terms=$data['document_details']['payment_terms']??'custom';
+        if($terms!=='custom')$data['due_date']=now()->addDays($terms==='receipt'?0:(int)substr($terms,3))->toDateString();
         try {
             $newId = $type === 'invoices' ? app(InvoiceLedger::class)->createDraft($data, $request->user()->id) : app(QuotationLedger::class)->save($data, $request->user()->id);
         } catch (DomainException $error) { throw ValidationException::withMessages(['document' => $error->getMessage()]); }
@@ -261,6 +304,7 @@ class DocumentController extends Controller
             'paid_on' => 'nullable|date_format:Y-m-d', 'request_key' => 'nullable|uuid',
         ]);
         try {
+            if($action === 'issue' && $document->status==='draft') app(\Modules\Billing\Services\SalesConfiguration::class)->assertReady($document,$this->items($type,$document));
             if ($type === 'quotations') {
                 $invoiceId = app(QuotationLedger::class)->transition($id, $action, $request->user()->id, $data['note'] ?? '');
                 if ($invoiceId) return redirect()->route('billing.documents.show', ['type' => 'invoices', 'id' => $invoiceId]);

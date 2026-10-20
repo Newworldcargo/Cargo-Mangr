@@ -31,6 +31,8 @@ class BillingLedgerTest extends TestCase
         (new \AddSalesDocuments())->up();
         require_once __DIR__ . '/../../Modules/Billing/Database/Migrations/2026_10_20_000001_add_sales_shipment_details.php';
         (new \AddSalesShipmentDetails())->up();
+        require_once __DIR__ . '/../../Modules/Billing/Database/Migrations/2026_10_20_000002_extend_sales_invoicing.php';
+        (new \ExtendSalesInvoicing())->up();
         $this->ledger = new InvoiceLedger($this->db);
     }
 
@@ -51,6 +53,15 @@ class BillingLedgerTest extends TestCase
             'issuer_snapshot' => ['name' => 'New World Cargo'],
             'items' => [['description' => 'Delivery', 'quantity' => '1', 'unit_price' => '100']],
         ], $overrides);
+    }
+
+    public function test_inclusive_discount_rounding_and_milliquantities(): void
+    {
+        $result=InvoiceAmounts::calculate([['description'=>'Service','quantity'=>'1','unit_price'=>'116','discount'=>'11.60','tax_percent'=>'16','tax_mode'=>'inclusive']]);
+        $this->assertSame(10000,$result['subtotal_minor']);$this->assertSame(1000,$result['discount_minor']);
+        $this->assertSame(1440,$result['tax_minor']);$this->assertSame(10440,$result['total_minor']);
+        $result=InvoiceAmounts::calculate([['description'=>'Weight','quantity'=>'0.001','unit_price'=>'1000']]);
+        $this->assertSame(100,$result['total_minor']);$this->assertSame(1,$result['items'][0]['quantity_thousandths']);
     }
 
     private function payment(array $overrides = []): array

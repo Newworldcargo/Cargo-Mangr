@@ -16,6 +16,7 @@ class SalesDocumentsTest extends TestCase
     use RefreshDatabase;
     private $branch;
     private $client;
+    private $taxId;
 
     protected function setUp(): void
     {
@@ -23,6 +24,8 @@ class SalesDocumentsTest extends TestCase
         $this->actingAs(User::create(['name'=>'Sales Admin','email'=>'sales@test.example','password'=>bcrypt('test'),'role'=>1]));
         $this->branch = Branch::create(['name'=>'Test Lusaka','email'=>'branch@test.example','code'=>1,'user_id'=>auth()->id(),'default_currency'=>'ZMW']);
         $this->client = Client::create(['name'=>'Test Customer','email'=>'customer@test.example','code'=>1,'user_id'=>auth()->id(),'branch_id'=>$this->branch->id]);
+        DB::table('billing_profiles')->insert(['branch_id'=>$this->branch->id,'legal_name'=>'Test Cargo','address'=>'Test billing address','vat_status'=>'not_registered']);
+        $this->taxId=DB::table('billing_tax_rates')->insertGetId(['branch_id'=>$this->branch->id,'label'=>'Non-VAT','category'=>'non_vat','basis_points'=>0,'effective_from'=>'2000-01-01','active'=>true]);
         DB::table('currencies')->where('code','USD')->update(['default'=>1]);
         config(['messaging.activation_ready'=>true]);
         MessagingSetting::updateOrCreate(['id'=>1],['email_enabled'=>true]);
@@ -32,7 +35,68 @@ class SalesDocumentsTest extends TestCase
     {
         return ['request_key'=>(string)Str::uuid(),'branch_id'=>$this->branch->id,'client_id'=>$this->client->id,
             'issue_date'=>now()->toDateString(),'due_date'=>now()->addDays(14)->toDateString(),
-            'items'=>[['description'=>'Delivery','quantity'=>'1','unit_price'=>'100','discount'=>'0','tax_percent'=>'0']], 'terms'=>'Payment due in 14 days.'];
+            'items'=>[['description'=>'Delivery','quantity'=>'1','unit_price'=>'100','discount'=>'0','tax_percent'=>'0','tax_id'=>$this->taxId,'tax_mode'=>'exclusive','unit'=>'service']], 'terms'=>'Payment due in 14 days.'];
+    }
+
+    public function test_tax_inclusive_preview_uses_configured_tax_and_three_decimal_quantity(): void
+    {
+        DB::table('billing_profiles')->where('branch_id',$this->branch->id)->update(['vat_status'=>'registered','tpin'=>'TEST-TPIN']);
+        DB::table('billing_tax_rates')->where('id',$this->taxId)->update(['category'=>'standard','label'=>'Test VAT','basis_points'=>1600]);
+        $data=$this->input();$data['items'][0]=array_merge($data['items'][0],['quantity'=>'0.125','unit_price'=>'116','tax_percent'=>'99','tax_mode'=>'inclusive','unit'=>'kg']);
+        $this->postJson(route('billing.preview'),$data)->assertOk()->assertJsonPath('total_minor',1450)->assertJsonPath('tax_minor',200)->assertJsonPath('subtotal_minor',1250);
+        $data['details']=['sales_agent_id'=>auth()->id(),'order_reference'=>'PO-123','customer_address'=>'Customer address','customer_tpin'=>'CLIENT-TPIN',
+            'customer_notes'=>'Delivery note for customer','internal_notes'=>'PRIVATE TEST NOTE','payment_terms'=>'net30'];
+        $this->post(route('billing.documents.store',['type'=>'invoices']),$data)->assertSessionHasNoErrors();
+        $invoice=DB::table('billing_invoices')->first();$item=DB::table('billing_invoice_items')->first();
+        $this->assertSame(125,(int)$item->quantity_thousandths);$this->assertSame(1600,(int)$item->tax_basis_points);
+        $this->assertSame(now()->addDays(30)->toDateString(),$invoice->due_date);
+        $this->action($invoice->id,'issue')->assertSessionHasNoErrors();
+        $html=view('billing::pdf',['document'=>$invoice,'type'=>'invoices','items'=>[$item]])->render();
+        $this->assertStringContainsString('0.125 kg',$html);$this->assertStringContainsString('PO-123',$html);
+        $this->assertStringContainsString('TEST-TPIN',$html);$this->assertStringNotContainsString('PRIVATE TEST NOTE',$html);
+        $bytes=app(DocumentPdf::class)->get('invoices',$invoice->id);
+        DB::table('billing_tax_rates')->where('id',$this->taxId)->update(['basis_points'=>1700]);
+        $this->assertSame($bytes,app(DocumentPdf::class)->get('invoices',$invoice->id));
+        $this->get(route('billing.invoices.index',['q'=>'Test Customer','agent'=>'Sales Admin']))->assertOk()->assertSee($invoice->number??'NWC-INV');
+        DB::table('billing_tax_rates')->where('id',$this->taxId)->update(['active'=>false]);
+        $this->postJson(route('billing.preview'),$data)->assertUnprocessable()->assertJsonValidationErrors('items.0.tax_id');
+    }
+
+    public function test_sales_configuration_crud_permissions_and_invalid_tax_combinations(): void
+    {
+        $profile=['branch_id'=>$this->branch->id,'legal_name'=>'Configured Company','address'=>'Registered address','vat_status'=>'registered','tpin'=>'TEST-TPIN'];
+        $this->post(route('billing.settings.save',['section'=>'profile']),$profile)->assertSessionHasNoErrors();
+        $tax=['branch_id'=>$this->branch->id,'label'=>'Exempt service','category'=>'exempt','rate'=>'16','effective_from'=>'2026-01-01','active'=>1];
+        $this->post(route('billing.settings.save',['section'=>'tax']),$tax)->assertSessionHasErrors('settings');
+        $tax['rate']='0';$this->post(route('billing.settings.save',['section'=>'tax']),$tax)->assertSessionHasNoErrors();
+        $service=['branch_id'=>$this->branch->id,'name'=>'Service test','unit'=>'kg','price'=>'20','tax_id'=>$this->taxId,'tax_mode'=>'exclusive','active'=>1];
+        $this->post(route('billing.settings.save',['section'=>'service']),$service)->assertSessionHasNoErrors();
+        $this->getJson(route('billing.catalogue',['branch_id'=>$this->branch->id]))->assertOk()->assertJsonFragment(['name'=>'Service test','price_minor'=>2000]);
+        $settings=$this->get(route('billing.settings',['branch_id'=>$this->branch->id]))->assertOk()->assertSee('Configured Company');
+        if(getenv('NWC_SALES_PREVIEW')==='1')file_put_contents('/tmp/nwc-sales-settings.html',$settings->getContent());
+        $this->actingAs(User::create(['name'=>'Restricted','email'=>'restricted@test.example','password'=>bcrypt('test'),'role'=>0]));
+        $this->post(route('billing.settings.save',['section'=>'profile']),$profile)->assertForbidden();
+        $this->get(route('billing.settings'))->assertForbidden();
+    }
+
+    public function test_draft_requires_review_after_tax_change_and_scope_cannot_be_bypassed(): void
+    {
+        $id=$this->create();
+        DB::table('billing_tax_rates')->where('id',$this->taxId)->update(['active'=>false]);
+        $this->action($id,'issue')->assertSessionHasErrors('items.0.tax_id');
+        $this->assertSame('draft',DB::table('billing_invoices')->find($id)->status);
+        $other=DB::table('billing_tax_rates')->insertGetId(['branch_id'=>9999,'label'=>'Other branch','category'=>'non_vat','basis_points'=>0,'effective_from'=>'2000-01-01','active'=>true]);
+        $data=$this->input();$data['items'][0]['tax_id']=$other;
+        $this->postJson(route('billing.preview'),$data)->assertUnprocessable()->assertJsonValidationErrors('items.0.tax_id');
+        $this->post(route('billing.documents.store',['type'=>'invoices']),$data)->assertSessionHasErrors('items.0.tax_id');
+        $this->assertSame(1,DB::table('billing_invoices')->count());
+    }
+
+    public function test_branch_currency_change_cannot_relabel_existing_draft_prices(): void
+    {
+        $id=$this->create();$this->branch->update(['default_currency'=>'USD']);
+        $this->put(route('billing.documents.update',['type'=>'invoices','id'=>$id]),$this->input()+['revision'=>1])->assertSessionHasErrors('branch_id');
+        $this->assertDatabaseHas('billing_invoices',['id'=>$id,'currency'=>'ZMW','total_minor'=>10000]);
     }
 
     public function test_customer_search_matches_reordered_names_and_unassigned_customers_can_be_billed(): void

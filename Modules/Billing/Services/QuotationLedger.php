@@ -58,6 +58,8 @@ final class QuotationLedger
                 $input['request_key'] = (string) Str::uuid();
                 $input['issue_date'] = now()->toDateString();
                 $input['due_date'] = now()->addDays(14)->toDateString();
+                $terms=$input['document_details']['payment_terms']??'custom';
+                if($terms!=='custom')$input['due_date']=now()->addDays($terms==='receipt'?0:(int)substr($terms,3))->toDateString();
                 $invoiceId = app(InvoiceLedger::class)->createDraft($input, $actor);
                 $changes += ['status' => 'converted', 'converted_invoice_id' => $invoiceId];
             } else {
