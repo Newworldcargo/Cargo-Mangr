@@ -6,7 +6,7 @@ const assert = require('assert/strict');
     const browser = await chromium.launch({ args: ['--no-sandbox'] });
     try {
         for (const width of [1440, 390]) {
-            for (const screen of ['form', 'document', 'settings']) {
+            for (const screen of ['form', 'document', 'settings', 'shipping-rates']) {
                 const html = fs.readFileSync('/tmp/nwc-sales-' + screen + '.html', 'utf8');
                 const page = await browser.newPage({ viewport: { width, height: 1000 } });
                 await page.route('**/*', async route => {
@@ -76,6 +76,19 @@ const assert = require('assert/strict');
                     await page.getByRole('tab',{name:'Plain invoice',exact:true}).click();
                     await page.locator('#branch').selectOption('');
                     await expect(page.locator('#client-id')).toHaveValue('');
+                } else if(screen==='shipping-rates') {
+                    const script=[...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map(match=>match[1]).find(text=>text.includes("getElementById('shipping-bands')"));
+                    assert(script);await page.addScriptTag({content:script});
+                    await expect(page.locator('.shipping-band')).toHaveCount(2);
+                    await page.getByRole('button',{name:'Add band',exact:true}).click();
+                    await expect(page.locator('.shipping-band')).toHaveCount(3);
+                    await page.locator('[name="tiers[2][from]"]').fill('5');
+                    await page.locator('[name="tiers[2][rate]"]').fill('365');
+                    await page.getByRole('button',{name:'Remove band',exact:true}).last().click();
+                    await expect(page.locator('.shipping-band')).toHaveCount(2);
+                    await page.locator('[name="currency"]').selectOption('ZMW');
+                    await page.locator('[name="active"][type="checkbox"]').uncheck();
+                    await expect(page.locator('[name="active"][type="checkbox"]')).not.toBeChecked();
                 } else if(screen==='settings') {
                     await page.getByRole('tab',{name:'Tax categories',exact:true}).click();
                     await expect(page.locator('#tax-settings')).toBeVisible();

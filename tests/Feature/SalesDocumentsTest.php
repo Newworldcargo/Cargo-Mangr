@@ -38,6 +38,83 @@ class SalesDocumentsTest extends TestCase
             'items'=>[['description'=>'Delivery','quantity'=>'1','unit_price'=>'100','discount'=>'0','tax_percent'=>'0','tax_id'=>$this->taxId,'tax_mode'=>'exclusive','unit'=>'service']], 'terms'=>'Payment due in 14 days.'];
     }
 
+    public function test_shipping_rate_bands_conversion_snapshots_and_configuration_controls(): void
+    {
+        $origin=Branch::create(['name'=>'Origin','email'=>'origin@test.example','code'=>2,'user_id'=>auth()->id(),'default_currency'=>'USD']);
+        $service=DB::table('billing_services')->insertGetId(['branch_id'=>$this->branch->id,'name'=>'Sea freight','unit'=>'cbm',
+            'price_minor'=>100,'currency'=>'ZMW','tax_id'=>$this->taxId,'tax_mode'=>'exclusive','active'=>true]);
+        DB::table('currency_exchange_rates')->insert(['from_currency'=>'USD','to_currency'=>'ZMW','exchange_rate'=>20]);
+        $rate=['branch_id'=>$this->branch->id,'service_id'=>$service,'revision'=>0,'currency'=>'USD','unit'=>'cbm','minimum'=>'0.1','rounding'=>'0',
+            'effective_from'=>'2020-01-01','effective_until'=>null,'origin_id'=>$origin->id,'destination_id'=>$this->branch->id,
+            'method'=>'sea','category'=>'general','duty'=>'included','active'=>1,'booking_enabled'=>1,'weight_basis'=>'actual',
+            'tiers'=>[['from'=>'0.1','rate'=>'379'],['from'=>'1','rate'=>'369']]];
+        $this->post(route('billing.shipping-tariffs.save'),$rate)->assertSessionHasNoErrors();
+        $this->post(route('billing.shipping-tariffs.save'),$rate)->assertSessionHasErrors('tariff');
+        $page=$this->get(route('billing.shipping-tariffs',['branch_id'=>$this->branch->id,'service_id'=>$service]))->assertOk()->assertSee('Sea freight');
+        if(getenv('NWC_SALES_PREVIEW')==='1')file_put_contents('/tmp/nwc-sales-shipping-rates.html',$page->getContent());
+        $data=$this->input();$data['items'][0]['service_id']=$service;$data['items'][0]['quantity']='1';
+        $this->postJson(route('billing.preview'),$data)->assertOk()->assertJsonPath('total_minor',738000);
+        $data['items'][0]['quantity']='0.05';
+        $this->postJson(route('billing.preview'),$data)->assertOk()->assertJsonPath('total_minor',75800);
+        $this->post(route('billing.documents.store',['type'=>'invoices']),$data)->assertSessionHasNoErrors();
+        $invoice=DB::table('billing_invoices')->first();
+        $snapshot=json_decode(DB::table('billing_invoice_items')->first()->pricing_snapshot,true);
+        $this->assertEquals(20,$snapshot['exchange_rate']);
+        $this->assertEquals('0.05',$snapshot['measured_quantity']);
+        DB::table('currency_exchange_rates')->update(['exchange_rate'=>30]);
+        $this->action($invoice->id,'issue')->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('billing_invoices',['id'=>$invoice->id,'total_minor'=>75800]);
+        $this->post(route('billing.documents.duplicate',['type'=>'invoices','id'=>$invoice->id]),['request_key'=>(string)Str::uuid()])->assertSessionHasNoErrors();
+        $copy=DB::table('billing_invoices')->orderByDesc('id')->first();
+        $this->assertEquals(75800,$copy->total_minor);
+        $data['request_key']=(string)Str::uuid();
+        $this->post(route('billing.documents.store',['type'=>'quotations']),$data)->assertSessionHasNoErrors();
+        $quote=DB::table('billing_quotations')->first();
+        $ledger=app(\Modules\Billing\Services\QuotationLedger::class);
+        $ledger->transition($quote->id,'issue',auth()->id());
+        $ledger->transition($quote->id,'accept',auth()->id(),'Customer confirmed');
+        DB::table('currency_exchange_rates')->update(['exchange_rate'=>40]);
+        $converted=$ledger->transition($quote->id,'convert',auth()->id());
+        $this->assertDatabaseHas('billing_invoices',['id'=>$converted,'total_minor'=>113700]);
+        DB::table('currency_exchange_rates')->delete();
+        $this->postJson(route('billing.preview'),$data)->assertUnprocessable()->assertJsonValidationErrors('items.0.quantity');
+        DB::table('currency_exchange_rates')->insert(['from_currency'=>'ZMW','to_currency'=>'USD','exchange_rate'=>'0.05']);
+        $this->postJson(route('billing.preview'),$data)->assertOk()->assertJsonPath('total_minor',75800);
+        $this->actingAs(User::create(['name'=>'Customer','email'=>'tariff-customer@test.example','password'=>bcrypt('test'),'role'=>4]));
+        $this->get(route('billing.shipping-tariffs',['branch_id'=>$this->branch->id]))->assertForbidden();
+        $this->post(route('billing.shipping-tariffs.save'),$rate)->assertForbidden();
+    }
+
+    public function test_shipping_rate_volume_boundary_rounding_and_import_quote_share_the_calculator(): void
+    {
+        $origin=Branch::create(['name'=>'Origin','email'=>'origin@test.example','code'=>2,'user_id'=>auth()->id(),'default_currency'=>'USD']);
+        $service=DB::table('billing_services')->insertGetId(['branch_id'=>$this->branch->id,'name'=>'Small parcels','unit'=>'kg',
+            'price_minor'=>100,'currency'=>'ZMW','tax_id'=>$this->taxId,'tax_mode'=>'exclusive','active'=>true]);
+        $rate=['branch_id'=>$this->branch->id,'service_id'=>$service,'revision'=>0,'currency'=>'ZMW','unit'=>'kg','minimum'=>'1','rounding'=>'0.5','volume_below'=>'0.1',
+            'effective_from'=>'2020-01-01','effective_until'=>null,'origin_id'=>$origin->id,'destination_id'=>$this->branch->id,
+            'method'=>'air','category'=>'general','duty'=>'included','active'=>1,'booking_enabled'=>1,'weight_basis'=>'actual',
+            'tiers'=>[['from'=>'1','rate'=>'10']]];
+        $this->post(route('billing.shipping-tariffs.save'),$rate)->assertSessionHasNoErrors();
+        $data=$this->input();$data['items'][0]+= ['service_id'=>$service,'cargo_volume'=>'0.099'];
+        $data['items'][0]['quantity']='1.01';
+        $this->postJson(route('billing.preview'),$data)->assertOk()->assertJsonPath('total_minor',1500);
+        $quote=app(\Modules\CustomerPortalApi\Services\Pricing\ImportTariffQuote::class)->calculate([
+            'service'=>'import','pickup'=>['branchId'=>(string)$origin->id],'destination'=>['branchId'=>(string)$this->branch->id],
+            'transportMode'=>'air','cargo'=>['totalWeight'=>1.01,'totalVolume'=>0.099],
+        ],[]);
+        $this->assertEquals(15,$quote['total']);$this->assertSame('ZMW',$quote['currency']);
+        $data['items'][0]['cargo_volume']='0.1';
+        $this->postJson(route('billing.preview'),$data)->assertUnprocessable()->assertJsonValidationErrors('items.0.quantity');
+        $rate['revision']=1;$rate['tiers']=[['from'=>'1','rate'=>'10'],['from'=>'1','rate'=>'9']];
+        $this->post(route('billing.shipping-tariffs.save'),$rate)->assertSessionHasErrors('tariff');
+        $rate['tiers']=[['from'=>'1','rate'=>'10']];$rate['weight_basis']='chargeable';
+        $this->post(route('billing.shipping-tariffs.save'),$rate)->assertSessionHasErrors('tariff');
+        $rate['weight_basis']='actual';$rate['effective_until']='2020-01-02';
+        $this->post(route('billing.shipping-tariffs.save'),$rate)->assertSessionHasNoErrors();
+        $data['items'][0]['cargo_volume']='0.099';
+        $this->postJson(route('billing.preview'),$data)->assertUnprocessable()->assertJsonValidationErrors('items.0.quantity');
+    }
+
     public function test_tax_inclusive_preview_uses_configured_tax_and_three_decimal_quantity(): void
     {
         DB::table('billing_profiles')->where('branch_id',$this->branch->id)->update(['vat_status'=>'registered','tpin'=>'TEST-TPIN']);

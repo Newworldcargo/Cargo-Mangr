@@ -3,7 +3,7 @@
 @section('content')
 @include('billing::styles')
 @php $profile=$config['profile'];$tax=$taxes->firstWhere('id',(int)request('edit_tax'));$service=$services->firstWhere('id',(int)request('edit_service')); @endphp
-<div class="container-fluid sales-page sales-settings"><header class="sales-page-heading"><h1>Sales settings</h1></header>
+<div class="container-fluid sales-page sales-settings"><header class="sales-page-heading"><h1>Sales settings</h1><a class="btn btn-outline-primary" href="{{ route('billing.shipping-tariffs',['branch_id'=>$id]) }}">Shipping rates</a></header>
 @if(session('success'))<div class="alert alert-success" role="status">{{ session('success') }}</div>@endif
 @if($errors->any())<div class="alert alert-danger" role="alert">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif
 <form method="get" class="mb-4"><label for="settings-branch">Branch</label><select id="settings-branch" class="form-control" name="branch_id" onchange="this.form.submit()">@foreach($branches as $branch)<option value="{{ $branch->id }}" {{ $id===$branch->id?'selected':'' }}>{{ $branch->name }}</option>@endforeach</select></form>

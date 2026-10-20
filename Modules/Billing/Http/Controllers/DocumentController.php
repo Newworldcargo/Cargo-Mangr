@@ -80,7 +80,8 @@ class DocumentController extends Controller
         $data=$request->validate(['branch_id'=>'required|integer','issue_date'=>'required|date_format:Y-m-d','items'=>'required|array|min:1|max:100',
             'items.*.description'=>'nullable|string|max:500','items.*.quantity'=>'required|string|max:20','items.*.unit_price'=>'required|string|max:20',
             'items.*.discount'=>'nullable|string|max:20','items.*.tax_id'=>'required|integer','items.*.tax_mode'=>'required|in:inclusive,exclusive',
-            'items.*.unit'=>'required|in:'.implode(',',\Modules\Billing\Services\SalesConfiguration::UNITS),'items.*.service_id'=>'nullable|integer']);
+            'items.*.unit'=>'required|in:'.implode(',',\Modules\Billing\Services\SalesConfiguration::UNITS),'items.*.service_id'=>'nullable|integer',
+            'items.*.cargo_volume'=>'nullable|string|max:20']);
         $config=app(\Modules\Billing\Services\SalesConfiguration::class);
         $branch=$config->branch($request->user(),(int)$data['branch_id']);
         $items=$config->lines($data['items'],$branch->id,$data['issue_date']);
@@ -158,6 +159,7 @@ class DocumentController extends Controller
             'items.*.tax_percent' => 'required|string|max:20',
             'items.*.tax_id'=>'required|integer','items.*.tax_mode'=>'required|in:inclusive,exclusive',
             'items.*.unit'=>'required|in:'.implode(',',\Modules\Billing\Services\SalesConfiguration::UNITS), 'items.*.service_id'=>'nullable|integer',
+            'items.*.cargo_volume'=>'nullable|string|max:20',
             'details.sales_agent_id'=>'nullable|integer','details.order_reference'=>'nullable|string|max:120',
             'details.customer_address'=>'nullable|string|max:1000','details.customer_tpin'=>'nullable|string|max:40',
             'details.customer_notes'=>'nullable|string|max:2000','details.internal_notes'=>'nullable|string|max:2000',
@@ -244,7 +246,14 @@ class DocumentController extends Controller
             'shipment_details' => json_decode($document->shipment_details ?? 'null', true),
             'document_details' => json_decode($document->document_details ?? '[]',true),
             'issue_date' => now()->toDateString(), 'due_date' => now()->addDays(14)->toDateString(), 'terms' => $document->terms,
-            'items' => array_map([\Modules\Billing\Services\InvoiceAmounts::class,'editableLine'], $this->items($type, $document)),
+            'items' => array_map(function ($line) {
+                $item=\Modules\Billing\Services\InvoiceAmounts::editableLine($line);
+                if(!empty($line->pricing_snapshot)) {
+                    $item['quantity']='1'; $item['unit']='service';
+                    $item['pricing_snapshot']=json_decode($line->pricing_snapshot,true);
+                }
+                return $item;
+            }, $this->items($type, $document)),
         ];
         $terms=$data['document_details']['payment_terms']??'custom';
         if($terms!=='custom')$data['due_date']=now()->addDays($terms==='receipt'?0:(int)substr($terms,3))->toDateString();

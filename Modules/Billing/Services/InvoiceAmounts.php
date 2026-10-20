@@ -67,6 +67,7 @@ final class InvoiceAmounts
                 'tax_basis_points' => $taxRate, 'tax_minor' => $tax,
                 'total_minor' => $subtotal - $discount + $tax,
             ];
+            if (isset($item['pricing_snapshot'])) $line['pricing_snapshot']=json_encode($item['pricing_snapshot']);
             foreach (['subtotal_minor', 'discount_minor', 'tax_minor', 'total_minor'] as $key) {
                 $result[$key] += $line[$key];
                 if ($result[$key] > self::MAX_MINOR) {
@@ -93,12 +94,14 @@ final class InvoiceAmounts
 
     public static function editableLine(object $line): array
     {
+        $snapshot=isset($line->pricing_snapshot) ? json_decode($line->pricing_snapshot,true) : null;
         return ['description'=>$line->description,
-            'quantity'=>number_format(($line->quantity_thousandths ?? $line->quantity_hundredths*10)/1000,3,'.',''),
+            'quantity'=>$snapshot['measured_quantity'] ?? number_format(($line->quantity_thousandths ?? $line->quantity_hundredths*10)/1000,3,'.',''),
+            'cargo_volume'=>$snapshot['volume']??'',
             'unit_price'=>number_format($line->unit_price_minor/100,2,'.',''),
             'discount'=>number_format(($line->input_discount_minor ?? $line->discount_minor)/100,2,'.',''),
             'tax_percent'=>number_format($line->tax_basis_points/100,2,'.',''), 'tax_id'=>$line->tax_id ?? '',
             'tax_category'=>$line->tax_category??null,'tax_label'=>$line->tax_label??null,
-            'unit'=>$line->unit ?? 'service','service_id'=>$line->service_id ?? '', 'tax_mode'=>$line->tax_mode ?? 'exclusive'];
+            'unit'=>$snapshot['unit'] ?? $line->unit ?? 'service','service_id'=>$line->service_id ?? '', 'tax_mode'=>$line->tax_mode ?? 'exclusive'];
     }
 }

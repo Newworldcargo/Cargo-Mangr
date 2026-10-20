@@ -43,6 +43,7 @@
         <dl class="sales-totals"><dt>Subtotal</dt><dd>{{ $money($document->subtotal_minor) }}</dd><dt>Discount</dt><dd>{{ $money($document->discount_minor) }}</dd><dt>Tax</dt><dd>{{ $money($document->tax_minor) }}</dd><dt class="sales-grand">Total</dt><dd class="sales-grand">{{ $money($document->total_minor) }}</dd>
         @if ($type === 'invoices' && empty($originalDocument))<dt>Amount paid</dt><dd>{{ $money($document->paid_minor) }}</dd><dt class="sales-balance">Balance due</dt><dd class="sales-balance">{{ $money($document->total_minor - $document->paid_minor) }}</dd>@endif</dl>
     </div>
+    @include('billing::pricing-details')
     @include('billing::tax-summary')
     @if(!empty($issuer['payment_instructions']))<section class="sales-terms"><h2>Payment instructions</h2><p style="white-space:pre-wrap">{{ $issuer['payment_instructions'] }}</p></section>@endif
     <footer><strong>Thank you for choosing New World Cargo.</strong><span>{{ $issuer['branch'] ?? '' }}</span></footer>

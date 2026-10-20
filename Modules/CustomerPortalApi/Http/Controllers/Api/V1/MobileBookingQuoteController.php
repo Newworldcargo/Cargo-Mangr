@@ -47,6 +47,8 @@ class MobileBookingQuoteController extends PortalController
             'cargo' => ['required', 'array'],
             'cargo.items' => ['sometimes', 'array', 'max:100'],
             'cargo.totalWeight' => ['nullable', 'numeric', 'min:0', 'max:100000'],
+            'cargo.totalVolume' => ['nullable', 'numeric', 'min:0', 'max:10000'],
+            'cargo.category' => ['nullable', 'in:general,small_parcels,special,motorbike,heavy'],
             'cargo.declaredValue' => ['nullable', 'numeric', 'min:0'],
             'cargo.fragile' => ['required', 'boolean'],
             'cargo.packageType' => ['nullable', 'in:standard,container'],
@@ -70,17 +72,26 @@ class MobileBookingQuoteController extends PortalController
 
         try {
             $calculation = $pricingSettings->advancePricingEnabled($input['service'])
-                ? $calculator->calculate($input, $pricingSettings->ratesFor($input, $this->pricingRates()))
+                ? (app(\Modules\CustomerPortalApi\Services\Pricing\ImportTariffQuote::class)->calculate($input,$this->pricingRates())
+                    ?? $calculator->calculate($input, $pricingSettings->ratesFor($input,$this->pricingRates())))
                 : ['total' => 0, 'distanceKm' => $input['distanceKm'] ?? null,
                     'estimatedDurationMinutes' => null, 'pricingStatus' => 'pending_operations_pricing', 'breakdown' => []];
         } catch (UnsupportedMobilePricingRoute $exception) {
             return $this->problem($request, 'UNSUPPORTED_ROUTE', $exception->getMessage(), 422, [], false);
         } catch (InvalidArgumentException $exception) {
             return $this->problem($request, 'PRICING_NOT_CONFIGURED', 'Pricing is not available for this service in the current environment.', 503, [], true);
+        } catch (\DomainException | \Illuminate\Validation\ValidationException $exception) {
+            $calculation=['total'=>0,'distanceKm'=>null,'estimatedDurationMinutes'=>null,
+                'pricingStatus'=>'pending_operations_pricing','breakdown'=>[]];
         }
 
         $client = $this->customerContext->requireClient();
-        $currency = strtoupper((string) (ShipmentSetting::getVal('mobile_pricing_currency') ?: config('customerportalapi.booking_pricing.currency', 'ZMW')));
+        $currency = $calculation['currency'] ?? strtoupper((string) (ShipmentSetting::getVal('mobile_pricing_currency') ?: config('customerportalapi.booking_pricing.currency', 'ZMW')));
+        if ($input['service']==='import' && $calculation['pricingStatus']==='pending_operations_pricing') {
+            $hub=$input['receivingHub']??$input['destination'];
+            $branch=\Modules\Cargo\Entities\Branch::where('is_archived',0)->find($hub['branchId']??0);
+            if ($branch) $currency=app(\Modules\Cargo\Services\BranchAccessService::class)->currencyFor(null,$branch,true);
+        }
         $expiresAt = now()->addMinutes(max(1, (int) config('customerportalapi.booking_pricing.quote_minutes', 15)));
         $quote = PortalQuote::create([
             'client_id' => $client->id,

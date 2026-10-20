@@ -7,6 +7,7 @@ body{font-family:DejaVu Sans,sans-serif;font-size:10px;color:#17232d}h1{color:#0
 <p>{{ $issuer['name'] }} | {{ $issuer['branch'] ?? '' }}</p><h3>Prepared for</h3><p>{{ $customer['name'] }}<br>{{ $customer['email'] ?? '' }}</p><p>Date: {{ $document->issue_date }} | {{ $type === 'invoices' ? 'Due' : 'Valid until' }}: {{ $document->due_date }}</p>
 @include('billing::document-metadata')
 <table><thead><tr><th>Description</th><th>Quantity</th><th>Unit price</th><th>Discount (excl. tax)</th><th>Tax</th><th>Total</th></tr></thead><tbody>@foreach($items as $item)<tr><td>{{ $item->description }}</td><td>{{ number_format(($item->quantity_thousandths??$item->quantity_hundredths*10)/1000,3) }} {{ $item->unit??'' }}</td><td>{{ $money($item->unit_price_minor) }}<br>{{ ($item->tax_mode??'exclusive')==='inclusive'?'Incl. tax':'Excl. tax' }}</td><td>{{ $money($item->discount_minor) }}</td><td>{{ $money($item->tax_minor) }}</td><td>{{ $money($item->total_minor) }}</td></tr>@endforeach</tbody></table>
+@include('billing::pricing-details')
 @include('billing::tax-summary')
 <table class="totals"><tr><td>Subtotal</td><td>{{ $money($document->subtotal_minor) }}</td></tr><tr><td>Discount</td><td>{{ $money($document->discount_minor) }}</td></tr><tr><td>Tax</td><td>{{ $money($document->tax_minor) }}</td></tr><tr><td><strong>Total</strong></td><td><strong>{{ $money($document->total_minor) }}</strong></td></tr></table>
 @if($document->terms)<h3>Terms and payment instructions</h3><p style="white-space:pre-wrap">{{ $document->terms }}</p>@endif

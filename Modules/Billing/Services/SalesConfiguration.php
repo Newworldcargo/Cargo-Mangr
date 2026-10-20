@@ -10,7 +10,7 @@ use Modules\Cargo\Services\BranchAccessService;
 
 final class SalesConfiguration
 {
-    public const UNITS = ['service', 'kg', 'cbm', 'trip', 'hour', 'day', 'package'];
+    public const UNITS = ['service', 'kg', 'cbm', 'ton', 'trip', 'hour', 'day', 'package'];
 
     public function assertReady(object $document, array $items): void
     {
@@ -21,7 +21,7 @@ final class SalesConfiguration
         foreach(['name'=>'legal_name','address'=>'address','tpin'=>'tpin','vat_status'=>'vat_status'] as $snapshot=>$field) {
             if(($issuer[$snapshot]??null)!==$profile->$field) throw new \DomainException('The branch billing profile has changed. Edit and save this draft before issuing it.');
         }
-        $prepared=$this->lines(array_map([InvoiceAmounts::class,'editableLine'],$items),$document->branch_id,$document->issue_date);
+        $prepared=$this->lines(array_map([InvoiceAmounts::class,'editableLine'],$items),$document->branch_id,$document->issue_date,false);
         foreach($items as $index=>$item) {
             if(InvoiceAmounts::decimal($prepared[$index]['tax_percent'],10000)!==(int)$item->tax_basis_points || $prepared[$index]['tax_category']!==($item->tax_category??null)) {
                 throw new \DomainException('Tax settings have changed. Review and save this draft before issuing it.');
@@ -51,10 +51,14 @@ final class SalesConfiguration
         return ['currency'=>$currency, 'agents'=>$this->agents($branchId),
             'profile'=>DB::table('billing_profiles')->where('branch_id',$branchId)->first(),
             'taxes'=>DB::table('billing_tax_rates')->where('branch_id',$branchId)->where('active',true)->orderBy('label')->get(),
-            'services'=>DB::table('billing_services')->where('branch_id',$branchId)->where('currency',$currency)->where('active',true)->orderBy('name')->get()];
+            'services'=>DB::table('billing_services')->where('branch_id',$branchId)->where('currency',$currency)->where('active',true)->orderBy('name')->get()->map(function ($service) {
+                $tariff=app(ShippingTariff::class)->forService($service->id);
+                $service->shipping_tariff=$tariff ? json_decode($tariff->configuration,true) : null;
+                return $service;
+            })];
     }
 
-    public function lines(array $items, int $branchId, string $date): array
+    public function lines(array $items, int $branchId, string $date, bool $priceTariffs = true): array
     {
         $profile=DB::table('billing_profiles')->where('branch_id',$branchId)->first();
         $taxes = DB::table('billing_tax_rates')->where('branch_id',$branchId)->where('active',true)
@@ -70,6 +74,21 @@ final class SalesConfiguration
                 $branch = Branch::findOrFail($branchId);
                 if (!$service || $service->currency !== app(BranchAccessService::class)->currencyFor(null,$branch,true)) {
                     throw ValidationException::withMessages(["items.$index.service_id"=>'Choose an active service in this branch and currency.']);
+                }
+                $tariff=$priceTariffs ? app(ShippingTariff::class)->forService($service->id) : null;
+                if ($tariff) {
+                    try {
+                        $price=app(ShippingTariff::class)->calculate($tariff,(string)$item['quantity'],$service->currency,$date,$item['cargo_volume']??null);
+                    } catch (\DomainException $error) {
+                        throw ValidationException::withMessages(["items.$index.quantity"=>$error->getMessage()]);
+                    }
+                    if ((int)$item['tax_id'] !== (int)$service->tax_id) throw ValidationException::withMessages(["items.$index.tax_id"=>'Use the tax category configured for this shipping service.']);
+                    $item['description']=$service->name.' - '.$price['chargeable_quantity'].' '.$price['unit'];
+                    $item['quantity']='1';
+                    $item['unit']='service';
+                    $item['unit_price']=number_format($price['amount_minor']/100,2,'.','');
+                    $item['tax_mode']=$service->tax_mode;
+                    $item['pricing_snapshot']=$price;
                 }
             }
         }
