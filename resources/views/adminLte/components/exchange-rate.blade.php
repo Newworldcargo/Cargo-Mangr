@@ -238,7 +238,7 @@
     setInterval(checkAndResetRefreshCount, 60000);
 
     // Existing delete button event listener
-    document.getElementById('deleteItemBtn').addEventListener('click', function () {
+    document.getElementById('deleteItemBtn')?.addEventListener('click', function () {
         const deleteUrl = "{{ route('currency-reset') }}";
 
         fetch(deleteUrl, {

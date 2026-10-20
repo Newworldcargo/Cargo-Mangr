@@ -38,6 +38,79 @@ class SalesDocumentsTest extends TestCase
             'items'=>[['description'=>'Delivery','quantity'=>'1','unit_price'=>'100','discount'=>'0','tax_percent'=>'0','tax_id'=>$this->taxId,'tax_mode'=>'exclusive','unit'=>'service']], 'terms'=>'Payment due in 14 days.'];
     }
 
+    public function test_preview_without_tax_configuration_is_explicitly_an_estimate_and_cannot_be_saved(): void
+    {
+        DB::table('billing_tax_rates')->delete();
+        DB::table('billing_profiles')->delete();
+        $data=$this->input();unset($data['items'][0]['tax_id']);
+        $data['items'][0]['quantity']='10';$data['items'][0]['unit_price']='8.50';
+        $this->postJson(route('billing.preview'),$data)->assertOk()->assertJsonPath('total_minor',8500)->assertJsonPath('tax_pending',true);
+        $this->post(route('billing.documents.store',['type'=>'invoices']),$data)->assertSessionHasErrors();
+        $this->post(route('billing.documents.store',['type'=>'quotations']),$data)->assertSessionHasErrors();
+        $this->assertDatabaseCount('billing_invoices',0);
+        $this->assertDatabaseCount('billing_quotations',0);
+        $data['items'][0]['unit_price']='0';
+        $this->postJson(route('billing.preview'),$data)->assertOk()->assertJsonPath('total_minor',0);
+        $data['items'][0]['quantity']='0';
+        $this->postJson(route('billing.preview'),$data)->assertUnprocessable()->assertJsonValidationErrors('items.0.quantity');
+    }
+
+    public function test_real_browser_sales_editor_with_isolated_database(): void
+    {
+        if(getenv('NWC_SALES_LIVE_UAT')!=='1')$this->markTestSkipped('Opt-in real browser suite: NWC_SALES_LIVE_UAT=1.');
+        DB::table('billing_profiles')->update(['vat_status'=>'registered','tpin'=>'TEST-ONLY']);
+        DB::table('billing_tax_rates')->insert(['branch_id'=>$this->branch->id,'label'=>'Test VAT','category'=>'standard','basis_points'=>1600,'effective_from'=>'2000-01-01','active'=>true]);
+        DB::table('billing_services')->insert(['branch_id'=>$this->branch->id,'name'=>'Test air freight','unit'=>'kg','price_minor'=>850,'currency'=>'ZMW','tax_id'=>$this->taxId,'tax_mode'=>'exclusive','active'=>true]);
+        $origin=Branch::create(['name'=>'Test Origin','email'=>'origin@test.example','code'=>2,'user_id'=>auth()->id(),'default_currency'=>'USD']);
+        $service=DB::table('billing_services')->insertGetId(['branch_id'=>$this->branch->id,'name'=>'Test sea freight','unit'=>'cbm','price_minor'=>0,'currency'=>'ZMW','tax_id'=>$this->taxId,'tax_mode'=>'exclusive','active'=>true]);
+        $this->post(route('billing.shipping-tariffs.save'),['branch_id'=>$this->branch->id,'service_id'=>$service,'revision'=>0,'currency'=>'ZMW','unit'=>'cbm','minimum'=>'0.1','rounding'=>'0',
+            'effective_from'=>'2020-01-01','origin_id'=>$origin->id,'destination_id'=>$this->branch->id,'method'=>'sea','category'=>'general','duty'=>'included','active'=>1,'booking_enabled'=>0,'weight_basis'=>'actual',
+            'tiers'=>[['from'=>'0.1','rate'=>'100'],['from'=>'1','rate'=>'80']]])->assertSessionHasNoErrors();
+        $directory='/tmp/nwc-sales-uat-'.bin2hex(random_bytes(8));
+        mkdir($directory,0700);
+        mkdir($directory.'/sessions',0700);
+        $database=$directory.'/database.sqlite';
+        $copy=new \PDO('sqlite:'.$database);
+        $copy->setAttribute(\PDO::ATTR_ERRMODE,\PDO::ERRMODE_EXCEPTION);
+        $tables=DB::select("SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
+        foreach($tables as $table){
+            $copy->exec($table->sql);
+            foreach(DB::table($table->name)->get() as $row){
+                $values=(array)$row;
+                $columns=implode(',',array_map(fn($column)=>'"'.str_replace('"','""',$column).'"',array_keys($values)));
+                $statement=$copy->prepare('INSERT INTO "'.$table->name.'" ('.$columns.') VALUES ('.implode(',',array_fill(0,count($values),'?')).')');
+                $statement->execute(array_values($values));
+            }
+        }
+        foreach(DB::select("SELECT sql FROM sqlite_master WHERE type IN ('index','trigger') AND sql IS NOT NULL") as $object)$copy->exec($object->sql);
+        $copy=null;
+        $socket=stream_socket_server('tcp://127.0.0.1:0',$errno,$error);
+        $address=stream_socket_get_name($socket,false);fclose($socket);
+        $environment=['APP_ENV'=>'testing','APP_CONFIG_CACHE'=>$directory.'/config.php','DB_CONNECTION'=>'sqlite','DB_DATABASE'=>$database,
+            'NWC_SALES_TEST_DB'=>$database,'SESSION_DRIVER'=>'array','CACHE_DRIVER'=>'array','MAIL_MAILER'=>'array','QUEUE_CONNECTION'=>'sync'];
+        $server=new \Symfony\Component\Process\Process([PHP_BINARY,'-S',$address,'tests/Browser/sales-live-router.php'],base_path(),$environment);
+        $server->start();
+        try{
+            usleep(500000);
+            $browser=new \Symfony\Component\Process\Process(['node','tests/Browser/sales-live-uat.cjs'],base_path(),
+                ['NWC_SALES_TEST_URL'=>'http://'.$address,'PLAYWRIGHT_MODULE'=>getenv('PLAYWRIGHT_MODULE') ?: '@playwright/test']);
+            $browser->setTimeout(240);$browser->run();
+            $this->assertTrue($browser->isSuccessful(),$browser->getOutput().$browser->getErrorOutput()."\n".$server->getErrorOutput());
+            fwrite(STDOUT,$browser->getOutput());
+            $copy=new \PDO('sqlite:'.$database);
+            foreach(['billing_invoices','billing_quotations'] as $table){
+                $this->assertEquals(14700,$copy->query("SELECT total_minor FROM $table ORDER BY id DESC LIMIT 1")->fetchColumn());
+                $this->assertEquals(1,$copy->query("SELECT COUNT(*) FROM $table")->fetchColumn());
+            }
+        }finally{
+            $server->stop();$copy=null;
+            foreach(glob($directory.'/sessions/*') as $file)unlink($file);
+            rmdir($directory.'/sessions');
+            foreach(glob($directory.'/*') as $file)unlink($file);
+            rmdir($directory);
+        }
+    }
+
     public function test_reference_service_can_be_saved_without_inventing_a_tax_category(): void
     {
         $service=['branch_id'=>$this->branch->id,'name'=>'Reference sea freight','unit'=>'cbm','price'=>'0',

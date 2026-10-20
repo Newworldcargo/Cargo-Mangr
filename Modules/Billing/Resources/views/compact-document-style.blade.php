@@ -7,6 +7,7 @@
 .compact-document .invoice-heading-meta label{display:grid;grid-template-columns:1fr 145px;align-items:center;gap:6px;text-align:left}.compact-document .invoice-heading-meta small{display:block;margin-top:6px}
 .compact-document .form-control{min-height:30px;height:30px;padding:3px 5px;font-size:12px;border:1px solid #aab7c2;border-radius:2px;background:white;box-shadow:none;max-width:100%;color:#263441}
 .compact-document .form-control[readonly],.compact-document .form-control:disabled{background:#f1f3f5;border-style:dashed;color:#526271}
+.compact-document .form-control[aria-invalid="true"]{border-color:#b42318}.compact-document .line-validation{grid-column:2/-1;margin:0;font-size:13px}
 .compact-document textarea.form-control{height:auto;resize:vertical}.compact-document .form-control:hover{border-color:#c7d7e6}.compact-document .form-control:focus{border-color:#012642;background:#f5f9ff;outline:2px solid #bdd8ef;outline-offset:0}
 .compact-document label{font-size:11px;margin:0 0 4px;font-weight:400}.compact-document h2{font-size:11px;text-transform:uppercase;color:#526271;border:0;padding:0;margin:0 0 8px}
 .compact-document .sr-only{width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important}

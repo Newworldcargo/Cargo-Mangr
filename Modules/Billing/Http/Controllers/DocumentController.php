@@ -78,17 +78,33 @@ class DocumentController extends Controller
         $access=app(SalesAccess::class);
         abort_unless($access->canView($request->user(),'invoices') || $access->canView($request->user(),'quotations'),403);
         $data=$request->validate(['branch_id'=>'required|integer','issue_date'=>'required|date_format:Y-m-d','items'=>'required|array|min:1|max:100',
-            'items.*.description'=>'nullable|string|max:500','items.*.quantity'=>'required|string|max:20','items.*.unit_price'=>'required|string|max:20',
-            'items.*.discount'=>'nullable|string|max:20','items.*.tax_id'=>'required|integer','items.*.tax_mode'=>'required|in:inclusive,exclusive',
+            'items.*.description'=>'nullable|string|max:500','items.*.quantity'=>'required|string|max:20','items.*.unit_price'=>'nullable|string|max:20',
+            'items.*.discount'=>'nullable|string|max:20','items.*.tax_id'=>'nullable|integer','items.*.tax_mode'=>'required|in:inclusive,exclusive',
             'items.*.unit'=>'required|in:'.implode(',',\Modules\Billing\Services\SalesConfiguration::UNITS),'items.*.service_id'=>'nullable|integer',
             'items.*.cargo_volume'=>'nullable|string|max:20']);
         $config=app(\Modules\Billing\Services\SalesConfiguration::class);
         $branch=$config->branch($request->user(),(int)$data['branch_id']);
-        $items=$config->lines($data['items'],$branch->id,$data['issue_date']);
-        foreach($items as &$item) $item['description']=$item['description'] ?: 'Service';
-        try { $amounts=\Modules\Billing\Services\InvoiceAmounts::calculate($items); }
+        $pendingTax=false;$pendingPrice=false;
+        foreach($data['items'] as $index=>&$item) {
+            $pendingTax=$pendingTax || empty($item['tax_id']);
+            $pendingPrice=$pendingPrice || !isset($item['unit_price']);
+            $item['unit_price']=$item['unit_price'] ?? '0';
+            $item['discount']=$item['discount'] ?? '0';
+            foreach(['quantity','unit_price','discount'] as $field) {
+                try {
+                    $value=$field==='quantity' ? \Modules\Billing\Services\InvoiceAmounts::quantity($item[$field]) : \Modules\Billing\Services\InvoiceAmounts::decimal($item[$field]);
+                    if($field==='quantity' && $value===0) throw new \DomainException('Quantity must be greater than zero.');
+                } catch(\DomainException $error) { throw ValidationException::withMessages(["items.$index.$field"=>$error->getMessage()]); }
+            }
+        }
+        unset($item);
+        $items=$config->lines($data['items'],$branch->id,$data['issue_date'],true,true);
+        foreach($items as &$item) $item['description']=($item['description'] ?? '') ?: 'Service';
+        unset($item);
+        try { $amounts=\Modules\Billing\Services\InvoiceAmounts::calculate($items,true); }
         catch(DomainException $error) { throw ValidationException::withMessages(['items'=>$error->getMessage()]); }
-        return response()->json(['currency'=>app(BranchAccessService::class)->currencyFor(null,$branch,true)]+$amounts);
+        return response()->json(['currency'=>app(BranchAccessService::class)->currencyFor(null,$branch,true),
+            'tax_pending'=>$pendingTax,'price_pending'=>$pendingPrice]+$amounts);
     }
 
     public function shipments(Request $request)
@@ -194,6 +210,7 @@ class DocumentController extends Controller
         } catch (DomainException $error) {
             throw ValidationException::withMessages(['document' => $error->getMessage()]);
         }
+        if($request->expectsJson())return response()->json(['url'=>route('billing.documents.show',compact('type','id'))]);
         return redirect()->route('billing.documents.show', compact('type', 'id'))->with('success', 'Draft saved.');
     }
 

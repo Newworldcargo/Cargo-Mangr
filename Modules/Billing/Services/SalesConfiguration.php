@@ -58,17 +58,18 @@ final class SalesConfiguration
             })];
     }
 
-    public function lines(array $items, int $branchId, string $date, bool $priceTariffs = true): array
+    public function lines(array $items, int $branchId, string $date, bool $priceTariffs = true, bool $allowPendingTax = false): array
     {
         $profile=DB::table('billing_profiles')->where('branch_id',$branchId)->first();
         $taxes = DB::table('billing_tax_rates')->where('branch_id',$branchId)->where('active',true)
             ->where('effective_from','<=',$date)->where(fn ($query) => $query->whereNull('effective_until')->orWhere('effective_until','>=',$date))->get()->keyBy('id');
         foreach ($items as $index => &$item) {
             $tax = $taxes->get($item['tax_id'] ?? 0);
-            if (!$tax) throw ValidationException::withMessages(["items.$index.tax_id"=>'Choose an active tax category for the issue date. Configure branch taxes in Sales settings if none are available.']);
-            if ($profile && $profile->vat_status === 'not_registered' && $tax->category !== 'non_vat') throw ValidationException::withMessages(["items.$index.tax_id"=>'This branch is not VAT registered. Choose its non-VAT tax category.']);
-            $item['tax_percent'] = number_format($tax->basis_points/100,2,'.','');
-            $item['tax_label'] = $tax->label; $item['tax_category'] = $tax->category;
+            if (!$tax && (!$allowPendingTax || !empty($item['tax_id']))) throw ValidationException::withMessages(["items.$index.tax_id"=>'Choose an active tax category for the issue date. Configure branch taxes in Sales settings if none are available.']);
+            if ($tax && $profile && $profile->vat_status === 'not_registered' && $tax->category !== 'non_vat') throw ValidationException::withMessages(["items.$index.tax_id"=>'This branch is not VAT registered. Choose its non-VAT tax category.']);
+            // Preview may show an explicitly incomplete estimate, never a payable tax decision.
+            $item['tax_percent'] = $tax ? number_format($tax->basis_points/100,2,'.','') : '0';
+            $item['tax_label'] = $tax->label ?? null; $item['tax_category'] = $tax->category ?? null;
             if (!empty($item['service_id'])) {
                 $service = DB::table('billing_services')->where('branch_id',$branchId)->where('active',true)->find($item['service_id']);
                 $branch = Branch::findOrFail($branchId);

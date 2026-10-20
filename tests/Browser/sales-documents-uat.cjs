@@ -18,9 +18,8 @@ const assert = require('assert/strict');
                     if (url.pathname.endsWith('/sales/customers')) return route.fulfill({ json: [{ id: 1, name: 'Test Customer', email: 'customer@test.example' }] });
                     if (url.pathname.endsWith('/sales/catalogue')) return route.fulfill({json:{currency:'ZMW',profile:{legal_name:'Test Cargo'},agents:[{id:1,name:'Sales Admin'}],taxes:[{id:1,label:'Test VAT',basis_points:1600,effective_from:'2000-01-01',effective_until:null}],services:[{id:11,name:'Road freight',unit:'kg',price_minor:11600,tax_id:1,tax_mode:'inclusive'}]}});
                     if (url.pathname.endsWith('/sales/preview')) {
-                        previewFields = await new Response(route.request().postDataBuffer(), {
-                            headers: { 'Content-Type': route.request().headers()['content-type'] }
-                        }).formData();
+                        const payload=route.request().postDataJSON();
+                        previewFields=new Map(Object.entries(payload.items[0]).map(([key,value])=>['items[0]['+key+']',value]));
                         const qty=Number(previewFields.get('items[0][quantity]')||1);
                         const gross=Math.round(Number(previewFields.get('items[0][unit_price]')||0)*100*qty);
                         const discount=Math.round(Number(previewFields.get('items[0][discount]')||0)*100);

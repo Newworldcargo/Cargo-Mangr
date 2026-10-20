@@ -22,7 +22,7 @@ final class InvoiceAmounts
         return $minor;
     }
 
-    public static function calculate(array $items): array
+    public static function calculate(array $items, bool $allowZeroTotal = false): array
     {
         if (count($items) < 1 || count($items) > 100) {
             throw new DomainException('An invoice must contain between 1 and 100 items.');
@@ -76,7 +76,7 @@ final class InvoiceAmounts
             }
             $result['items'][] = $line;
         }
-        if ($result['total_minor'] === 0) {
+        if ($result['total_minor'] === 0 && !$allowZeroTotal) {
             throw new DomainException('The invoice total must be greater than zero.');
         }
         return $result;
